@@ -1,0 +1,27 @@
+node full_add(a, b, c : bool) returns (s, co : bool);
+let
+  s = (a xor b) xor c;
+  co = if a then b or c else b and c;
+tel;
+
+node half_add(a, b : bool) returns (s, co : bool);
+let
+  s = a xor b;
+  co = a and b;
+tel;
+
+node full_add_h(a, b, c : bool) returns (s, co : bool);
+var s1, c1, c2 : bool;
+let
+  (s1, c1) = half_add(a,b);
+  (s, c2) = half_add(c, s1);
+  co = c1 or c2;
+tel;
+
+node equivalence(a,b,c:bool) returns (ok:bool);
+var o1, c1, o2, c2:bool;
+let
+  (o1, c1) = full_add (a, b, c);
+  (o2, c2) = full_add_h (a, b, c);
+  ok = (o1 = o2) and (c1 = c2);
+tel;

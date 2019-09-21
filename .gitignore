@@ -27,3 +27,8 @@ setup.log
 
 # Local OPAM switch
 _opam/
+
+# Menhir and Lex generated files
+parser.ml
+parser.mli
+lexer.ml

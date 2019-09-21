@@ -1,0 +1,33 @@
+open Lexing
+
+let usage = "usage: " ^ Sys.argv.(0) ^ " [-parse] [-type] [-eval] <input_file>"
+
+type step = Parse | Type | Eval
+
+let step = ref Eval
+
+let speclist = [
+  ("-parse", Arg.Unit (fun () -> step := Parse), ": only parse the program");
+]
+
+let print_position outx lexbuf =
+  let pos = lexbuf.lex_curr_p in
+  Printf.fprintf outx "%s:%d:%d" pos.pos_fname
+    pos.pos_lnum (pos.pos_cnum - pos.pos_bol + 1)
+
+let parse_with_error lexbuf =
+  try Parser.file Lexer.token lexbuf with
+  | Parser.Error ->
+    Printf.fprintf stderr "Syntax error in program at %a\n" print_position lexbuf;
+    exit (-1)
+
+let lex_and_parse ic =
+  let lexbuf = Lexing.from_channel ic in
+  parse_with_error lexbuf
+
+let main filename step =
+  let ic = open_in filename in
+  let prog = lex_and_parse ic in ()
+
+let _ = Arg.parse speclist (fun x -> main x !step) usage
+

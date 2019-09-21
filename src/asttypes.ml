@@ -1,5 +1,7 @@
 type location = Lexing.position * Lexing.position
 
+type ident = string
+
 let string_of_loc ((ls, le):location) =
   Printf.sprintf "[(%d,%d);(%d,%d)]"
     ls.pos_lnum ls.pos_cnum le.pos_lnum le.pos_cnum
@@ -14,7 +16,16 @@ let string_of_base_ty = function
   | Tint -> "int"
   | Treal -> "real"
 
-type ty = base_ty list
+type ty =
+  | Base of base_ty
+  | Clocked of base_ty * ident * bool
+  (* The third parameter indicated whether the clock is negated *)
+
+let string_of_ty = function
+  | Base bty -> string_of_base_ty bty
+  | Clocked (bty, id, neg) ->
+    Printf.sprintf (if neg then "%s when not %s" else "%s when %s")
+      (string_of_base_ty bty) id
 
 type const =
   | Cbool of bool

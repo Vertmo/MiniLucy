@@ -14,6 +14,7 @@
 %token BOOL
 %token COLON
 %token COMMA
+%token CURRENT
 %token <Asttypes.op> COMP
 %token <bool> CONST_BOOL
 %token <int> CONST_INT
@@ -30,6 +31,7 @@
 %token INT
 %token LET
 %token LPAREN
+%token MERGE
 %token MINUS
 %token MOD
 %token NODE
@@ -45,6 +47,7 @@
 %token TEL
 %token THEN
 %token VAR
+%token WHEN
 %token XOR
 
 
@@ -195,6 +198,14 @@ expr:
     { mk_expr (PE_pre ($2)) }
 | LPAREN expr COMMA expr_comma_list RPAREN
     { mk_expr (PE_tuple ($2::$4)) }
+| expr WHEN IDENT
+    { mk_expr (PE_when ($1, $3, false)) }
+| expr WHEN NOT IDENT
+    { mk_expr (PE_when ($1, $4, true)) }
+| CURRENT IDENT
+    { mk_expr (PE_current $2) }
+| MERGE IDENT expr expr
+    { mk_expr (PE_merge ($2, $3, $4)) }
 ;
 
 const:
@@ -223,10 +234,16 @@ expr_comma_list:
 | expr { [$1] }
 ;
 
-typ:
+btyp:
 | BOOL   { Tbool }
 | INT    { Tint }
 | REAL   { Treal }
+;
+
+typ:
+  | btyp { Base $1 }
+  | btyp WHEN IDENT { Clocked ($1, $3, false) }
+  | btyp WHEN NOT IDENT { Clocked ($1, $4, true) }
 ;
 
 semi_opt:

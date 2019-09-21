@@ -12,23 +12,26 @@
       [
 	"and", AND;
 	"bool", BOOL;
+  "current", CURRENT;
   "div", DIV;
 	"else", ELSE;
 	"false", CONST_BOOL(false);
 	"if", IF;
 	"int", INT;
 	"let", LET;
+  "merge", MERGE;
 	"mod", MOD;
 	"node", NODE;
 	"not", NOT;
 	"or", OR;
-        "pre", PRE;
+  "pre", PRE;
 	"real", REAL;
 	"returns", RETURNS;
 	"tel", TEL;
 	"then", THEN;
 	"true", CONST_BOOL(true);
 	"var", VAR;
+  "when", WHEN;
   "xor", XOR;
       ];
     fun s ->

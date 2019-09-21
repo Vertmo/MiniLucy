@@ -2,8 +2,6 @@
 
 open Asttypes
 
-type ident = string
-
 type p_expr =
   { pexpr_desc: p_expr_desc;
     pexpr_loc: location; }
@@ -16,6 +14,10 @@ and p_expr_desc =
   | PE_arrow of p_expr * p_expr
   | PE_pre of p_expr
   | PE_tuple of p_expr list
+  | PE_when of p_expr * ident * bool
+  (* the last parameters indicates if the clock is negated *)
+  | PE_current of ident
+  | PE_merge of ident * p_expr * p_expr
 
 let rec string_of_expr p =
   string_of_expr_desc p.pexpr_desc
@@ -33,6 +35,12 @@ and string_of_expr_desc = function
   | PE_pre e -> Printf.sprintf "(pre %s)" (string_of_expr e)
   | PE_tuple es -> Printf.sprintf "(%s)"
                      (String.concat ", " (List.map string_of_expr es))
+  | PE_when (e, id, neg) ->
+    Printf.sprintf (if neg then "%s when not %s" else "%s when %s")
+      (string_of_expr e) id
+  | PE_current id -> Printf.sprintf "current %s" id
+  | PE_merge (id, e1, e2) -> Printf.sprintf "merge %s (%s) (%s)"
+                               id (string_of_expr e1) (string_of_expr e2)
 
 type p_patt =
   { ppatt_desc: p_patt_desc;
@@ -60,15 +68,15 @@ let string_of_equation eq =
 
 type p_node =
     { pn_name: ident;
-      pn_input: (ident * base_ty) list;
-      pn_output: (ident * base_ty) list;
-      pn_local: (ident * base_ty) list;
+      pn_input: (ident * ty) list;
+      pn_output: (ident * ty) list;
+      pn_local: (ident * ty) list;
       pn_equs: p_equation list;
       pn_loc: location; }
 
 let string_of_ident_type_list l =
   String.concat "; " (List.map (fun (id, t) ->
-      Printf.sprintf "%s:%s" id (string_of_base_ty t)) l)
+      Printf.sprintf "%s:%s" id (string_of_ty t)) l)
 
 let string_of_node n =
   Printf.sprintf "node %s(%s) returns (%s);\n\

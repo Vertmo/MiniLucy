@@ -1,10 +1,10 @@
 open Lexing
 
-let usage = "usage: " ^ Sys.argv.(0) ^ " [-parse] [-type] [-eval] <input_file>"
+let usage = "usage: " ^ Sys.argv.(0) ^ " [-parse] <input_file>"
 
-type step = Parse | Type | Eval
+type step = Parse
 
-let step = ref Eval
+let step = ref Parse
 
 let speclist = [
   ("-parse", Arg.Unit (fun () -> step := Parse), ": only parse the program");
@@ -27,7 +27,12 @@ let lex_and_parse ic =
 
 let main filename step =
   let ic = open_in filename in
-  let prog = lex_and_parse ic in ()
+  let prog = lex_and_parse ic in
+  if (step = Parse) then (
+    print_endline (Parse_ast.string_of_file prog)
+  ) else (
+    (* TODO *)
+  )
 
 let _ = Arg.parse speclist (fun x -> main x !step) usage
 

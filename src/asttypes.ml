@@ -55,3 +55,7 @@ let string_of_op = function
   | Op_or -> "or" | Op_xor -> "xor"
   | Op_impl -> "=>"
   | Op_if -> "if"
+
+let string_of_ident_type_list l =
+  String.concat "; " (List.map (fun (id, t) ->
+      Printf.sprintf "%s:%s" id (string_of_ty t)) l)

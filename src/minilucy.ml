@@ -28,12 +28,16 @@ let lex_and_parse ic =
 
 let main filename step =
   let ic = open_in filename in
-  let prog = lex_and_parse ic in
+  let file = lex_and_parse ic in
   if (step = Parse) then (
-    print_endline (Parse_ast.string_of_file prog)
-  ) else if (step = Check) then (
-    Typechecker.check_file prog;
-    print_endline "Type checking OK"
+    print_endline (Parse_ast.string_of_file file);
+    exit 0
+  );
+  Typechecker.check_file file;
+  let cfile = Clockchecker.clock_file file in
+  if (step = Check) then (
+    print_endline (Clocked_ast.string_of_file cfile);
+    exit 0
   )
 
 let _ = Arg.parse speclist (fun x -> main x !step) usage

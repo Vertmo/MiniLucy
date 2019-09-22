@@ -1,7 +1,7 @@
 open Asttypes
 open Parse_ast
 
-exception TypingError of (string * location)
+exception TypeError of (string * location)
 exception MissingEquationError of (ident * location)
 exception UnexpectedEquationError of (ident * location)
 
@@ -63,18 +63,18 @@ let type_op (inputs : checker_ty list) loc op =
   | Op_and | Op_or | Op_xor when inputs = [Tint;Tint] -> Tint
   | Op_if when List.length inputs = 3 &&
                List.nth inputs 1 = List.nth inputs 2 -> List.nth inputs 1
-  | _ -> raise (TypingError
+  | _ -> raise (TypeError
                   (Printf.sprintf "Wrong input types (%s) for operator %s"
                      (String.concat "," (List.map string_of_checker_ty inputs))
                      (string_of_op op), loc))
 
 (** Check that an expression has the [expected] type *)
-let rec type_expr (nodes: (ident * node_ty) list) streams (e : p_expr) =
+let rec type_expr nodes streams (e : p_expr) =
   match e.pexpr_desc with
   | PE_const c -> type_const c
   | PE_ident id ->
     (try checker_ty_of_ty (List.assoc id streams)
-     with _ -> raise (TypingError
+     with _ -> raise (TypeError
                         (Printf.sprintf "Stream %s not found in node"
                            id, e.pexpr_loc)))
   | PE_op (op, es) ->
@@ -85,41 +85,41 @@ let rec type_expr (nodes: (ident * node_ty) list) streams (e : p_expr) =
     (* Check that reset stream is bool *)
     let evert = type_expr nodes streams ever in
     if(evert <> Tbool)
-    then raise (TypingError
+    then raise (TypeError
                   (Printf.sprintf
                      "The reset stream should be of type bool, found %s"
                      (string_of_checker_ty evert), ever.pexpr_loc));
     (* Find the node *)
     let (node_in, node_out) = try List.assoc id nodes
-      with _ -> raise (TypingError
+      with _ -> raise (TypeError
                          (Printf.sprintf "Node %s not found in file"
                             id, e.pexpr_loc)) in
     (* Check input types *)
     (try List.iter2 (fun exp act ->
          if (exp <> act)
          then raise
-             (TypingError
+             (TypeError
                 (Printf.sprintf
                    "Wrong argument type for node %s, expected %s, found %s"
                    id (string_of_checker_ty exp) (string_of_checker_ty act),
                  e.pexpr_loc)))
          (List.map (fun (_, t) -> checker_ty_of_ty t) node_in) est
      with Invalid_argument _ ->
-       raise (TypingError
+       raise (TypeError
                 (Printf.sprintf
                    "Wrong number of arguments for node %s, expected %s, found %s"
                    id (string_of_int (List.length node_in))
                    (string_of_int (List.length est)), e.pexpr_loc)));
     (* Output type *)
     (match node_out with
-     | [] -> failwith "Should not happen (prevented by syntax)"
+     | [] -> failwith "Should not happen (syntax)"
      | [(_, ty)] -> checker_ty_of_ty ty
      | _ -> Ttuple (List.map (fun (_, t) -> checker_ty_of_ty t) node_out))
   | PE_arrow (e1, e2) ->
     let t1 = type_expr nodes streams e1 and t2 = type_expr nodes streams e2 in
     if (t1 <> t2)
     then raise
-        (TypingError
+        (TypeError
            (Printf.sprintf
               "Both sides of -> should have the same type, found %s and %s"
               (string_of_checker_ty t1) (string_of_checker_ty t2),
@@ -129,36 +129,50 @@ let rec type_expr (nodes: (ident * node_ty) list) streams (e : p_expr) =
   | PE_tuple es -> Ttuple (List.map (type_expr nodes streams) es)
   | PE_when (ew, cl, _) ->
     let clt = (try checker_ty_of_ty (List.assoc cl streams)
-               with _ -> raise (TypingError
+               with _ -> raise (TypeError
                                   (Printf.sprintf "Clock %s not found in node"
                                      cl, e.pexpr_loc))) in
     if (clt <> Tbool)
-    then raise (TypingError
+    then raise (TypeError
                   (Printf.sprintf "Clock should be bool stream, found %s"
                      (string_of_checker_ty clt), e.pexpr_loc));
     type_expr nodes streams ew
   | PE_current id ->
     (try checker_ty_of_ty (List.assoc id streams)
-     with _ -> raise (TypingError
+     with _ -> raise (TypeError
                         (Printf.sprintf "Stream %s not found in node"
                            id, e.pexpr_loc)))
   | PE_merge (cl, e1, e2) ->
     let clt = (try checker_ty_of_ty (List.assoc cl streams)
-               with _ -> raise (TypingError
+               with _ -> raise (TypeError
                                   (Printf.sprintf "Clock %s not found in node"
                                      cl, e.pexpr_loc))) in
     if (clt <> Tbool)
-    then raise (TypingError
+    then raise (TypeError
                   (Printf.sprintf "Clock should be bool stream, found %s"
                      (string_of_checker_ty clt), e.pexpr_loc));
     let t1 = type_expr nodes streams e1 and t2 = type_expr nodes streams e2 in
     if (t1 <> t2)
     then raise
-        (TypingError
+        (TypeError
            (Printf.sprintf
               "Both args of merge should have the same type, found %s and %s"
               (string_of_checker_ty t1) (string_of_checker_ty t2), e.pexpr_loc));
     t1
+
+(** Check that the equation [eq] is correctly typed.
+    Returns the [out_streams] minus the ones we just type-checked *)
+let check_equation nodes streams out_streams (eq : p_equation) =
+  let (expected, os) = get_pattern_type out_streams eq.peq_patt
+  and actual = type_expr nodes streams eq.peq_expr in
+  if actual <> expected
+  then raise (TypeError
+                (Printf.sprintf
+                   "Wrong type for equation %s; expected %s, found %s"
+                   (string_of_equation eq)
+                   (string_of_checker_ty expected)
+                   (string_of_checker_ty actual), eq.peq_expr.pexpr_loc));
+  os
 
 (** Check that the node [n] is correctly typed *)
 let check_node (nodes: (ident * node_ty) list) (n : p_node) =
@@ -171,29 +185,19 @@ let check_node (nodes: (ident * node_ty) list) (n : p_node) =
       | Clocked (_, cl, _) ->
         let clt =
           (try checker_ty_of_ty (List.assoc cl streams)
-           with _ -> raise (TypingError
+           with _ -> raise (TypeError
                               (Printf.sprintf "Clock %s not found in node %s"
                                  cl n.pn_name, n.pn_loc))) in
         if (clt <> Tbool)
-        then raise (TypingError
+        then raise (TypeError
                       (Printf.sprintf "Clock should be bool stream, found %s"
                          (string_of_checker_ty clt), n.pn_loc));
         (id, ty)::streams
     ) [] all_streams);
 
   (* Check the equations of the node *)
-  let rem_streams = (List.fold_left (fun os eq ->
-      let (expected, os) = get_pattern_type os eq.peq_patt
-      and actual = type_expr nodes all_streams eq.peq_expr in
-      if actual <> expected
-      then raise (TypingError
-                    (Printf.sprintf
-                       "Wrong type for equation %s; expected %s, found %s"
-                       (string_of_equation eq)
-                       (string_of_checker_ty expected)
-                       (string_of_checker_ty actual), eq.peq_expr.pexpr_loc));
-      os)
-      out_streams n.pn_equs) in
+  let rem_streams = List.fold_left (check_equation nodes all_streams)
+      out_streams n.pn_equs in
   match rem_streams with
   | [] -> ()
   | (hd, _)::_ -> raise (MissingEquationError (hd, n.pn_loc))
@@ -210,6 +214,6 @@ let check_file (f : p_file) =
   | MissingEquationError (id, loc) ->
     Printf.printf "Type checking error : MissingEquation for %s at %s\n"
       id (string_of_loc loc); exit 1
-  | TypingError (msg, loc) ->
+  | TypeError (msg, loc) ->
     Printf.printf "Type checking error : %s at %s\n"
       msg (string_of_loc loc); exit 1

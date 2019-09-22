@@ -1,0 +1,21 @@
+node test_when(b : bool) returns (z : int when b);
+let
+  z = 1 when b;
+tel;
+  
+node test_when_not(b : bool) returns (z : int when not b);
+let
+  z = 1 when not b;
+tel;
+  
+node test_op(b : bool) returns (z : int when b);
+var x : int when b; y : int when b;
+let
+  x = 1 when b; y = 2 when b;
+  z = x + y;
+tel;
+  
+node test_tuple(b : bool; c : bool) returns (x : int when b; y : int when c);
+let
+  (x, y) = (1 when b, 2 when c);
+tel;

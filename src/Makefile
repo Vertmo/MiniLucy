@@ -1,5 +1,7 @@
 include ../Makefile.conf
 
+all: minilucy.byte
+
 parser.ml parser.mli: parser.mly
 	menhir $^
 

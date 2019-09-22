@@ -1,4 +1,4 @@
-(* Arbres de syntaxe abstraite *)
+(* Abstract syntax tree *)
 
 open Asttypes
 
@@ -19,8 +19,8 @@ and p_expr_desc =
   | PE_current of ident
   | PE_merge of ident * p_expr * p_expr
 
-let rec string_of_expr p =
-  string_of_expr_desc p.pexpr_desc
+let rec string_of_expr e =
+  string_of_expr_desc e.pexpr_desc
 
 and string_of_expr_desc = function
   | PE_const c -> string_of_const c
@@ -74,10 +74,6 @@ type p_node =
       pn_local: (ident * ty) list;
       pn_equs: p_equation list;
       pn_loc: location; }
-
-let string_of_ident_type_list l =
-  String.concat "; " (List.map (fun (id, t) ->
-      Printf.sprintf "%s:%s" id (string_of_ty t)) l)
 
 let string_of_node n =
   Printf.sprintf "node %s(%s) returns (%s);\n\

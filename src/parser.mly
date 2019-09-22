@@ -22,6 +22,7 @@
 %token ELSE
 %token EOF
 %token EQUAL
+%token EVERY
 %token NEQ
 %token REAL
 %token <string> IDENT
@@ -158,7 +159,11 @@ expr:
 | IDENT
     { mk_expr (PE_ident $1) $startpos $endpos }
 | IDENT LPAREN expr_comma_list_empty RPAREN
-    { mk_expr (PE_app ($1, $3)) $startpos $endpos }
+    { mk_expr (PE_app ($1, $3,
+                       { pexpr_desc = PE_const (Cbool false);
+                         pexpr_loc = ($startpos, $endpos)})) $startpos $endpos }
+| IDENT LPAREN expr_comma_list_empty RPAREN EVERY expr
+    { mk_expr (PE_app ($1, $3, $6)) $startpos $endpos }
 | IF expr THEN expr ELSE expr
     { mk_expr (PE_op (Op_if, [$2; $4; $6])) $startpos $endpos }
 | expr PLUS expr

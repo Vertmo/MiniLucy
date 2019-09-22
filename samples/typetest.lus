@@ -52,3 +52,8 @@ node test_merge(b : bool; c : int) returns (e:int);
 let
   e = merge b (c when b) (c when not b);
 tel;
+  
+node test_every(b : bool) returns (e : int);
+let
+  e = test_pre() every b;
+tel;

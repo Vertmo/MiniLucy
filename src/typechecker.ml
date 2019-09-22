@@ -51,8 +51,10 @@ let type_op (inputs : checker_ty list) loc op =
     when inputs = [Tbool;Tbool] -> Tbool
   | Op_eq | Op_neq | Op_lt | Op_le | Op_gt | Op_ge
     when inputs = [Tint;Tint] || inputs = [Treal;Treal] -> Tbool
+  | Op_sub when inputs = [Tint] -> Tint
   | Op_add | Op_sub | Op_mul | Op_div | Op_mod
     when inputs = [Tint;Tint] -> Tint
+  | Op_sub when inputs = [Treal] -> Treal
   | Op_add | Op_sub | Op_mul | Op_div
     when inputs = [Treal;Treal] -> Treal
   | Op_not when inputs = [Tbool] -> Tbool
@@ -78,12 +80,21 @@ let rec type_expr (nodes: (ident * node_ty) list) streams (e : p_expr) =
   | PE_op (op, es) ->
     let est = List.map (type_expr nodes streams) es in
     type_op est e.pexpr_loc op
-  | PE_app (id, es) ->
+  | PE_app (id, es, ever) ->
     let est = List.map (type_expr nodes streams) es in
+    (* Check that reset stream is bool *)
+    let evert = type_expr nodes streams ever in
+    if(evert <> Tbool)
+    then raise (TypingError
+                  (Printf.sprintf
+                     "The reset stream should be of type bool, found %s"
+                     (string_of_checker_ty evert), ever.pexpr_loc));
+    (* Find the node *)
     let (node_in, node_out) = try List.assoc id nodes
       with _ -> raise (TypingError
                          (Printf.sprintf "Node %s not found in file"
                             id, e.pexpr_loc)) in
+    (* Check input types *)
     (try List.iter2 (fun exp act ->
          if (exp <> act)
          then raise
@@ -99,6 +110,7 @@ let rec type_expr (nodes: (ident * node_ty) list) streams (e : p_expr) =
                    "Wrong number of arguments for node %s, expected %s, found %s"
                    id (string_of_int (List.length node_in))
                    (string_of_int (List.length est)), e.pexpr_loc)));
+    (* Output type *)
     (match node_out with
      | [] -> failwith "Should not happen (prevented by syntax)"
      | [(_, ty)] -> checker_ty_of_ty ty

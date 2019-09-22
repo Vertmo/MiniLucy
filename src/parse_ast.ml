@@ -10,7 +10,7 @@ and p_expr_desc =
   | PE_const of const
   | PE_ident of ident
   | PE_op of op * p_expr list
-  | PE_app of ident * p_expr list
+  | PE_app of ident * p_expr list * p_expr
   | PE_arrow of p_expr * p_expr
   | PE_pre of p_expr
   | PE_tuple of p_expr list
@@ -28,8 +28,9 @@ and string_of_expr_desc = function
   | PE_op (op, es) -> Printf.sprintf "(%s [%s])"
                         (string_of_op op)
                         (String.concat "; " (List.map string_of_expr es))
-  | PE_app (id, es) -> Printf.sprintf "(%s [%s])" id
+  | PE_app (id, es, ever) -> Printf.sprintf "(%s [%s] every %s)" id
                          (String.concat "; " (List.map string_of_expr es))
+                         (string_of_expr ever)
   | PE_arrow (e1, e2) -> Printf.sprintf "(%s -> %s)"
                            (string_of_expr e1) (string_of_expr e2)
   | PE_pre e -> Printf.sprintf "(pre %s)" (string_of_expr e)

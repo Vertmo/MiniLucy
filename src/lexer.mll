@@ -15,6 +15,7 @@
   "current", CURRENT;
   "div", DIV;
 	"else", ELSE;
+  "every", EVERY;
 	"false", CONST_BOOL(false);
 	"if", IF;
 	"int", INT;

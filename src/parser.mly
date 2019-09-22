@@ -3,9 +3,8 @@
   open Asttypes
   open Parse_ast
 
-  let loc () = Parsing.symbol_start_pos (), Parsing.symbol_end_pos ()
-  let mk_expr e = { pexpr_desc = e; pexpr_loc = loc () }
-  let mk_patt p = { ppatt_desc = p; ppatt_loc = loc () }
+  let mk_expr e startp endp = { pexpr_desc = e; pexpr_loc = (startp, endp) }
+  let mk_patt p startp endp = { ppatt_desc = p; ppatt_loc = (startp, endp) }
 
 %}
 
@@ -88,7 +87,7 @@ node:
 	pn_output = $8;
 	pn_local = $11;
 	pn_equs = $13;
-	pn_loc = loc(); } }
+	pn_loc = ($startpos, $endpos) } }
 ;
 
 in_params:
@@ -146,9 +145,9 @@ eq:
 
 pattern:
 | IDENT
-    { mk_patt (PP_ident $1) }
+    { mk_patt (PP_ident $1) $startpos $endpos }
 | LPAREN IDENT COMMA ident_comma_list RPAREN
-    { mk_patt (PP_tuple($2::$4)) }
+    { mk_patt (PP_tuple($2::$4)) $startpos $endpos }
 ;
 
 expr:
@@ -157,64 +156,64 @@ expr:
 | const
     { $1 }
 | IDENT
-    { mk_expr (PE_ident $1)}
+    { mk_expr (PE_ident $1) $startpos $endpos }
 | IDENT LPAREN expr_comma_list_empty RPAREN
-    { mk_expr (PE_app ($1, $3))}
+    { mk_expr (PE_app ($1, $3)) $startpos $endpos }
 | IF expr THEN expr ELSE expr
-    { mk_expr (PE_op (Op_if, [$2; $4; $6])) }
+    { mk_expr (PE_op (Op_if, [$2; $4; $6])) $startpos $endpos }
 | expr PLUS expr
-    { mk_expr (PE_op (Op_add, [$1; $3])) }
+    { mk_expr (PE_op (Op_add, [$1; $3])) $startpos $endpos }
 | expr MINUS expr
-    { mk_expr (PE_op (Op_sub, [$1; $3])) }
+    { mk_expr (PE_op (Op_sub, [$1; $3])) $startpos $endpos }
 | expr STAR expr
-    { mk_expr (PE_op (Op_mul, [$1; $3])) }
+    { mk_expr (PE_op (Op_mul, [$1; $3])) $startpos $endpos }
 | expr SLASH expr
-    { mk_expr (PE_op (Op_div, [$1; $3])) }
+    { mk_expr (PE_op (Op_div, [$1; $3])) $startpos $endpos }
 | expr DIV expr
-    { mk_expr (PE_op (Op_div, [$1; $3])) }
+    { mk_expr (PE_op (Op_div, [$1; $3])) $startpos $endpos }
 | expr MOD expr
-    { mk_expr (PE_op (Op_mod, [$1; $3])) }
+    { mk_expr (PE_op (Op_mod, [$1; $3])) $startpos $endpos }
 | expr COMP expr
-    { mk_expr (PE_op ($2, [$1; $3])) }
+    { mk_expr (PE_op ($2, [$1; $3])) $startpos $endpos }
 | expr EQUAL expr
-    { mk_expr (PE_op (Op_eq, [$1; $3])) }
+    { mk_expr (PE_op (Op_eq, [$1; $3])) $startpos $endpos }
 | expr NEQ expr
-    { mk_expr (PE_op (Op_neq, [$1; $3])) }
+    { mk_expr (PE_op (Op_neq, [$1; $3])) $startpos $endpos }
 | expr AND expr
-    { mk_expr (PE_op (Op_and, [$1; $3])) }
+    { mk_expr (PE_op (Op_and, [$1; $3])) $startpos $endpos }
 | expr OR expr
-    { mk_expr (PE_op (Op_or, [$1; $3])) }
+    { mk_expr (PE_op (Op_or, [$1; $3])) $startpos $endpos }
 | expr XOR expr
-    { mk_expr (PE_op (Op_xor, [$1; $3])) }
+    { mk_expr (PE_op (Op_xor, [$1; $3])) $startpos $endpos }
 | expr IMPL expr
-    { mk_expr (PE_op (Op_impl, [$1; $3])) }
+    { mk_expr (PE_op (Op_impl, [$1; $3])) $startpos $endpos }
 | expr ARROW expr
-    { mk_expr (PE_arrow ($1, $3)) }
+    { mk_expr (PE_arrow ($1, $3)) $startpos $endpos }
 | MINUS expr
-    { mk_expr (PE_op (Op_sub, [$2])) }
+    { mk_expr (PE_op (Op_sub, [$2])) $startpos $endpos }
 | NOT expr
-    { mk_expr (PE_op (Op_not, [$2])) }
+    { mk_expr (PE_op (Op_not, [$2])) $startpos $endpos }
 | PRE expr
-    { mk_expr (PE_pre ($2)) }
+    { mk_expr (PE_pre ($2)) $startpos $endpos }
 | LPAREN expr COMMA expr_comma_list RPAREN
-    { mk_expr (PE_tuple ($2::$4)) }
+    { mk_expr (PE_tuple ($2::$4)) $startpos $endpos }
 | expr WHEN IDENT
-    { mk_expr (PE_when ($1, $3, false)) }
+    { mk_expr (PE_when ($1, $3, false)) $startpos $endpos }
 | expr WHEN NOT IDENT
-    { mk_expr (PE_when ($1, $4, true)) }
+    { mk_expr (PE_when ($1, $4, true)) $startpos $endpos }
 | CURRENT IDENT
-    { mk_expr (PE_current $2) }
+    { mk_expr (PE_current $2) $startpos $endpos }
 | MERGE IDENT expr expr
-    { mk_expr (PE_merge ($2, $3, $4)) }
+    { mk_expr (PE_merge ($2, $3, $4)) $startpos $endpos }
 ;
 
 const:
 | CONST_BOOL
-    { mk_expr (PE_const (Cbool $1)) }
+    { mk_expr (PE_const (Cbool $1)) $startpos $endpos }
 | CONST_INT
-    { mk_expr (PE_const (Cint $1)) }
+    { mk_expr (PE_const (Cint $1)) $startpos $endpos }
 | CONST_REAL
-    { mk_expr (PE_const (Creal $1)) }
+    { mk_expr (PE_const (Creal $1)) $startpos $endpos }
 ;
 
 ident_comma_list:

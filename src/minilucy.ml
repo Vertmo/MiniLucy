@@ -1,13 +1,14 @@
 open Lexing
 
-let usage = "usage: " ^ Sys.argv.(0) ^ " [-parse] <input_file>"
+let usage = "usage: " ^ Sys.argv.(0) ^ " [-parse] [-check] <input_file>"
 
-type step = Parse
+type step = Parse | Check
 
-let step = ref Parse
+let step = ref Check
 
 let speclist = [
   ("-parse", Arg.Unit (fun () -> step := Parse), ": only parse the program");
+  ("-check", Arg.Unit (fun () -> step := Check), ": parse and check the program");
 ]
 
 let print_position outx lexbuf =
@@ -30,8 +31,9 @@ let main filename step =
   let prog = lex_and_parse ic in
   if (step = Parse) then (
     print_endline (Parse_ast.string_of_file prog)
-  ) else (
-    (* TODO *)
+  ) else if (step = Check) then (
+    Typechecker.check_file prog;
+    print_endline "Type checking OK"
   )
 
 let _ = Arg.parse speclist (fun x -> main x !step) usage

@@ -36,11 +36,6 @@
       ];
     fun s ->
       try Hashtbl.find h s with Not_found -> IDENT s
-
-  let newline lexbuf =
-    let pos = lexbuf.lex_curr_p in
-    lexbuf.lex_curr_p <-
-      { pos with pos_lnum = pos.pos_lnum + 1; pos_bol = pos.pos_cnum }
 }
 
 let alpha = ['a'-'z' 'A'-'Z']
@@ -53,11 +48,11 @@ let ident = alpha (alpha | '_' | digit)*
 
 rule token = parse
   | '\n'
-      { newline lexbuf; token lexbuf }
+      { new_line lexbuf; token lexbuf }
   | [' ' '\t' '\r']+
       { token lexbuf }
   | "--" [^ '\n']* ['\n']
-      { newline lexbuf; token lexbuf }
+      { new_line lexbuf; token lexbuf }
   | "/*"
       { comment lexbuf; token lexbuf }
   | ident
@@ -107,6 +102,6 @@ rule token = parse
 
 and comment = parse
   | "*/" { () }
-  | '\n' { newline lexbuf; comment lexbuf }
+  | '\n' { new_line lexbuf; comment lexbuf }
   | _    { comment lexbuf }
   | eof  { raise (Lexical_error "unterminated comment") }

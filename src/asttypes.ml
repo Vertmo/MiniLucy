@@ -4,7 +4,8 @@ type ident = string
 
 let string_of_loc ((ls, le):location) =
   Printf.sprintf "[(%d,%d);(%d,%d)]"
-    ls.pos_lnum ls.pos_cnum le.pos_lnum le.pos_cnum
+    ls.pos_lnum (ls.pos_cnum - ls.pos_bol)
+    le.pos_lnum (le.pos_cnum - le.pos_bol)
 
 type base_ty =
   | Tbool
@@ -48,7 +49,7 @@ let string_of_op = function
   | Op_eq -> "=" | Op_neq -> "<>"
   | Op_lt -> "<" | Op_le -> "<="
   | Op_gt -> ">" | Op_ge -> ">="
-  | Op_add | Op_sub
+  | Op_add -> "+" | Op_sub -> "-"
   | Op_mul -> "*" | Op_div -> "/" | Op_mod -> "mod"
   | Op_not -> "not" | Op_and -> "and"
   | Op_or -> "or" | Op_xor -> "xor"

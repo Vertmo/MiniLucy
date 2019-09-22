@@ -1,0 +1,54 @@
+node test_const() returns (y : int);
+let
+  y = 1;
+tel;
+  
+node test_id(x : int) returns (y : int);
+let
+  y = x;
+tel;
+  
+node test_op(x : int) returns (y : bool);
+let
+  y = x < (x+(x-2));
+tel;
+  
+node test_node(x : bool; y : int) returns (z : bool);
+let
+  z = test_op(y);
+tel;
+  
+node test_node2(x : int; y : bool) returns (z : int);
+let
+  z = if test_node(y,x) then 1 else 0;
+tel;
+  
+node test_arrow() returns (z : int);
+let
+  z = 1 -> 2;
+tel;
+  
+node test_pre() returns (z : int);
+let
+  z = 0 -> (1 + pre z);
+tel;
+  
+node test_tuple() returns (i:int; b:bool; r:real);
+let
+  (r, b, i) = (1.0, true, 42);
+tel;
+  
+node test_when(b : bool) returns (d:int when b);
+let
+  d = 1 when b;
+tel;
+  
+node test_current(b : bool; c : int when b) returns (d:int);
+let
+  d = current c;
+tel;
+  
+node test_merge(b : bool; c : int) returns (e:int);
+let
+  e = merge b (c when b) (c when not b);
+tel;

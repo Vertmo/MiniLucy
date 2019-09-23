@@ -38,6 +38,7 @@ let main filename step =
   Typechecker.check_file file;
   let cfile = Clockchecker.clock_file file in
   if !asserts then assert (Clockchecker.equiv_parse_clock_file file cfile);
+  let dep_graph = Causalitychecker.check_file cfile in
   if (step = Check) then (
     print_endline (CMinils.string_of_file cfile);
     exit 0

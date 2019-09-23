@@ -1,4 +1,4 @@
-(* Abstract syntax tree annotated with clocks *)
+(** Abstract syntax tree annotated with clocks *)
 
 open Asttypes
 

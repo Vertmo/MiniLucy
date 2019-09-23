@@ -1,0 +1,16 @@
+node test_op() returns (z : int);
+let
+  z = 1 + 2; -- z + z fails;
+tel;
+  
+node test_fby() returns (z : int);
+let
+  z = 1 fby (1 + z);
+tel;
+  
+node test_multiple() returns (x : int; y : int; z : int);
+let
+  x = 1 fby z; -- x = z fails
+  y = x;
+  z = y;
+tel;

@@ -1,3 +1,5 @@
+(** Clock checking *)
+
 open Asttypes
 open Minils
 open CMinils
@@ -152,7 +154,7 @@ let clock_file (f : p_file) : c_file =
                 (n.pn_name, (clock_node env n))::env) [] f))
   with
   | ClockError (msg, loc) ->
-    Printf.printf "Type checking error : %s at %s\n"
+    Printf.printf "Clock checking error : %s at %s\n"
       msg (string_of_loc loc); exit 1
 
 (*                           Check equivalence between ASTs                    *)

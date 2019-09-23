@@ -1,4 +1,4 @@
-(* Abstract syntax tree *)
+(** Abstract syntax tree *)
 
 open Asttypes
 

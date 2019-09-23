@@ -1,11 +1,11 @@
+(** Basic typechecking, doesn't take clocks or causality into account *)
+
 open Asttypes
 open Minils
 
 exception TypeError of (string * location)
 exception MissingEquationError of (ident * location)
 exception UnexpectedEquationError of (ident * location)
-
-(** Basic typechecking, doesn't take clocks or causality into account *)
 
 type node_ty = ((ident * ty) list) * ((ident * ty) list)
 
@@ -32,11 +32,13 @@ let get_pattern_type (streams : (ident * ty) list) pat =
      with _ -> raise (UnexpectedEquationError (id, pat.ppatt_loc))),
     List.remove_assoc id streams
   | PP_tuple ids ->
-    (Ttuple (List.map (fun id ->
-         try checker_ty_of_ty (List.assoc id streams)
-         with _ -> raise (UnexpectedEquationError (id, pat.ppatt_loc))
-       ) ids),
-     (List.fold_left (fun s id -> List.remove_assoc id s) streams ids))
+    let (tys, streams) = List.fold_left (fun (ty, streams) id ->
+        try
+          (checker_ty_of_ty (List.assoc id streams))::ty,
+          List.remove_assoc id streams
+        with _ -> raise (UnexpectedEquationError (id, pat.ppatt_loc)))
+       ([], streams) ids in
+    Ttuple (List.rev tys), streams
 
 (** Check that [const] has the [expected] type *)
 let type_const = function

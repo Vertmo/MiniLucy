@@ -1,6 +1,6 @@
-node test_when(b : bool) returns (z : int when b);
+node test_when(b : bool; c : bool when b) returns (z : int when c);
 let
-  z = 1 when b;
+  z = 1 when c;
 tel;
   
 node test_when_not(b : bool) returns (z : int when not b);
@@ -34,7 +34,12 @@ let
   y = merge b t2 t1;
 tel;
   
-node test_app(b : bool) returns (z : int when b);
+node test_app(b1 : bool; c1 : bool when b1) returns (z : int when c1);
 let
-  z = test_when(b);
+  z = test_when(b1, c1);
+tel;
+  
+node test_app2(b1 : bool; b2 : bool; c1 : bool when b1) returns (z : int when c1);
+let
+  z = test_when(b1, c1) every b2;
 tel;

@@ -9,15 +9,33 @@ exception ClockError of (string * location)
 let get_pattern_clock (streams : (ident * clock) list) (pat : p_patt) =
   match pat.ppatt_desc with
   | PP_ident id ->
-    (try (List.assoc id streams)
-     with _ -> failwith "Should not happen (typing)"),
+    (List.assoc id streams),
     { cpatt_desc = CP_ident id; cpatt_loc = pat.ppatt_loc }
   | PP_tuple ids ->
-    (Ctuple (List.map (fun id ->
-         try (List.assoc id streams)
-         with _ -> failwith "Should not happen (typing)"
-       ) ids)),
+    (Ctuple (List.map (fun id -> (List.assoc id streams)) ids)),
      { cpatt_desc = CP_tuple ids; cpatt_loc = pat.ppatt_loc }
+
+(** Composes clocks [cl1] and [cl2] to give (returns [cl1] o [cl2]) *)
+let rec compose_clock cl1 cl2 =
+  match cl1 with
+  | Base -> cl2
+  | Cl (cl, x') -> Cl (compose_clock cl cl2, x')
+  | NotCl (cl, x') -> NotCl (compose_clock cl cl2, x')
+  | Ctuple cls -> Ctuple (List.map (fun cl -> compose_clock cl cl2) cls)
+
+(** Substitute a (CE_ident) to another identifier in a clock expression *)
+let subst_clock (x : ident) (y : c_expr) (cl : clock) =
+  let rec subst_aux (x : ident) (y : ident) = function
+    | Base -> Base
+    | Cl (cl, x') ->
+      Cl (subst_aux x y cl, if x = x' then y else x')
+    | NotCl (cl, x') ->
+      NotCl (subst_aux x y cl, if x = x' then y else x')
+    | Ctuple cls ->
+      Ctuple (List.map (subst_aux x y) cls) in
+  match y.cexpr_desc with
+  | CE_ident y -> subst_aux x y cl
+  | _ -> cl
 
 (** Check and get the clocked version of expression [e] *)
 let rec clock_expr nodes streams (e : p_expr) =
@@ -26,8 +44,7 @@ let rec clock_expr nodes streams (e : p_expr) =
   | PE_const c ->
     { cexpr_desc = CE_const c; cexpr_clock = Base; cexpr_loc = loc }
   | PE_ident id ->
-    let cl = (try (List.assoc id streams)
-              with _ -> failwith "Should no happen (typing)") in
+    let cl = (List.assoc id streams) in
     { cexpr_desc = CE_ident id; cexpr_clock = cl; cexpr_loc = loc }
   | PE_op (op, es) ->
     let ces = List.map (clock_expr nodes streams) es in
@@ -67,10 +84,41 @@ let rec clock_expr nodes streams (e : p_expr) =
                   "Clocks of merge do not match expected id %s, found %s and %s"
                   clid (string_of_clock cl1) (string_of_clock cl2), loc))) in
     { cexpr_desc = CE_merge (clid, ce1, ce2); cexpr_clock = cl; cexpr_loc = loc }
-  | PE_app (id, es, ever) ->
+  | PE_app (fid, es, ever) ->
     let ces = List.map (clock_expr nodes streams) es
     and cever = clock_expr nodes streams ever in
-    failwith "Not yet implemented" (* Unification-type deal ? *)
+    let node = List.assoc fid nodes in
+
+    (* Check the association between formal and actual parameters are correct,
+       and get an association table for clocks passed as parameters *)
+    let assocs =
+      List.fold_left2 (fun assocs (id, ty) actual ->
+          let clform = List.fold_left (fun cl (x, y) -> subst_clock x y cl)
+              (clock_of_ty ty) assocs in
+          let clform = compose_clock clform cever.cexpr_clock in
+          if(clform <> actual.cexpr_clock)
+          then raise
+              (ClockError
+                 (Printf.sprintf
+                    "Wrong clock for argument %s of %s : expected %s, found %s"
+                    id fid (string_of_clock clform)
+                    (string_of_clock actual.cexpr_clock), loc));
+          (id, actual)::assocs)
+        [] node.cn_input ces in
+
+    (* Compute the output clocks by substitution and composition *)
+    let outcls = List.map (fun (_, ty) ->
+        let cl = List.fold_left (fun cl (x, y) -> subst_clock x y cl)
+            (clock_of_ty ty) assocs in
+        compose_clock cl cever.cexpr_clock)
+        node.cn_output in
+    let outcl =
+      (match outcls with
+       | [] -> failwith "Should not happen (syntax)"
+       | [cl] -> cl
+       | _ -> Ctuple outcls) in
+    { cexpr_desc = CE_app (fid, ces, cever);
+      cexpr_clock = outcl; cexpr_loc = loc }
 
 (** Check the clocks for the equation [eq] *)
 let clock_equation nodes streams (eq : p_equation) =

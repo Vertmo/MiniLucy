@@ -11,8 +11,9 @@ and p_expr_desc =
   | PE_ident of ident
   | PE_op of op * p_expr list
   | PE_app of ident * p_expr list * p_expr
-  | PE_arrow of p_expr * p_expr
-  | PE_pre of p_expr
+  | PE_fby of const * p_expr
+  (* | PE_arrow of p_expr * p_expr
+   * | PE_pre of p_expr *)
   | PE_tuple of p_expr list
   | PE_when of p_expr * ident * bool
   (* the last parameters indicates if the clock is negated *)
@@ -30,9 +31,11 @@ and string_of_expr_desc = function
   | PE_app (id, es, ever) -> Printf.sprintf "(%s [%s] every %s)" id
                          (String.concat "; " (List.map string_of_expr es))
                          (string_of_expr ever)
-  | PE_arrow (e1, e2) -> Printf.sprintf "(%s -> %s)"
-                           (string_of_expr e1) (string_of_expr e2)
-  | PE_pre e -> Printf.sprintf "(pre %s)" (string_of_expr e)
+  | PE_fby (c, e) -> Printf.sprintf "(%s fby %s)"
+                       (string_of_const c) (string_of_expr e)
+  (* | PE_arrow (e1, e2) -> Printf.sprintf "(%s -> %s)"
+   *                          (string_of_expr e1) (string_of_expr e2)
+   * | PE_pre e -> Printf.sprintf "(pre %s)" (string_of_expr e) *)
   | PE_tuple es -> Printf.sprintf "(%s)"
                      (String.concat ", " (List.map string_of_expr es))
   | PE_when (e, id, neg) ->

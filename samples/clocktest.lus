@@ -19,3 +19,22 @@ node test_tuple(b : bool; c : bool) returns (x : int when b; y : int when c);
 let
   (x, y) = (1 when b, 2 when c);
 tel;
+  
+node test_fby(b : bool) returns (x : int when b);
+let
+  x = 1 fby x;
+tel;
+  
+node test_merge(b : bool) returns (x : int; y : int);
+var t1 : int when b; t2 : int when not b;
+let
+  t1 = 1 when b;
+  t2 = 2 when not b;
+  x = merge b t1 t2;
+  y = merge b t2 t1;
+tel;
+  
+node test_app(b : bool) returns (z : int when b);
+let
+  z = test_when(b);
+tel;

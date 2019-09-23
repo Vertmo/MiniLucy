@@ -115,17 +115,16 @@ let rec type_expr nodes streams (e : p_expr) =
      | [] -> failwith "Should not happen (syntax)"
      | [(_, ty)] -> checker_ty_of_ty ty
      | _ -> Ttuple (List.map (fun (_, t) -> checker_ty_of_ty t) node_out))
-  | PE_arrow (e1, e2) ->
-    let t1 = type_expr nodes streams e1 and t2 = type_expr nodes streams e2 in
+  | PE_fby (c, e) ->
+    let t1 = type_const c and t2 = type_expr nodes streams e in
     if (t1 <> t2)
     then raise
         (TypeError
            (Printf.sprintf
-              "Both sides of -> should have the same type, found %s and %s"
+              "Both sides of fby should have the same type, found %s and %s"
               (string_of_checker_ty t1) (string_of_checker_ty t2),
             e.pexpr_loc));
     t1
-  | PE_pre e -> type_expr nodes streams e
   | PE_tuple es -> Ttuple (List.map (type_expr nodes streams) es)
   | PE_when (ew, cl, _) ->
     let clt = (try checker_ty_of_ty (List.assoc cl streams)
@@ -173,6 +172,23 @@ let check_equation nodes streams out_streams (eq : p_equation) =
 let check_node (nodes: (ident * node_ty) list) (n : p_node) =
   let out_streams = (n.pn_local@n.pn_output) in
   let all_streams = (n.pn_input@out_streams) in
+
+  (* Check that there are no duplicate stream names *)
+  let sorted_streams = List.sort
+      (fun (id1, _) (id2, _) -> String.compare id1 id2)
+      all_streams in
+
+  let rec find_consecutives = function
+    | [] | [_] -> None
+    | (hd1, _)::(hd2, s2)::tl ->
+      if hd1 = hd2 then Some hd1
+      else (find_consecutives ((hd2, s2)::tl)) in
+  (match (find_consecutives sorted_streams)
+   with None -> ()
+      | Some id -> raise (TypeError
+                            (Printf.sprintf
+                               "Stream name %s was defined twice in node %s"
+                               id n.pn_name, n.pn_loc)));
 
   (* Check that all declared types are using bool clocks *)
   ignore (List.fold_left (fun streams (id, ty) -> match ty with

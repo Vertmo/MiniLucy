@@ -32,8 +32,7 @@ and c_expr_desc =
   | CE_ident of ident
   | CE_op of op * c_expr list
   | CE_app of ident * c_expr list * c_expr
-  | CE_arrow of c_expr * c_expr
-  | CE_pre of c_expr
+  | CE_fby of const * c_expr
   | CE_tuple of c_expr list
   | CE_when of c_expr * ident * bool
   (* the last parameters indicates if the clock is negated *)
@@ -53,9 +52,8 @@ and string_of_expr_desc = function
   | CE_app (id, es, ever) -> Printf.sprintf "(%s [%s] every %s)" id
                          (String.concat "; " (List.map string_of_expr es))
                          (string_of_expr ever)
-  | CE_arrow (e1, e2) -> Printf.sprintf "(%s -> %s)"
-                           (string_of_expr e1) (string_of_expr e2)
-  | CE_pre e -> Printf.sprintf "(pre %s)" (string_of_expr e)
+  | CE_fby (c, e) -> Printf.sprintf "(%s fby %s)"
+                       (string_of_const c) (string_of_expr e)
   | CE_tuple es -> Printf.sprintf "(%s)"
                      (String.concat ", " (List.map string_of_expr es))
   | CE_when (e, id, neg) ->

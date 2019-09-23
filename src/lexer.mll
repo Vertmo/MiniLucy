@@ -14,6 +14,7 @@
   "div", DIV;
 	"else", ELSE;
   "every", EVERY;
+  "fby", FBY;
 	"false", CONST_BOOL(false);
 	"if", IF;
 	"int", INT;
@@ -23,7 +24,7 @@
 	"node", NODE;
 	"not", NOT;
 	"or", OR;
-  "pre", PRE;
+  (* "pre", PRE; *)
 	"real", REAL;
 	"returns", RETURNS;
 	"tel", TEL;
@@ -78,10 +79,8 @@ rule token = parse
       { COMP Op_le }
   | "<>"
       { NEQ }
-  | "=>"
-      { IMPL }
-  | "->"
-      { ARROW }
+  (* | "->"
+   *     { ARROW } *)
   | "("
       { LPAREN }
   | ")"

@@ -1,14 +1,16 @@
 open Lexing
 
-let usage = "usage: " ^ Sys.argv.(0) ^ " [-parse] [-check] <input_file>"
+let usage = "usage: " ^ Sys.argv.(0) ^ " [-parse] [-check] [-asserts] <input_file>"
 
 type step = Parse | Check
+let asserts = ref false
 
 let step = ref Check
 
 let speclist = [
   ("-parse", Arg.Unit (fun () -> step := Parse), ": only parse the program");
   ("-check", Arg.Unit (fun () -> step := Check), ": parse and check the program");
+  ("-asserts", Arg.Unit (fun () -> asserts := true), ": turns on assertions")
 ]
 
 let print_position outx lexbuf =
@@ -35,6 +37,7 @@ let main filename step =
   );
   Typechecker.check_file file;
   let cfile = Clockchecker.clock_file file in
+  if !asserts then assert (Clockchecker.equiv_parse_clock_file file cfile);
   if (step = Check) then (
     print_endline (CMinils.string_of_file cfile);
     exit 0

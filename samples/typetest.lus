@@ -23,14 +23,9 @@ let
   z = if test_node(y,x) then 1 else 0;
 tel;
   
-node test_arrow() returns (z : int);
+node test_fby() returns (z : int);
 let
-  z = 1 -> 2;
-tel;
-  
-node test_pre() returns (z : int);
-let
-  z = 0 -> (1 + pre z);
+  z = 1 fby 2;
 tel;
   
 node test_tuple() returns (i:int; b:bool; r:real);
@@ -50,5 +45,5 @@ tel;
   
 node test_every(b : bool) returns (e : int);
 let
-  e = test_pre() every b;
+  e = test_fby() every b;
 tel;

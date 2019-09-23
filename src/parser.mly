@@ -9,7 +9,7 @@
 %}
 
 %token AND
-%token ARROW
+(* %token ARROW *)
 %token BOOL
 %token COLON
 %token COMMA
@@ -22,11 +22,11 @@
 %token EOF
 %token EQUAL
 %token EVERY
+%token FBY
 %token NEQ
 %token REAL
 %token <string> IDENT
 %token IF
-%token IMPL
 %token INT
 %token LET
 %token LPAREN
@@ -37,7 +37,7 @@
 %token NOT
 %token OR
 %token PLUS
-%token PRE
+(* %token PRE *)
 %token RETURNS
 %token RPAREN
 %token SEMICOL
@@ -51,15 +51,14 @@
 
 
 %nonassoc ELSE
-%right ARROW
-%left IMPL
+(* %right ARROW *)
 %left OR
 %left XOR
 %left AND
 %left COMP EQUAL NEQ                          /* < <= > >= <> = <> */
 %left PLUS MINUS                              /* + -  */
 %left STAR SLASH DIV MOD                      /* * /  mod */
-%nonassoc NOT PRE                             /* not pre */
+%nonassoc NOT (* PRE *)                             /* not pre */
 
 /* Point d'entrée */
 
@@ -154,7 +153,7 @@ expr:
 | LPAREN expr RPAREN
     { $2 }
 | const
-    { $1 }
+    { mk_expr (PE_const $1) $startpos $endpos }
 | IDENT
     { mk_expr (PE_ident $1) $startpos $endpos }
 | IDENT LPAREN expr_comma_list_empty RPAREN
@@ -189,14 +188,16 @@ expr:
     { mk_expr (PE_op (Op_or, [$1; $3])) $startpos $endpos }
 | expr XOR expr
     { mk_expr (PE_op (Op_xor, [$1; $3])) $startpos $endpos }
-| expr ARROW expr
-    { mk_expr (PE_arrow ($1, $3)) $startpos $endpos }
+(* | expr ARROW expr
+ *     { mk_expr (PE_arrow ($1, $3)) $startpos $endpos } *)
+| const FBY expr
+    { mk_expr (PE_fby ($1, $3)) $startpos $endpos }
 | MINUS expr
     { mk_expr (PE_op (Op_sub, [$2])) $startpos $endpos }
 | NOT expr
     { mk_expr (PE_op (Op_not, [$2])) $startpos $endpos }
-| PRE expr
-    { mk_expr (PE_pre ($2)) $startpos $endpos }
+(* | PRE expr
+ *     { mk_expr (PE_pre ($2)) $startpos $endpos } *)
 | LPAREN expr COMMA expr_comma_list RPAREN
     { mk_expr (PE_tuple ($2::$4)) $startpos $endpos }
 | expr WHEN IDENT
@@ -209,11 +210,11 @@ expr:
 
 const:
 | CONST_BOOL
-    { mk_expr (PE_const (Cbool $1)) $startpos $endpos }
+    { Cbool $1 }
 | CONST_INT
-    { mk_expr (PE_const (Cint $1)) $startpos $endpos }
+    { Cint $1 }
 | CONST_REAL
-    { mk_expr (PE_const (Creal $1)) $startpos $endpos }
+    { Creal $1 }
 ;
 
 ident_comma_list:

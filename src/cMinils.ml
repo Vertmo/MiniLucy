@@ -37,7 +37,6 @@ and c_expr_desc =
   | CE_tuple of c_expr list
   | CE_when of c_expr * ident * bool
   (* the last parameters indicates if the clock is negated *)
-  | CE_current of ident
   | CE_merge of ident * c_expr * c_expr
 
 let rec string_of_expr e =
@@ -62,7 +61,6 @@ and string_of_expr_desc = function
   | CE_when (e, id, neg) ->
     Printf.sprintf (if neg then "%s when not %s" else "%s when %s")
       (string_of_expr e) id
-  | CE_current id -> Printf.sprintf "current %s" id
   | CE_merge (id, e1, e2) -> Printf.sprintf "merge %s (%s) (%s)"
                                id (string_of_expr e1) (string_of_expr e2)
 

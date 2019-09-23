@@ -1,7 +1,7 @@
 %{
 
   open Asttypes
-  open Parse_ast
+  open Minils
 
   let mk_expr e startp endp = { pexpr_desc = e; pexpr_loc = (startp, endp) }
   let mk_patt p startp endp = { ppatt_desc = p; ppatt_loc = (startp, endp) }
@@ -13,7 +13,6 @@
 %token BOOL
 %token COLON
 %token COMMA
-%token CURRENT
 %token <Asttypes.op> COMP
 %token <bool> CONST_BOOL
 %token <int> CONST_INT
@@ -65,7 +64,7 @@
 /* Point d'entrée */
 
 %start file
-%type <Parse_ast.p_file> file
+%type <Minils.p_file> file
 
 %%
 
@@ -190,8 +189,6 @@ expr:
     { mk_expr (PE_op (Op_or, [$1; $3])) $startpos $endpos }
 | expr XOR expr
     { mk_expr (PE_op (Op_xor, [$1; $3])) $startpos $endpos }
-| expr IMPL expr
-    { mk_expr (PE_op (Op_impl, [$1; $3])) $startpos $endpos }
 | expr ARROW expr
     { mk_expr (PE_arrow ($1, $3)) $startpos $endpos }
 | MINUS expr
@@ -206,8 +203,6 @@ expr:
     { mk_expr (PE_when ($1, $3, false)) $startpos $endpos }
 | expr WHEN NOT IDENT
     { mk_expr (PE_when ($1, $4, true)) $startpos $endpos }
-| CURRENT IDENT
-    { mk_expr (PE_current $2) $startpos $endpos }
 | MERGE IDENT expr expr
     { mk_expr (PE_merge ($2, $3, $4)) $startpos $endpos }
 ;

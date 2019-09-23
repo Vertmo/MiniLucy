@@ -1,6 +1,6 @@
 open Asttypes
-open Parse_ast
-open Clocked_ast
+open Minils
+open CMinils
 
 exception ClockError of (string * location)
 
@@ -57,7 +57,7 @@ let clock_equation nodes streams (eq : p_equation) =
   then raise (ClockError
                 (Printf.sprintf
                    "Wrong clock for equation %s; expected %s, found %s"
-                   (Parse_ast.string_of_equation eq)
+                   (Minils.string_of_equation eq)
                    (string_of_clock expected)
                    (string_of_clock ce.cexpr_clock), eq.peq_expr.pexpr_loc));
   { ceq_patt = pat ; ceq_expr = ce }

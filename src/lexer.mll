@@ -2,7 +2,6 @@
   open Lexing
   open Parser
   open Asttypes
-  open Parse_ast
 
   exception Lexical_error of string
 
@@ -12,7 +11,6 @@
       [
 	"and", AND;
 	"bool", BOOL;
-  "current", CURRENT;
   "div", DIV;
 	"else", ELSE;
   "every", EVERY;

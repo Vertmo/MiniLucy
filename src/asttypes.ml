@@ -42,7 +42,7 @@ type op =
   | Op_eq | Op_neq | Op_lt | Op_le | Op_gt | Op_ge
   | Op_add | Op_sub | Op_mul | Op_div | Op_mod
   | Op_not
-  | Op_and | Op_or | Op_xor | Op_impl
+  | Op_and | Op_or | Op_xor
   | Op_if
 
 let string_of_op = function
@@ -53,7 +53,6 @@ let string_of_op = function
   | Op_mul -> "*" | Op_div -> "/" | Op_mod -> "mod"
   | Op_not -> "not" | Op_and -> "and"
   | Op_or -> "or" | Op_xor -> "xor"
-  | Op_impl -> "=>"
   | Op_if -> "if"
 
 let string_of_ident_type_list l =

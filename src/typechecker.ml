@@ -1,5 +1,5 @@
 open Asttypes
-open Parse_ast
+open Minils
 
 exception TypeError of (string * location)
 exception MissingEquationError of (ident * location)
@@ -137,11 +137,6 @@ let rec type_expr nodes streams (e : p_expr) =
                   (Printf.sprintf "Clock should be bool stream, found %s"
                      (string_of_checker_ty clt), e.pexpr_loc));
     type_expr nodes streams ew
-  | PE_current id ->
-    (try checker_ty_of_ty (List.assoc id streams)
-     with _ -> raise (TypeError
-                        (Printf.sprintf "Stream %s not found in node"
-                           id, e.pexpr_loc)))
   | PE_merge (cl, e1, e2) ->
     let clt = (try checker_ty_of_ty (List.assoc cl streams)
                with _ -> raise (TypeError

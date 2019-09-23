@@ -43,11 +43,6 @@ let
   d = 1 when b;
 tel;
   
-node test_current(b : bool; c : int when b) returns (d:int);
-let
-  d = current c;
-tel;
-  
 node test_merge(b : bool; c : int) returns (e:int);
 let
   e = merge b (c when b) (c when not b);

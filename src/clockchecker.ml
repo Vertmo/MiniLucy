@@ -46,12 +46,12 @@ let rec clock_expr nodes streams (e : p_expr) =
     let ces = List.map (clock_expr nodes streams) es in
     let cls = List.map (fun ce -> ce.cexpr_clock) ces in
     { cexpr_desc = CE_tuple ces; cexpr_clock = Ctuple cls; cexpr_loc = loc}
-  | PE_when (ew, clid, neg) ->
+  | PE_when (ew, clid, b) ->
     let cew = clock_expr nodes streams ew in
-    let cl = if neg
-      then NotCl (cew.cexpr_clock, clid)
-      else Cl (cew.cexpr_clock, clid) in
-    { cexpr_desc = CE_when (cew, clid, neg); cexpr_clock = cl; cexpr_loc = loc }
+    let cl = if b
+      then Cl (cew.cexpr_clock, clid)
+      else NotCl (cew.cexpr_clock, clid) in
+    { cexpr_desc = CE_when (cew, clid, b); cexpr_clock = cl; cexpr_loc = loc }
   | PE_merge (clid, e1, e2) ->
     let ce1 = clock_expr nodes streams e1
     and ce2 = clock_expr nodes streams e2 in

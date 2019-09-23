@@ -201,9 +201,9 @@ expr:
 | LPAREN expr COMMA expr_comma_list RPAREN
     { mk_expr (PE_tuple ($2::$4)) $startpos $endpos }
 | expr WHEN IDENT
-    { mk_expr (PE_when ($1, $3, false)) $startpos $endpos }
+    { mk_expr (PE_when ($1, $3, true)) $startpos $endpos }
 | expr WHEN NOT IDENT
-    { mk_expr (PE_when ($1, $4, true)) $startpos $endpos }
+    { mk_expr (PE_when ($1, $4, false)) $startpos $endpos }
 | MERGE IDENT expr expr
     { mk_expr (PE_merge ($2, $3, $4)) $startpos $endpos }
 ;
@@ -242,8 +242,8 @@ btyp:
 
 typ:
   | btyp { Base $1 }
-  | btyp WHEN IDENT { Clocked ($1, $3, false) }
-  | btyp WHEN NOT IDENT { Clocked ($1, $4, true) }
+  | btyp WHEN IDENT { Clocked ($1, $3, true) }
+  | btyp WHEN NOT IDENT { Clocked ($1, $4, false) }
 ;
 
 semi_opt:

@@ -16,7 +16,6 @@ and p_expr_desc =
    * | PE_pre of p_expr *)
   | PE_tuple of p_expr list
   | PE_when of p_expr * ident * bool
-  (* the last parameters indicates if the clock is negated *)
   | PE_merge of ident * p_expr * p_expr
 
 let rec string_of_expr e =
@@ -38,8 +37,8 @@ and string_of_expr_desc = function
    * | PE_pre e -> Printf.sprintf "(pre %s)" (string_of_expr e) *)
   | PE_tuple es -> Printf.sprintf "(%s)"
                      (String.concat ", " (List.map string_of_expr es))
-  | PE_when (e, id, neg) ->
-    Printf.sprintf (if neg then "%s when not %s" else "%s when %s")
+  | PE_when (e, id, b) ->
+    Printf.sprintf (if b then "%s when %s" else "%s when not %s")
       (string_of_expr e) id
   | PE_merge (id, e1, e2) -> Printf.sprintf "merge %s (%s) (%s)"
                                id (string_of_expr e1) (string_of_expr e2)

@@ -20,12 +20,11 @@ let string_of_base_ty = function
 type ty =
   | Base of base_ty
   | Clocked of base_ty * ident * bool
-  (* The third parameter indicated whether the clock is negated *)
 
 let string_of_ty = function
   | Base bty -> string_of_base_ty bty
-  | Clocked (bty, id, neg) ->
-    Printf.sprintf (if neg then "%s when not %s" else "%s when %s")
+  | Clocked (bty, id, b) ->
+    Printf.sprintf (if b then "%s when %s" else "%s when not %s")
       (string_of_base_ty bty) id
 
 type const =

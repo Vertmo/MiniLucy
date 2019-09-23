@@ -10,8 +10,8 @@ type clock =
 
 let clock_of_ty : ty -> clock = function
   | Base _ -> Base
-  | Clocked (_, cl, neg) ->
-    if neg then NotCl (Base, cl) else Cl (Base, cl)
+  | Clocked (_, cl, b) ->
+    if b then Cl (Base, cl) else NotCl (Base, cl)
 
 let rec string_of_clock = function
   | Base -> "base"
@@ -35,7 +35,6 @@ and c_expr_desc =
   | CE_fby of const * c_expr
   | CE_tuple of c_expr list
   | CE_when of c_expr * ident * bool
-  (* the last parameters indicates if the clock is negated *)
   | CE_merge of ident * c_expr * c_expr
 
 let rec string_of_expr e =
@@ -56,8 +55,8 @@ and string_of_expr_desc = function
                        (string_of_const c) (string_of_expr e)
   | CE_tuple es -> Printf.sprintf "(%s)"
                      (String.concat ", " (List.map string_of_expr es))
-  | CE_when (e, id, neg) ->
-    Printf.sprintf (if neg then "%s when not %s" else "%s when %s")
+  | CE_when (e, id, b) ->
+    Printf.sprintf (if b then "%s when %s" else "%s when not %s")
       (string_of_expr e) id
   | CE_merge (id, e1, e2) -> Printf.sprintf "merge %s (%s) (%s)"
                                id (string_of_expr e1) (string_of_expr e2)

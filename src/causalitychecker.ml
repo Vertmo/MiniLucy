@@ -67,14 +67,13 @@ let check_node (n : c_node) =
       then raise
           (CausalityError
              (Printf.sprintf "%s depends on itself" id,
-              n.cn_name, n.cn_loc))) graph;
-  graph
+              n.cn_name, n.cn_loc))) graph
 
 (** Check the file [f] for causality errors
     Return the dependency graphs *)
 let check_file (f : c_file) =
   try
-    List.map (fun node -> (node.cn_name, check_node node)) f
+    List.iter (fun node -> check_node node) f
   with
   | CausalityError (msg, nodeid, loc) ->
     Printf.printf "Causality error : %s in node %s at %s"

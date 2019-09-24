@@ -1,16 +1,21 @@
 open Lexing
 
-let usage = "usage: " ^ Sys.argv.(0) ^ " [-parse] [-check] [-asserts] <input_file>"
+let usage = "usage: " ^ Sys.argv.(0) ^ " [-parse] [-check] [-norm] [-asserts] <input_file>"
 
-type step = Parse | Check
+type step = Parse | Check | Norm
 let asserts = ref false
 
-let step = ref Check
+let step = ref Norm
 
 let speclist = [
-  ("-parse", Arg.Unit (fun () -> step := Parse), ": only parse the program");
-  ("-check", Arg.Unit (fun () -> step := Check), ": parse and check the program");
-  ("-asserts", Arg.Unit (fun () -> asserts := true), ": turns on assertions")
+  ("-parse", Arg.Unit (fun () -> step := Parse),
+   ": only parse the program");
+  ("-check", Arg.Unit (fun () -> step := Check),
+   ": parse and check the program");
+  ("-norm", Arg.Unit (fun () -> step := Norm),
+   ": parse, check and normalize the program");
+  ("-asserts", Arg.Unit (fun () -> asserts := true),
+   ": turns on assertions")
 ]
 
 let print_position outx lexbuf =
@@ -31,10 +36,14 @@ let lex_and_parse ic =
 let main filename step =
   let ic = open_in filename in
   let file = lex_and_parse ic in
+
+  (* Parse *)
   if (step = Parse) then (
     print_endline (Minils.string_of_file file);
     exit 0
   );
+
+  (* Check *)
   Typechecker.check_file file;
   let cfile = Clockchecker.clock_file file in
   if !asserts then assert (Clockchecker.equiv_parse_clock_file file cfile);
@@ -42,6 +51,13 @@ let main filename step =
   let cfile = Scheduler.schedule_file cfile in
   if (step = Check) then (
     print_endline (CMinils.string_of_file cfile);
+    exit 0
+  );
+
+  (* Normalize *)
+  let nfile = Normalizer.norm_file cfile in
+  if (step = Norm) then (
+    print_endline (NMinils.string_of_file nfile);
     exit 0
   )
 

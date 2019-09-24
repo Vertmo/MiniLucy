@@ -193,7 +193,7 @@ let check_node (nodes: (ident * node_ty) list) (n : p_node) =
                                id n.pn_name, n.pn_loc)));
 
   (* Check that all declared types are using bool clocks *)
-  ignore (List.fold_left (fun streams (id, ty) -> match ty with
+  ignore (List.fold_left (fun streams (id, (ty:ty)) -> match ty with
       | Base _ -> (id, ty)::streams
       | Clocked (_, cl, _) ->
         let clt =

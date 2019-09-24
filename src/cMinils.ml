@@ -2,26 +2,6 @@
 
 open Asttypes
 
-type clock =
-  | Base
-  | Cl of clock * ident (* Clock *)
-  | NotCl of clock * ident (* Negated clock *)
-  | Ctuple of clock list
-
-let clock_of_ty : ty -> clock = function
-  | Base _ -> Base
-  | Clocked (_, cl, b) ->
-    if b then Cl (Base, cl) else NotCl (Base, cl)
-
-let rec string_of_clock = function
-  | Base -> "base"
-  | Cl (base, cl) ->
-    Printf.sprintf "(%s on %s)" (string_of_clock base) cl
-  | NotCl (base, cl) ->
-    Printf.sprintf "(%s on not %s)" (string_of_clock base) cl
-  | Ctuple cls ->
-    Printf.sprintf "(%s)" (String.concat "," (List.map string_of_clock cls))
-
 type c_expr =
   { cexpr_desc: c_expr_desc;
     cexpr_clock: clock;

@@ -142,7 +142,7 @@ let clock_node (nodes : (ident * c_node) list) (n : p_node) : c_node =
   { cn_name = n.pn_name;
     cn_input = n.pn_input;
     cn_output = n.pn_output;
-    cn_local= n.pn_local;
+    cn_local = n.pn_local;
     cn_equs = List.map (clock_equation nodes streams) n.pn_equs;
     cn_loc = n.pn_loc }
 

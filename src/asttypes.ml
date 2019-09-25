@@ -11,11 +11,14 @@ type base_ty =
   | Tbool
   | Tint
   | Treal
+  | Ttuple of base_ty list
 
-let string_of_base_ty = function
+let rec string_of_base_ty = function
   | Tbool -> "bool"
   | Tint -> "int"
   | Treal -> "real"
+  | Ttuple tys -> Printf.sprintf "(%s)"
+                    (String.concat "," (List.map string_of_base_ty tys))
 
 type ty =
   | Base of base_ty
@@ -26,6 +29,9 @@ let string_of_ty = function
   | Clocked (bty, id, b) ->
     Printf.sprintf (if b then "%s when %s" else "%s when not %s")
       (string_of_base_ty bty) id
+
+let base_ty_of_ty : ty -> base_ty = function
+  | Base t | Clocked (t, _, _) -> t
 
 type clock =
   | Base

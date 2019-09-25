@@ -15,7 +15,7 @@ tel;
   
 node test_node(x : bool; y : int) returns (z : bool);
 let
-  z = test_op(y);
+  z = test_op(y) or false;
 tel;
   
 node test_node2(x : int; y : bool) returns (z : int);
@@ -46,4 +46,10 @@ tel;
 node test_every(b : bool) returns (e : int);
 let
   e = test_fby() every b;
+tel;
+  
+node test_app() returns (i : int);
+var r:real; b:bool;
+let
+  (i, b, r) = test_tuple();
 tel;

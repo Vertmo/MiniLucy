@@ -13,33 +13,33 @@ end
 
 (** NormeE, compute a normalized n_expr for [e] *)
 let rec normE (d : n_equation list) (e : c_expr) =
-  let cl = e.cexpr_clock in
+  let ty = e.cexpr_ty and cl = e.cexpr_clock in
   match e.cexpr_desc with
   | CE_const c ->
-    { nexpr_desc = NE_const c; nexpr_clock = cl }, d
+    { nexpr_desc = NE_const c; nexpr_ty = ty; nexpr_clock = cl }, d
   | CE_ident id ->
-    { nexpr_desc = NE_ident id; nexpr_clock = cl }, d
+    { nexpr_desc = NE_ident id; nexpr_ty = ty; nexpr_clock = cl }, d
   | CE_op (op, es) ->
     let nes, d = normEs d es in
-    { nexpr_desc = NE_op (op, nes); nexpr_clock = cl }, d
+    { nexpr_desc = NE_op (op, nes); nexpr_ty = ty; nexpr_clock = cl }, d
   | CE_fby (c, e) ->
     let ne, d = normE d e in
     let x = Atom.fresh "_var" in
-    { nexpr_desc = NE_ident x; nexpr_clock = cl },
+    { nexpr_desc = NE_ident x; nexpr_ty = ty; nexpr_clock = cl },
     (NQ_fby (x, c, ne))::d
   | CE_when (e, id, b) ->
     let ne, d = normE d e in
-    { nexpr_desc = NE_when (ne, id, b); nexpr_clock = cl }, d
+    { nexpr_desc = NE_when (ne, id, b); nexpr_ty = ty; nexpr_clock = cl }, d
   | CE_merge (id, e1, e2) ->
     let y = Atom.fresh "_var" in
     let ne1, d = normCE d e1 in let ne2, d = normCE d e2 in
-    { nexpr_desc = NE_ident y; nexpr_clock = cl },
+    { nexpr_desc = NE_ident y; nexpr_ty = ty; nexpr_clock = cl },
     (NQ_ident (y, { ncexpr_desc = (NCE_merge (id, ne1, ne2));
-                    ncexpr_clock = cl } ))::d
+                    ncexpr_ty = ty; ncexpr_clock = cl } ))::d
   | CE_app (fid, es, ever) ->
     let nes, d = normEs d es in let x, d = normV d ever in
     let y = Atom.fresh "_var" in
-    { nexpr_desc = NE_ident y; nexpr_clock = cl },
+    { nexpr_desc = NE_ident y; nexpr_ty = ty; nexpr_clock = cl },
     (NQ_app ([y], fid, nes, x, cl))::d
   | _ -> invalid_arg "normE"
 
@@ -59,7 +59,8 @@ and normV (d : n_equation list) (e : c_expr) =
 (** NormeCA, compute a normalized n_cexpr for [e] *)
 and normCE (d : n_equation list) (e : c_expr) =
   let (ne, d) = normE d e in
-  { ncexpr_desc = NCE_expr ne.nexpr_desc; ncexpr_clock = ne.nexpr_clock }, d
+  { ncexpr_desc = NCE_expr ne.nexpr_desc;
+    ncexpr_ty = ne.nexpr_ty; ncexpr_clock = ne.nexpr_clock }, d
 
 (** Normalize an equation *)
 let norm_eq (eq : c_equation) =

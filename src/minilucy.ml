@@ -44,9 +44,9 @@ let main filename step =
   );
 
   (* Check *)
-  Typechecker.check_file file;
-  let cfile = Clockchecker.clock_file file in
-  if !asserts then assert (Clockchecker.equiv_parse_clock_file file cfile);
+  let tfile = Typechecker.check_file file in
+  let cfile = Clockchecker.clock_file tfile in
+  if !asserts then assert (Clockchecker.equiv_parse_clock_file tfile cfile);
   Causalitychecker.check_file cfile;
   let cfile = Scheduler.schedule_file cfile in
   if (step = Check) then (

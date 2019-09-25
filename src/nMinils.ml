@@ -4,6 +4,7 @@ open Asttypes
 
 type n_expr =
   { nexpr_desc: n_expr_desc;
+    nexpr_ty: base_ty;
     nexpr_clock: clock; }
 
 and n_expr_desc =
@@ -29,6 +30,7 @@ and string_of_expr_desc = function
 
 type n_cexpr =
   { ncexpr_desc: n_cexpr_desc;
+    ncexpr_ty: base_ty;
     ncexpr_clock: clock; }
 
 and n_cexpr_desc =

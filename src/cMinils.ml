@@ -1,9 +1,10 @@
-(** Abstract syntax tree annotated with clocks *)
+(** AST annotated with clocks and types *)
 
 open Asttypes
 
 type c_expr =
   { cexpr_desc: c_expr_desc;
+    cexpr_ty : base_ty;
     cexpr_clock: clock;
     cexpr_loc: location; }
 

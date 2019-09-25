@@ -83,3 +83,10 @@ let string_of_op = function
 let string_of_ident_type_list l =
   String.concat "; " (List.map (fun (id, t) ->
       Printf.sprintf "%s:%s" id (string_of_ty t)) l)
+
+(** Generation of fresh variables *)
+module Atom = struct
+  let counter : int ref = ref 0
+  let fresh (s:string) =
+    counter := !counter+1; Printf.sprintf "%s%d" s !counter
+end

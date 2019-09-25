@@ -82,8 +82,6 @@ let rec clock_expr nodes streams (e : t_expr) =
     let cl = (match ce1.cexpr_clock, ce2.cexpr_clock with
         | Cl (base1, id1), NotCl (base2, id2)
           when base1 = base2 && id1 = id2 -> base1
-        | NotCl (base1, id1), Cl (base2, id2)
-          when base1 = base2 && id1 = id2 -> base1
         | cl1, cl2 ->
           raise
             (ClockError

@@ -25,13 +25,12 @@ let
   x = 1 fby x;
 tel;
   
-node test_merge(b : bool) returns (x : int; y : int);
+node test_merge(b : bool) returns (x : int);
 var t1 : int when b; t2 : int when not b;
 let
   t1 = 1 when b;
   t2 = 2 when not b;
   x = merge b t1 t2;
-  y = merge b t2 t1;
 tel;
   
 node test_app(b1 : bool; c1 : bool when b1) returns (z : int when c1);

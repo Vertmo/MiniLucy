@@ -1,19 +1,22 @@
 open Lexing
 
-let usage = "usage: " ^ Sys.argv.(0) ^ " [-parse] [-check] [-norm] [-asserts] <input_file>"
+let usage = "usage: " ^ Sys.argv.(0) ^
+            " [-parse] [-check] [-norm] [-translate] [-asserts] <input_file>"
 
-type step = Parse | Check | Norm
+type step = Parse | Check | Norm | Translate
 let asserts = ref false
 
-let step = ref Norm
+let step = ref Translate
 
 let speclist = [
   ("-parse", Arg.Unit (fun () -> step := Parse),
-   ": only parse the program");
+   ": parse and print the program");
   ("-check", Arg.Unit (fun () -> step := Check),
-   ": parse and check the program");
+   ":check the program, and print it with annotated clocks");
   ("-norm", Arg.Unit (fun () -> step := Norm),
-   ": parse, check and normalize the program");
+   ": print the normalized program");
+  ("-translate", Arg.Unit (fun () -> step := Translate),
+   ": print the program translated to the Obc language");
   ("-asserts", Arg.Unit (fun () -> asserts := true),
    ": turns on assertions")
 ]
@@ -58,6 +61,13 @@ let main filename step =
   let nfile = Normalizer.norm_file cfile in
   if (step = Norm) then (
     print_endline (NMinils.string_of_file nfile);
+    exit 0
+  );
+
+  (* Translate *)
+  let mfile = Translator.translate_file nfile in
+  if (step = Translate) then (
+    print_endline (Obc.string_of_file mfile);
     exit 0
   )
 

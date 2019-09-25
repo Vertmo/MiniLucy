@@ -1,0 +1,64 @@
+node test_const() returns (y : int);
+let
+  y = 1;
+tel;
+  
+node test_multiple() returns (x : int; y : int);
+let
+  x = 1;
+  y = 2;
+tel;
+  
+node test_id(x : int) returns (y : int; z : int);
+let
+  y = x;
+  z = y;
+tel;
+  
+node test_op(x : int) returns (z : bool);
+var y : int;
+let
+  y = (x+(x-2));
+  z = x < y;
+tel;
+  
+node test_node(x : bool; y : int) returns (z : bool);
+let
+  z = test_op(y) or false;
+tel;
+  
+node test_node2(x : int; y : bool) returns (z : int);
+let
+  z = if test_node(y,x) then 1 else 0;
+tel;
+  
+node test_fby() returns (z : int);
+let
+  z = 1 fby 1 + z;
+tel;
+  
+node test_tuple() returns (i:int; b:bool; r:real);
+let
+  (r, b, i) = (1.0, true fby false, 0 fby 42);
+tel;
+  
+node test_when(b : bool) returns (d:int when b);
+let
+  d = 1 when b;
+tel;
+  
+node test_merge(b : bool; c : int) returns (e:int);
+let
+  e = merge b (c when b) (c when not b);
+tel;
+  
+node test_every(b : bool) returns (e : int);
+let
+  e = test_fby() every b;
+tel;
+  
+node test_app() returns (i : int);
+var r:real; b:bool;
+let
+  (i, b, r) = test_tuple();
+tel;

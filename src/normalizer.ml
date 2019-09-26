@@ -20,7 +20,7 @@ let rec normE (d : n_equation list) (e : c_expr) :
     let ne, d, vars = normE d e in
     let x = Atom.fresh "_var" in
     { nexpr_desc = NE_ident x; nexpr_ty = ty; nexpr_clock = cl },
-    (NQ_fby (x, c, ne))::d, (x, Base ty)::vars
+    d@[NQ_fby (x, c, ne)], (x, Base ty)::vars
   | CE_when (e, id, b) ->
     let ne, d, vars = normE d e in
     { nexpr_desc = NE_when (ne, id, b); nexpr_ty = ty; nexpr_clock = cl },
@@ -29,14 +29,14 @@ let rec normE (d : n_equation list) (e : c_expr) :
     let y = Atom.fresh "_var" in
     let ne1, d, vs1 = normCE d e1 in let ne2, d, vs2 = normCE d e2 in
     { nexpr_desc = NE_ident y; nexpr_ty = ty; nexpr_clock = cl },
-    (NQ_ident (y, { ncexpr_desc = (NCE_merge (id, ne1, ne2));
-                    ncexpr_ty = ty; ncexpr_clock = cl } ))::d,
+    d@[NQ_ident (y, { ncexpr_desc = (NCE_merge (id, ne1, ne2));
+                      ncexpr_ty = ty; ncexpr_clock = cl } )],
     (y, Base ty)::(vs1@vs2)
   | CE_app (fid, es, ever) ->
     let nes, d, vs1 = normEs d es in let x, d, vs2 = normV d ever in
     let y = Atom.fresh "_var" in
     { nexpr_desc = NE_ident y; nexpr_ty = ty; nexpr_clock = cl },
-    (NQ_app ([y], fid, nes, x, ever.cexpr_clock))::d,
+    d@[NQ_app ([y], fid, nes, x, ever.cexpr_clock)],
     (y, Base ty)::(vs1@vs2)
   | _ -> invalid_arg "normE"
 
@@ -64,23 +64,23 @@ let norm_eq (eq : c_equation) =
   let eqs, vars =
     (match eq.ceq_patt.cpatt_desc with
      | CP_ident id -> let (ne, d, vars) = normCE [] eq.ceq_expr in
-       (NQ_ident (id, ne))::d, vars
+       d@[NQ_ident (id, ne)], vars
      | CP_tuple ids ->
        (match eq.ceq_expr.cexpr_desc with
         | CE_app (fid, es, ever) ->
           let nes, d, vs1 = normEs [] es in let x, d, vs2 = normV d ever in
-          (NQ_app (ids, fid, nes, x, ever.cexpr_clock))::d, vs1@vs2
+          d@[NQ_app (ids, fid, nes, x, ever.cexpr_clock)], vs1@vs2
         | CE_tuple es ->
           let eqs, vars =
             (List.fold_left2
                (fun (eqs, vars) id e ->
                   let (ne, d, vars') = normCE [] e in
-                  (NQ_ident (id, ne)::d)::eqs, vars@vars') ([], [])
+                  (d@[NQ_ident (id, ne)])::eqs, vars@vars') ([], [])
                ids es) in
           List.concat eqs, vars
         | _ -> invalid_arg "norm_eq"
        )
-    ) in List.rev eqs, vars
+    ) in eqs, vars
 
 (** Normalize a node *)
 let norm_node (n : c_node) =

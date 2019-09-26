@@ -60,7 +60,7 @@ let translate_eq env = function
                    (control cl (Case (everid, [Reset o], [])))::env.s }
 
 (** Translate a node *)
-let translate_node (n : n_node) : machine =
+let translate_node outputs (n : n_node) : machine =
   let input = List.map (fun (id, ty) -> id, base_ty_of_ty ty) n.nn_input
   and local = List.map (fun (id, ty) -> id, base_ty_of_ty ty) n.nn_local
   and output = List.map (fun (id, ty) -> id, base_ty_of_ty ty) n.nn_output in
@@ -71,7 +71,8 @@ let translate_node (n : n_node) : machine =
     } n.nn_equs in
   { m_name = n.nn_name;
     m_memory = env.m;
-    m_instances = env.j;
+    m_instances = List.map
+        (fun (iid, fid) -> (iid, (fid, (List.assoc fid outputs)))) env.j;
     m_reset = env.si;
     m_step = input, output,
              List.sort_uniq (fun (v1, _) (v2, _) -> String.compare v1 v2) env.d,
@@ -79,7 +80,8 @@ let translate_node (n : n_node) : machine =
 
 (** Translate the full file *)
 let translate_file (f : n_file) =
-  List.map translate_node f
+  List.map (translate_node
+              (List.map (fun n -> (n.nn_name, List.map fst n.nn_output)) f)) f
 
 (*                           Check equivalence between ASTs                    *)
 (* TODO *)

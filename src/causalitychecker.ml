@@ -73,7 +73,7 @@ let check_node (n : c_node) =
     Return the dependency graphs *)
 let check_file (f : c_file) =
   try
-    List.iter (fun node -> check_node node) f
+    List.iter check_node f
   with
   | CausalityError (msg, nodeid, loc) ->
     Printf.printf "Causality error : %s in node %s at %s"

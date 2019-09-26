@@ -52,8 +52,9 @@ let string_of_p p =
 type machine = {
   m_name: ident;
   m_memory: p;
-  m_instances: (ident * ident) list;
+  m_instances: (ident * (ident * (ident list))) list;
   m_reset: instr list;
+  (* input, output, locals, body *)
   m_step : p * p * p * instr list;
 }
 
@@ -67,7 +68,7 @@ let string_of_machine m =
                    step(%s) returns(%s) = var %s in\n\
                    %s\n\n"
     m.m_name (string_of_p m.m_memory)
-    (String.concat "\n" (List.map (fun (o, f) -> o^" : "^f) m.m_instances))
+    (String.concat "\n" (List.map (fun (o, (f, _)) -> o^" : "^f) m.m_instances))
     (string_of_instrs m.m_reset)
     (string_of_p input) (string_of_p output) (string_of_p vars)
     (string_of_instrs instrs)

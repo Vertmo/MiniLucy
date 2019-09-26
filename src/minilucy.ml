@@ -1,14 +1,19 @@
 open Lexing
 
 let usage = "usage: " ^ Sys.argv.(0) ^
-            " [-parse] [-check] [-norm] [-translate] [-asserts] <input_file>"
+            " [-parse] [-check] [-norm] [-translate] [-generate] [-asserts]\
+             [-o <output_file]\
+             <input_file>"
 
-type step = Parse | Check | Norm | Translate
+type step = Parse | Check | Norm | Translate | Generate
 let asserts = ref false
 
-let step = ref Translate
+let step = ref Generate
+let output = ref None
 
 let speclist = [
+  ("-o", Arg.String (fun s -> output := Some s),
+  ": set output file for c code");
   ("-parse", Arg.Unit (fun () -> step := Parse),
    ": parse and print the program");
   ("-check", Arg.Unit (fun () -> step := Check),
@@ -17,6 +22,8 @@ let speclist = [
    ": print the normalized program");
   ("-translate", Arg.Unit (fun () -> step := Translate),
    ": print the program translated to the Obc language");
+  ("-generate", Arg.Unit (fun () -> step := Generate),
+   ": print the generated C code");
   ("-asserts", Arg.Unit (fun () -> asserts := true),
    ": turns on assertions")
 ]
@@ -69,7 +76,15 @@ let main filename step =
   if (step = Translate) then (
     print_endline (Obc.string_of_file mfile);
     exit 0
-  )
+  );
+
+  (* Generate *)
+  let ccode = Generator.generate_file mfile in
+  match !output with
+  | None -> print_endline (MicroC.string_of_file ccode);
+  | Some s ->
+    let outc = open_out s in
+    output_string outc (MicroC.string_of_file ccode);
+    close_out outc
 
 let _ = Arg.parse speclist (fun x -> main x !step) usage
-

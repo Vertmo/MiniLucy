@@ -94,7 +94,7 @@ let rec string_of_instr (indent_level : int) (i : instr) =
                     %s\n\
                     %s}"
       indent (string_of_expr c)
-      (String.concat "\n" (List.map (string_of_instr (indent_level + 1)) e))
+      (String.concat "\n" (List.map (string_of_instr (indent_level + 1)) t))
       indent
       (String.concat "\n" (List.map (string_of_instr (indent_level + 1)) e))
       indent

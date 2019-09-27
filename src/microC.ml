@@ -90,7 +90,7 @@ let rec string_of_instr (indent_level : int) (i : instr) =
   | If (c, t, e) ->
     Printf.sprintf "%sif (%s) {\n\
                     %s\n\
-                    %s} {\n\
+                    %s} else {\n\
                     %s\n\
                     %s}"
       indent (string_of_expr c)

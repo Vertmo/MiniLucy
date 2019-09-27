@@ -76,7 +76,10 @@ let translate_node outputs (n : n_node) : machine =
     m_reset = env.si;
     m_step = input, output,
              List.sort_uniq (fun (v1, _) (v2, _) -> String.compare v1 v2) env.d,
-             List.rev env.s; }
+             List.stable_sort (fun i1 i2 ->
+                 let b1 = assign_state i1 and b2 = assign_state i2 in
+                 if b1 && not b2 then 1
+                 else if not b1 && b2 then -1 else 0) (List.rev env.s); }
 
 (** Translate the full file *)
 let translate_file (f : n_file) =

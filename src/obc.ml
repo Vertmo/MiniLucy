@@ -45,6 +45,15 @@ and string_of_instrs instrs =
 
 type p = (ident * base_ty) list
 
+(** Check if the instruction assigns the state *)
+let rec assign_state = function
+  | Assign _ -> false
+  | StAssign _ -> true
+  | Reset _ -> false
+  | StepAssign _ -> false
+  | Case (_, i1, i2) ->
+    List.exists assign_state i1 || List.exists assign_state i2
+
 let string_of_p p =
   String.concat "; " (List.map (fun (id, t) ->
       Printf.sprintf "%s:%s" id (string_of_base_ty t)) p)

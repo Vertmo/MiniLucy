@@ -1,0 +1,37 @@
+-- Integrateur Euler (forward)
+node euler(h: real; xprime: real) returns (x: real);
+let
+  x = 0.0 fby (x + h * xprime);
+tel;
+
+-- Modele de chaudiere
+node chaudiere(h: real;
+               c: real; alpha: real; beta: real; temp_ext : real; 
+               u : bool) 
+returns (temp : real);
+let
+  temp = 0.0 fby euler(h,
+                       if u then alpha * (c - temp) 
+                       else beta * (temp_ext - temp));
+tel;
+
+-- Relai (seuil haut,  seuil bas; une seule sortie booleenne)
+node relai(bas, haut: real; v: real) returns (u: bool);
+let
+  u = false fby (if v < bas then true else (if v > haut then false else u));
+tel;
+
+-- const bas : real = 1.0;
+-- const haut : real = 1.0;
+-- const c : real = 50.0;
+-- const alpha : real = 0.1;
+-- const beta : real = 0.1;
+
+-- Programme principal
+node main(consigne: real) 
+returns (u: bool; temp: real);
+let
+  u = false fby relai(consigne - 1.0, consigne + 1.0, temp);
+  temp = chaudiere(0.1, 50.0, 0.1, 0.1, 0.0, u); 
+tel;
+

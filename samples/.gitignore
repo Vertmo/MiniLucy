@@ -1,3 +1,4 @@
 *.elf
 fulladder.c
 bananas.c
+heat.c

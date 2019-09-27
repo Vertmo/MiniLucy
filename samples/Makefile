@@ -1,6 +1,6 @@
 MINILUCY := ../minilucy.byte
 
-all: fulladder.elf bananas.elf
+all: fulladder.elf bananas.elf heat.elf
 
 %.elf: main_%.c %.c
 	gcc -o $@ $<

@@ -21,3 +21,10 @@ let
   z = merge x (y) (1 when not x);
   x = false fby (z < 1); -- (z < 1) fails
 tel;
+  
+node test_example(c : bool; k : int when c; x : int) returns (z : int when c; o : int);
+let
+  z = (((4 fby o) * 3) when c) + k;
+  o = merge c ((5 fby (z + (1 when c))) + (2 when c)) 
+  ((6 fby x) when not c);
+tel;

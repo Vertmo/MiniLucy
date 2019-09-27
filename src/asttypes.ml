@@ -53,6 +53,14 @@ let rec string_of_clock = function
   | Ctuple cls ->
     Printf.sprintf "(%s)" (String.concat "," (List.map string_of_clock cls))
 
+(** Get the "variables" of a clock *)
+let rec clock_vars = function
+  | Base -> []
+  | Cl (cl, id) -> id::(clock_vars cl)
+  | NotCl (cl, id) -> id::(clock_vars cl)
+  | Ctuple cls ->
+    List.concat (List.map clock_vars cls)
+
 type const =
   | Cbool of bool
   | Cint of int

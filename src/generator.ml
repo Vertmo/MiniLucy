@@ -18,12 +18,14 @@ let generate_const : Asttypes.const -> MicroC.const = function
   | Creal f -> Float f
 
 (** Generate code for an expression *)
-let rec generate_expr : Obc.expr -> MicroC.expr = function
+let rec generate_expr outputs : Obc.expr -> MicroC.expr = function
   | Const c -> Const (generate_const c)
-  | Ident id -> Ident id
+  | Ident id -> if List.mem_assoc id outputs
+    then PField ("_out", id)
+    else Ident id
   | StIdent id -> PField ("_self", id)
   | Op (op, es) ->
-    let ges = List.map generate_expr es in
+    let ges = List.map (generate_expr outputs) es in
     if List.length ges = 1 then
       UnOp (op, List.nth ges 0)
     else if List.length ges = 2 then
@@ -35,14 +37,14 @@ let rec generate_instr instances outputs : Obc.instr -> MicroC.instr list =
   function
   | Assign (id, e) ->
     if (List.mem_assoc id outputs)
-    then [Assign (PField ("_out", id), generate_expr e)]
-    else [Assign (Ident id, generate_expr e)]
+    then [Assign (PField ("_out", id), generate_expr outputs e)]
+    else [Assign (Ident id, generate_expr outputs e)]
   | StAssign (id, e) ->
-    [Assign (PField ("_self", id), generate_expr e)]
+    [Assign (PField ("_self", id), generate_expr outputs e)]
   | Reset iid -> [Call (fst (List.assoc iid instances)^"_reset",
                        [Ref (PField ("_self", iid))])]
   | StepAssign (ids, iid, es) ->
-    let ges = List.map generate_expr es in
+    let ges = List.map (generate_expr outputs) es in
     let (fid, oids) = List.assoc iid instances in
     let tmp = Atom.fresh ("_out_"^fid) in
     [VarDec (Tident (fid^"_out"), tmp);
@@ -98,3 +100,6 @@ let generate_machine (m : machine) : def list =
 (** Generate code for a whole file *)
 let generate_file (f : Obc.file) : MicroC.file =
   List.concat (List.map generate_machine f)
+
+(*                           Check equivalence between ASTs                    *)
+(* TODO *)

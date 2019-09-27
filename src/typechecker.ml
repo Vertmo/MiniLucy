@@ -245,3 +245,6 @@ let check_file (f : p_file) : t_file =
   | TypeError (msg, loc) ->
     Printf.printf "Type checking error : %s at %s\n"
       msg (string_of_loc loc); exit 1
+
+(*                           Check equivalence between ASTs                    *)
+(* TODO *)

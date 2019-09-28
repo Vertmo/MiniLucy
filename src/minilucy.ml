@@ -45,13 +45,16 @@ let lex_and_parse ic =
 
 let main filename step =
   let ic = open_in filename in
-  let file = lex_and_parse ic in
+  let p_file = lex_and_parse ic in
 
   (* Parse *)
   if (step = Parse) then (
-    print_endline (Minils.string_of_file file);
+    print_endline (PMinils.string_of_file p_file);
     exit 0
   );
+
+  (* Desugar *)
+  let file = Desugarizer.desugar_file p_file in
 
   (* Check *)
   let tfile = Typechecker.check_file file in

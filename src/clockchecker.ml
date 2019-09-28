@@ -9,13 +9,13 @@ exception ClockError of (string * location)
 (** Get the clocks(s) expected for a pattern [pat],
     as well as the translated pattern *)
 let get_pattern_clock (streams : (ident * clock) list) (pat : t_patt) =
-  match pat.ppatt_desc with
-  | PP_ident id ->
+  match pat.kpatt_desc with
+  | KP_ident id ->
     (List.assoc id streams),
-    { cpatt_desc = CP_ident id; cpatt_loc = pat.ppatt_loc }
-  | PP_tuple ids ->
+    { cpatt_desc = CP_ident id; cpatt_loc = pat.kpatt_loc }
+  | KP_tuple ids ->
     (Ctuple (List.map (fun id -> (List.assoc id streams)) ids)),
-     { cpatt_desc = CP_tuple ids; cpatt_loc = pat.ppatt_loc }
+     { cpatt_desc = CP_tuple ids; cpatt_loc = pat.kpatt_loc }
 
 (** Composes clocks [cl1] and [cl2] to give (returns [cl1] o [cl2]) *)
 let rec compose_clock cl1 cl2 =
@@ -164,10 +164,10 @@ let clock_file (f : t_file) : c_file =
 (*                           Check equivalence between ASTs                    *)
 
 (** Check that a typed pattern [t] and clocked pattern [c] are equivalent *)
-let equiv_parse_clock_pat (t : t_patt) (c : c_patt) =
-    match t.ppatt_desc, c.cpatt_desc with
-    | PP_ident id1, CP_ident id2 when id1 = id2 -> true
-    | PP_tuple ids1, CP_tuple ids2 ->
+let equiv_parse_clock_patt (t : t_patt) (c : c_patt) =
+    match t.kpatt_desc, c.cpatt_desc with
+    | KP_ident id1, CP_ident id2 when id1 = id2 -> true
+    | KP_tuple ids1, CP_tuple ids2 ->
       List.for_all2 (fun id1 id2 -> id1 = id2) ids1 ids2
     | _, _ -> false
 
@@ -195,7 +195,7 @@ let rec equiv_parse_clock_expr (t : t_expr) (c : c_expr) =
 
 (** Check that a typed equation [t] and clocked equation [c] are equivalent *)
 let equiv_parse_clock_eq (t : t_equation) (c : c_equation) =
-  equiv_parse_clock_pat t.teq_patt c.ceq_patt &&
+  equiv_parse_clock_patt t.teq_patt c.ceq_patt &&
   equiv_parse_clock_expr t.teq_expr c.ceq_expr
 
 (** Check that a typed node [t] and clocked node [c] are equivalent *)

@@ -1,79 +1,74 @@
-(** Abstract syntax tree *)
+(** Kernel AST *)
 
 open Asttypes
 
-type p_expr =
-  { pexpr_desc: p_expr_desc;
-    pexpr_loc: location; }
+type k_expr =
+  { kexpr_desc: k_expr_desc;
+    kexpr_loc: location; }
 
-and p_expr_desc =
-  | PE_const of const
-  | PE_ident of ident
-  | PE_op of op * p_expr list
-  | PE_app of ident * p_expr list * p_expr
-  | PE_fby of const * p_expr
-  (* | PE_arrow of p_expr * p_expr
-   * | PE_pre of p_expr *)
-  | PE_tuple of p_expr list
-  | PE_when of p_expr * ident * bool
-  | PE_merge of ident * p_expr * p_expr
+and k_expr_desc =
+  | KE_const of const
+  | KE_ident of ident
+  | KE_op of op * k_expr list
+  | KE_app of ident * k_expr list * k_expr
+  | KE_fby of const * k_expr
+  | KE_tuple of k_expr list
+  | KE_when of k_expr * ident * bool
+  | KE_merge of ident * k_expr * k_expr
 
 let rec string_of_expr e =
-  string_of_expr_desc e.pexpr_desc
+  string_of_expr_desc e.kexpr_desc
 
 and string_of_expr_desc = function
-  | PE_const c -> string_of_const c
-  | PE_ident i -> i
-  | PE_op (op, es) -> Printf.sprintf "(%s [%s])"
+  | KE_const c -> string_of_const c
+  | KE_ident i -> i
+  | KE_op (op, es) -> Printf.sprintf "(%s [%s])"
                         (string_of_op op)
                         (String.concat "; " (List.map string_of_expr es))
-  | PE_app (id, es, ever) -> Printf.sprintf "(%s [%s] every %s)" id
+  | KE_app (id, es, ever) -> Printf.sprintf "(%s [%s] every %s)" id
                          (String.concat "; " (List.map string_of_expr es))
                          (string_of_expr ever)
-  | PE_fby (c, e) -> Printf.sprintf "(%s fby %s)"
+  | KE_fby (c, e) -> Printf.sprintf "(%s fby %s)"
                        (string_of_const c) (string_of_expr e)
-  (* | PE_arrow (e1, e2) -> Printf.sprintf "(%s -> %s)"
-   *                          (string_of_expr e1) (string_of_expr e2)
-   * | PE_pre e -> Printf.sprintf "(pre %s)" (string_of_expr e) *)
-  | PE_tuple es -> Printf.sprintf "(%s)"
+  | KE_tuple es -> Printf.sprintf "(%s)"
                      (String.concat ", " (List.map string_of_expr es))
-  | PE_when (e, id, b) ->
+  | KE_when (e, id, b) ->
     Printf.sprintf (if b then "%s when %s" else "%s when not %s")
       (string_of_expr e) id
-  | PE_merge (id, e1, e2) -> Printf.sprintf "merge %s (%s) (%s)"
+  | KE_merge (id, e1, e2) -> Printf.sprintf "merge %s (%s) (%s)"
                                id (string_of_expr e1) (string_of_expr e2)
 
-type p_patt =
-  { ppatt_desc: p_patt_desc;
-    ppatt_loc: location; }
+type k_patt =
+  { kpatt_desc: k_patt_desc;
+    kpatt_loc: location; }
 
-and p_patt_desc =
-  | PP_ident of ident
-  | PP_tuple of ident list
+and k_patt_desc =
+  | KP_ident of ident
+  | KP_tuple of ident list
 
-let rec string_of_pat p =
-  string_of_pat_desc p.ppatt_desc
+let rec string_of_patt p =
+  string_of_patt_desc p.kpatt_desc
 
-and string_of_pat_desc = function
-  | PP_ident id -> id
-  | PP_tuple ids -> Printf.sprintf "(%s)" (String.concat ", " ids)
+and string_of_patt_desc = function
+  | KP_ident id -> id
+  | KP_tuple ids -> Printf.sprintf "(%s)" (String.concat ", " ids)
 
-type p_equation =
-    { peq_patt: p_patt;
-      peq_expr: p_expr; }
+type k_equation =
+    { keq_patt: k_patt;
+      keq_expr: k_expr; }
 
 let string_of_equation eq =
   Printf.sprintf "%s = %s"
-    (string_of_pat eq.peq_patt)
-    (string_of_expr eq.peq_expr)
+    (string_of_patt eq.keq_patt)
+    (string_of_expr eq.keq_expr)
 
-type p_node =
-    { pn_name: ident;
-      pn_input: (ident * ty) list;
-      pn_output: (ident * ty) list;
-      pn_local: (ident * ty) list;
-      pn_equs: p_equation list;
-      pn_loc: location; }
+type k_node =
+    { kn_name: ident;
+      kn_input: (ident * ty) list;
+      kn_output: (ident * ty) list;
+      kn_local: (ident * ty) list;
+      kn_equs: k_equation list;
+      kn_loc: location; }
 
 let string_of_node n =
   Printf.sprintf "node %s(%s) returns (%s);\n\
@@ -81,14 +76,14 @@ let string_of_node n =
                  let\n\
                  %s\
                  tel\n"
-    n.pn_name
-    (string_of_ident_type_list n.pn_input)
-    (string_of_ident_type_list n.pn_output)
-    (string_of_ident_type_list n.pn_local)
+    n.kn_name
+    (string_of_ident_type_list n.kn_input)
+    (string_of_ident_type_list n.kn_output)
+    (string_of_ident_type_list n.kn_local)
     (String.concat "" (List.map (fun eq ->
-         Printf.sprintf "  %s;\n" (string_of_equation eq)) n.pn_equs))
+         Printf.sprintf "  %s;\n" (string_of_equation eq)) n.kn_equs))
 
-type p_file = p_node list
+type k_file = k_node list
 
 let string_of_file f =
   String.concat "\n" (List.map string_of_node f)

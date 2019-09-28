@@ -17,11 +17,11 @@ and t_expr_desc =
   | TE_when of t_expr * ident * bool
   | TE_merge of ident * t_expr * t_expr
 
-type t_patt = Minils.p_patt
-type t_patt_desc = Minils.p_patt_desc
+type t_patt = Minils.k_patt
+type t_patt_desc = Minils.k_patt_desc
 
-let string_of_pat = Minils.string_of_pat
-let string_of_pat_desc = Minils.string_of_pat_desc
+let string_of_patt = Minils.string_of_patt
+let string_of_patt_desc = Minils.string_of_patt_desc
 
 let rec string_of_expr e =
   string_of_expr_desc e.texpr_desc
@@ -51,7 +51,7 @@ type t_equation =
 
 let string_of_equation eq =
   Printf.sprintf "%s = %s"
-    (string_of_pat eq.teq_patt)
+    (string_of_patt eq.teq_patt)
     (string_of_expr eq.teq_expr)
 
 type t_node =

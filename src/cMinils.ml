@@ -50,10 +50,10 @@ and c_patt_desc =
   | CP_ident of ident
   | CP_tuple of ident list
 
-let rec string_of_pat p =
-  string_of_pat_desc p.cpatt_desc
+let rec string_of_patt p =
+  string_of_patt_desc p.cpatt_desc
 
-and string_of_pat_desc = function
+and string_of_patt_desc = function
   | CP_ident id -> id
   | CP_tuple ids -> Printf.sprintf "(%s)" (String.concat ", " ids)
 
@@ -63,7 +63,7 @@ type c_equation =
 
 let string_of_equation eq =
   Printf.sprintf "%s = %s"
-    (string_of_pat eq.ceq_patt)
+    (string_of_patt eq.ceq_patt)
     (string_of_expr eq.ceq_expr)
 
 type c_node =

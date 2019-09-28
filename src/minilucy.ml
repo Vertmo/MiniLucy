@@ -55,6 +55,7 @@ let main filename step =
 
   (* Check *)
   let tfile = Typechecker.check_file file in
+  if !asserts then assert (Typechecker.equiv_parse_clock_file file tfile);
   let cfile = Clockchecker.clock_file tfile in
   if !asserts then assert (Clockchecker.equiv_parse_clock_file tfile cfile);
   Causalitychecker.check_file cfile;

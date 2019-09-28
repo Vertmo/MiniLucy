@@ -247,4 +247,47 @@ let check_file (f : p_file) : t_file =
       msg (string_of_loc loc); exit 1
 
 (*                           Check equivalence between ASTs                    *)
-(* TODO *)
+
+(** Check that a parsed pattern [p] and typed pattern [t] are equivalent *)
+let equiv_parse_clock_pat (p : p_patt) (t : t_patt) =
+  p = t
+
+(** Check that a parsed expr [p] and typed expr [t] are equivalent *)
+let rec equiv_parse_clock_expr (p : p_expr) (t : t_expr) =
+  match p.pexpr_desc, t.texpr_desc with
+  | PE_const c1, TE_const c2 -> c1 = c2
+  | PE_ident c1, TE_ident c2 -> c1 = c2
+  | PE_op (op1, es1), TE_op (op2, es2) ->
+    op1 = op2 && List.for_all2 equiv_parse_clock_expr es1 es2
+  | PE_app (id1, es1, ev1), TE_app (id2, es2, ev2) ->
+    id1 = id2 && List.for_all2 equiv_parse_clock_expr es1 es2 &&
+    equiv_parse_clock_expr ev1 ev2
+  | PE_fby (c1, e1), TE_fby (c2, e2) ->
+    c1 = c2 && equiv_parse_clock_expr e1 e2
+  | PE_tuple es1, TE_tuple es2 ->
+    List.for_all2 equiv_parse_clock_expr es1 es2
+  | PE_when (e1, id1, b1), TE_when (e2, id2, b2) ->
+    equiv_parse_clock_expr e1 e2 && id1 = id2 && b1 = b2
+  | PE_merge (id1, e11, e12), TE_merge (id2, e21, e22) ->
+    id1 = id2 &&
+    equiv_parse_clock_expr e11 e21 && equiv_parse_clock_expr e12 e22
+  | _, _ -> false
+
+(** Check that a parsed equation [p] and typed equation [t] are equivalent *)
+let equiv_parse_clock_eq (p : p_equation) (t : t_equation) =
+  equiv_parse_clock_pat p.peq_patt t.teq_patt &&
+  equiv_parse_clock_expr p.peq_expr t.teq_expr
+
+(** Check that a parsed node [p] and typed node [t] are equivalent *)
+let equiv_parse_clock_node (p : p_node) (t : t_node) =
+  p.pn_name = t.tn_name &&
+  p.pn_input = t.tn_input &&
+  p.pn_output = t.tn_output &&
+  p.pn_local = t.tn_local &&
+  List.for_all2 equiv_parse_clock_eq p.pn_equs t.tn_equs
+
+(** Check that a parsed file [p] and typed file [t] are equivalent *)
+let equiv_parse_clock_file (p : p_file) (t : t_file) =
+  try
+    List.for_all2 equiv_parse_clock_node p t
+  with _ -> false

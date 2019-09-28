@@ -163,15 +163,15 @@ let clock_file (f : t_file) : c_file =
 
 (*                           Check equivalence between ASTs                    *)
 
-(** Check that a parsed pattern [p] and clocked pattern [c] are equivalent *)
-let equiv_parse_clock_pat (p : t_patt) (c : c_patt) =
-    match p.ppatt_desc, c.cpatt_desc with
+(** Check that a typed pattern [t] and clocked pattern [c] are equivalent *)
+let equiv_parse_clock_pat (t : t_patt) (c : c_patt) =
+    match t.ppatt_desc, c.cpatt_desc with
     | PP_ident id1, CP_ident id2 when id1 = id2 -> true
     | PP_tuple ids1, CP_tuple ids2 ->
       List.for_all2 (fun id1 id2 -> id1 = id2) ids1 ids2
     | _, _ -> false
 
-(** Check that a parsed expr [p] and clocked expr [c] are equivalent *)
+(** Check that a typed expr [t] and clocked expr [c] are equivalent *)
 let rec equiv_parse_clock_expr (t : t_expr) (c : c_expr) =
   t.texpr_ty = c.cexpr_ty &&
   match t.texpr_desc, c.cexpr_desc with
@@ -193,21 +193,21 @@ let rec equiv_parse_clock_expr (t : t_expr) (c : c_expr) =
     equiv_parse_clock_expr e11 e21 && equiv_parse_clock_expr e12 e22
   | _, _ -> false
 
-(** Check that a parsed equation [p] and clocked equation [c] are equivalent *)
-let equiv_parse_clock_eq (p : t_equation) (c : c_equation) =
-  equiv_parse_clock_pat p.teq_patt c.ceq_patt &&
-  equiv_parse_clock_expr p.teq_expr c.ceq_expr
+(** Check that a typed equation [t] and clocked equation [c] are equivalent *)
+let equiv_parse_clock_eq (t : t_equation) (c : c_equation) =
+  equiv_parse_clock_pat t.teq_patt c.ceq_patt &&
+  equiv_parse_clock_expr t.teq_expr c.ceq_expr
 
-(** Check that a parsed node [p] and clocked node [c] are equivalent *)
-let equiv_parse_clock_node (p : t_node) (c : c_node) =
-  p.tn_name = c.cn_name &&
-  p.tn_input = c.cn_input &&
-  p.tn_output = c.cn_output &&
-  p.tn_local = c.cn_local &&
-  List.for_all2 equiv_parse_clock_eq p.tn_equs c.cn_equs
+(** Check that a typed node [t] and clocked node [c] are equivalent *)
+let equiv_parse_clock_node (t : t_node) (c : c_node) =
+  t.tn_name = c.cn_name &&
+  t.tn_input = c.cn_input &&
+  t.tn_output = c.cn_output &&
+  t.tn_local = c.cn_local &&
+  List.for_all2 equiv_parse_clock_eq t.tn_equs c.cn_equs
 
-(** Check that a parsed file [p] and clocked file [c] are equivalent *)
-let equiv_parse_clock_file (p : t_file) (c : c_file) =
+(** Check that a typed file [t] and clocked file [c] are equivalent *)
+let equiv_parse_clock_file (t : t_file) (c : c_file) =
   try
-    List.for_all2 equiv_parse_clock_node p c
+    List.for_all2 equiv_parse_clock_node t c
   with _ -> false

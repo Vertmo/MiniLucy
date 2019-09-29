@@ -41,19 +41,33 @@ let rec control (cl : clock) (ins : instr) : instr =
     Case (clid, [constr, [control cl' ins]])
   | Ctuple _ -> invalid_arg "control"
 
-(** Join the control structures FIXME *)
-(* let rec join i1 i2 =
- *   match i1, i2 with
- *   | Case (x1, is1), Case (x2, is2) when x1 = x2 ->
- *     [Case (x1, List.map2 (fun (c1, i1) (_, i2) -> (c1, join_list i1@i2)) is1 is2)]
- *   | _, _ -> [i1;i2]
- * and join_list instrs =
- *   match instrs with
- *   | [] -> []
- *   | i1::is ->
- *     (match join_list is with
- *      | [] -> [i1]
- *      | i2::is -> (join i1 i2)@is) *)
+(* Join the control structures *)
+let rec join i1 i2 =
+  let rec align_lists l1 l2 =
+    match l1, l2 with
+    | [], [] -> [], []
+    | l1, [] -> l1, List.map (fun (c1, _) -> c1, []) l1
+    | [], l2 -> List.map (fun (c2, _) -> c2, []) l2, l2
+    | (c1, i1)::tl1, (c2, i2)::tl2 ->
+      if c1 = c2 then let (l1, l2) = align_lists tl1 tl2 in
+        (c1, i1)::l1, (c2, i2)::l2
+      else if c1 < c2 then let (l1, l2) = align_lists tl1 ((c2, i2)::tl2) in
+        (c1, i1)::l1, (c1, [])::l2
+      else let (l1, l2) = align_lists ((c1, i1)::tl1) tl2 in
+        (c2, [])::l1, (c2, i2)::l2 in
+  match i1, i2 with
+  | Case (x1, is1), Case (x2, is2) when x1 = x2 ->
+    let is1, is2 = align_lists is1 is2 in
+    [Case (x1, List.map2 (fun (c1, i1) (_, i2) ->
+         (c1, join_list i1@i2)) is1 is2)]
+  | _, _ -> [i1;i2]
+and join_list instrs =
+  match instrs with
+  | [] -> []
+  | i1::is ->
+    (match join_list is with
+     | [] -> [i1]
+     | i2::is -> (join i1 i2)@is)
 
 (** Translate an equation *)
 let translate_eq env = function
@@ -90,7 +104,7 @@ let translate_node outputs (n : n_node) : machine =
     m_reset = env.si;
     m_step = input, output,
              List.sort_uniq (fun (v1, _) (v2, _) -> String.compare v1 v2) env.d,
-             (* join_list FIXME *)
+             join_list
                (List.stable_sort (fun i1 i2 ->
                    let b1 = assign_state i1 and b2 = assign_state i2 in
                    if b1 && not b2 then 1

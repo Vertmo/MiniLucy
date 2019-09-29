@@ -1,6 +1,7 @@
 type location = Lexing.position * Lexing.position
 
 type ident = string
+type constr = string
 
 let string_of_loc ((ls, le):location) =
   Printf.sprintf "[(%d,%d);(%d,%d)]"
@@ -11,53 +12,51 @@ type base_ty =
   | Tbool
   | Tint
   | Treal
+  | Tclock of ident
   | Ttuple of base_ty list
 
 let rec string_of_base_ty = function
   | Tbool -> "bool"
   | Tint -> "int"
   | Treal -> "real"
+  | Tclock id -> id
   | Ttuple tys -> Printf.sprintf "(%s)"
                     (String.concat "," (List.map string_of_base_ty tys))
 
 type ty =
   | Base of base_ty
-  | Clocked of base_ty * ident * bool
+  | Clocked of base_ty * constr * ident
 
 let string_of_ty = function
   | Base bty -> string_of_base_ty bty
-  | Clocked (bty, id, b) ->
-    Printf.sprintf (if b then "%s when %s" else "%s when not %s")
-      (string_of_base_ty bty) id
+  | Clocked (bty, constr, id) ->
+    Printf.sprintf "%s when %s(%s)"
+      (string_of_base_ty bty) constr id
 
 let base_ty_of_ty : ty -> base_ty = function
   | Base t | Clocked (t, _, _) -> t
 
 type clock =
   | Base
-  | Cl of clock * ident (* Clock *)
-  | NotCl of clock * ident (* Negated clock *)
+  | Cl of clock * constr * ident
   | Ctuple of clock list
 
 let clock_of_ty : ty -> clock = function
   | Base _ -> Base
-  | Clocked (_, cl, b) ->
-    if b then Cl (Base, cl) else NotCl (Base, cl)
+  | Clocked (_, constr, id) ->
+    Cl (Base, constr, id)
 
 let rec string_of_clock = function
   | Base -> "base"
-  | Cl (base, cl) ->
-    Printf.sprintf "(%s on %s)" (string_of_clock base) cl
-  | NotCl (base, cl) ->
-    Printf.sprintf "(%s on not %s)" (string_of_clock base) cl
+  | Cl (base, constr, id) ->
+    Printf.sprintf "(%s on %s(%s))" (string_of_clock base) constr id
   | Ctuple cls ->
     Printf.sprintf "(%s)" (String.concat "," (List.map string_of_clock cls))
 
 (** Get the "variables" of a clock *)
 let rec clock_vars = function
   | Base -> []
-  | Cl (cl, id) -> id::(clock_vars cl)
-  | NotCl (cl, id) -> id::(clock_vars cl)
+  | Cl (cl, _, id) -> id::(clock_vars cl)
   | Ctuple cls ->
     List.concat (List.map clock_vars cls)
 
@@ -91,6 +90,13 @@ let string_of_op = function
 let string_of_ident_type_list l =
   String.concat "; " (List.map (fun (id, t) ->
       Printf.sprintf "%s:%s" id (string_of_ty t)) l)
+
+(** Clock declaration *)
+type clockdec = ident * constr list
+
+let string_of_clockdec (clid, constrs) =
+  Printf.sprintf "type %s = %s;"
+    clid (String.concat " + " constrs)
 
 (** Generation of fresh variables *)
 module Atom = struct

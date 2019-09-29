@@ -18,9 +18,11 @@ let rec desugar_expr (e : p_expr) : k_expr =
       KE_app (id, List.map desugar_expr es, desugar_expr e)
     | PE_fby (c, e) -> KE_fby (c, desugar_expr e)
     | PE_tuple es -> KE_tuple (List.map desugar_expr es)
-    | PE_when (e, id, b) -> KE_when (desugar_expr e, id, b)
-    | PE_merge (id, e1, e2) ->
-      KE_merge (id, desugar_expr e1, desugar_expr e2) in
+    | PE_when (e, constr, clid) -> KE_when (desugar_expr e, constr, clid)
+    | PE_merge (id, es) ->
+      KE_merge (id,
+                List.sort (fun (c1, e1) (c2, e2) -> String.compare c1 c2)
+                  (List.map (fun (c, e) -> c, desugar_expr e) es)) in
   { kexpr_desc = desc; kexpr_loc = e.pexpr_loc; }
 
 let desugar_equation (eq : p_equation) : k_equation =
@@ -36,4 +38,6 @@ let desugar_node (n : p_node) : k_node =
     kn_loc = n.pn_loc }
 
 let desugar_file (f : p_file) : k_file =
-  List.map desugar_node f
+  { kf_clocks = List.map (fun (c, constrs) ->
+        (c, List.sort String.compare constrs)) f.pf_clocks;
+    kf_nodes = List.map desugar_node f.pf_nodes; }

@@ -29,6 +29,7 @@
 	"returns", RETURNS;
 	"tel", TEL;
 	"then", THEN;
+  "type", TYPE;
 	"true", CONST_BOOL(true);
 	"var", VAR;
   "when", WHEN;
@@ -79,8 +80,8 @@ rule token = parse
       { COMP Op_le }
   | "<>"
       { NEQ }
-  (* | "->"
-   *     { ARROW } *)
+  | "->"
+      { ARROW }
   | "("
       { LPAREN }
   | ")"

@@ -9,7 +9,7 @@
 %}
 
 %token AND
-(* %token ARROW *)
+%token ARROW
 %token BOOL
 %token COLON
 %token COMMA
@@ -45,6 +45,7 @@
 %token STAR
 %token TEL
 %token THEN
+%token TYPE
 %token VAR
 %token WHEN
 %token XOR
@@ -67,7 +68,25 @@
 
 %%
 
-file: node_decs EOF { $1 }
+file: clock_decs node_decs EOF
+  { { pf_clocks = $1; pf_nodes = $2; } }
+;
+
+clock_decs:
+| /* empty */ { [] }
+| clock clock_decs { $1 :: $2 }
+;
+
+clock:
+| TYPE IDENT EQUAL constr_list SEMICOL
+  { ($2, $4) }
+;
+
+constr_list:
+| IDENT
+  { [$1] }
+| IDENT PLUS constr_list
+{ $1 :: $3 }
 ;
 
 node_decs:
@@ -200,12 +219,10 @@ expr:
  *     { mk_expr (PE_pre ($2)) $startpos $endpos } *)
 | LPAREN expr COMMA expr_comma_list RPAREN
     { mk_expr (PE_tuple ($2::$4)) $startpos $endpos }
-| expr WHEN IDENT
-    { mk_expr (PE_when ($1, $3, true)) $startpos $endpos }
-| expr WHEN NOT IDENT
-    { mk_expr (PE_when ($1, $4, false)) $startpos $endpos }
-| MERGE IDENT expr expr
-    { mk_expr (PE_merge ($2, $3, $4)) $startpos $endpos }
+| expr WHEN IDENT LPAREN IDENT RPAREN
+    { mk_expr (PE_when ($1, $3, $5)) $startpos $endpos }
+| MERGE IDENT branch_list
+    { mk_expr (PE_merge ($2, $3)) $startpos $endpos }
 ;
 
 const:
@@ -234,16 +251,25 @@ expr_comma_list:
 | expr { [$1] }
 ;
 
+branch_list:
+| branch { [$1] }
+| branch branch_list { $1::$2 }
+;
+
+branch:
+| LPAREN IDENT ARROW expr RPAREN { ($2, $4) }
+;
+
 btyp:
 | BOOL   { Tbool }
 | INT    { Tint }
 | REAL   { Treal }
+| IDENT { Tclock ($1) }
 ;
 
 typ:
   | btyp { Base $1 }
-  | btyp WHEN IDENT { Clocked ($1, $3, true) }
-  | btyp WHEN NOT IDENT { Clocked ($1, $4, false) }
+  | btyp WHEN IDENT LPAREN IDENT RPAREN { Clocked ($1, $3, $5) }
 ;
 
 semi_opt:

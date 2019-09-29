@@ -21,18 +21,15 @@ let get_pattern_clock (streams : (ident * clock) list) (pat : t_patt) =
 let rec compose_clock cl1 cl2 =
   match cl1 with
   | Base -> cl2
-  | Cl (cl, x') -> Cl (compose_clock cl cl2, x')
-  | NotCl (cl, x') -> NotCl (compose_clock cl cl2, x')
+  | Cl (base, constr, clid) -> Cl (compose_clock base cl2, constr, clid)
   | Ctuple cls -> Ctuple (List.map (fun cl -> compose_clock cl cl2) cls)
 
 (** Substitute a (CE_ident) to another identifier in a clock expression *)
 let subst_clock (x : ident) (y : c_expr) (cl : clock) =
   let rec subst_aux (x : ident) (y : ident) = function
     | Base -> Base
-    | Cl (cl, x') ->
-      Cl (subst_aux x y cl, if x = x' then y else x')
-    | NotCl (cl, x') ->
-      NotCl (subst_aux x y cl, if x = x' then y else x')
+    | Cl (base, constr, x') ->
+      Cl (subst_aux x y base, constr, if x = x' then y else x')
     | Ctuple cls ->
       Ctuple (List.map (subst_aux x y) cls) in
   match y.cexpr_desc with
@@ -69,27 +66,50 @@ let rec clock_expr nodes streams (e : t_expr) =
     let cls = List.map (fun ce -> ce.cexpr_clock) ces in
     { cexpr_desc = CE_tuple ces; cexpr_ty = ty;
       cexpr_clock = Ctuple cls; cexpr_loc = loc}
-  | TE_when (ew, clid, b) ->
+  | TE_when (ew, constr, clid) ->
     let cew = clock_expr nodes streams ew in
-    let cl = if b
-      then Cl (cew.cexpr_clock, clid)
-      else NotCl (cew.cexpr_clock, clid) in
-    { cexpr_desc = CE_when (cew, clid, b); cexpr_ty = ty;
-      cexpr_clock = cl; cexpr_loc = loc }
-  | TE_merge (clid, e1, e2) ->
-    let ce1 = clock_expr nodes streams e1
-    and ce2 = clock_expr nodes streams e2 in
-    let cl = (match ce1.cexpr_clock, ce2.cexpr_clock with
-        | Cl (base1, id1), NotCl (base2, id2)
-          when base1 = base2 && id1 = id2 -> base1
-        | cl1, cl2 ->
-          raise
-            (ClockError
-               (Printf.sprintf
-                  "Clocks of merge do not match expected id %s, found %s and %s"
-                  clid (string_of_clock cl1) (string_of_clock cl2), loc))) in
-    { cexpr_desc = CE_merge (clid, ce1, ce2); cexpr_ty = ty;
-      cexpr_clock = cl; cexpr_loc = loc }
+    { cexpr_desc = CE_when (cew, constr, clid); cexpr_ty = ty;
+      cexpr_clock = Cl (cew.cexpr_clock, constr, clid); cexpr_loc = loc }
+  | TE_merge (clid, es) ->
+    let ces = List.map (fun (c, e) -> c, clock_expr nodes streams e) es in
+    let ce = snd (List.hd ces) in
+    let base, clid = match ce.cexpr_clock with
+      | Base ->
+        raise (ClockError
+                 (Printf.sprintf "Argument %s of merge is not on a clock"
+                    (string_of_expr ce), loc))
+      | Cl (base, _, clid) -> base, clid
+      | Ctuple _ -> failwith "Should not happen" in
+
+    (* Verify that all the clocks are on the same base and using the same
+       stream, and that they are on the right constructor  *)
+    List.iter (fun (constr, ce) -> match ce.cexpr_clock with
+        | Base ->
+          raise (ClockError
+                   (Printf.sprintf "Argument %s of merge is not on a clock"
+                      (string_of_expr ce), loc))
+        | Cl (base', constr', clid') ->
+          if base' <> base
+          then raise (ClockError
+                        (Printf.sprintf
+                           "Arguments of merge are not on the same base :\
+                            %s and %s found"
+                           (string_of_clock base)
+                           (string_of_clock base'), loc));
+          if clid <> clid'
+          then raise (ClockError
+                        (Printf.sprintf
+                           "Arguments of merge are not on the same clock :\
+                            %s and %s found" clid clid', loc));
+          if constr <> constr'
+          then raise (ClockError
+                        (Printf.sprintf
+                           "Argument %s of merge is not on the right \
+                            clock constructor, expected %s, found %s"
+                           (string_of_expr ce) constr constr', ce.cexpr_loc))
+        | Ctuple _ -> failwith "Should not happen") ces;
+      { cexpr_desc = CE_merge (clid, ces); cexpr_ty = ty;
+      cexpr_clock = base; cexpr_loc = loc }
   | TE_app (fid, es, ever) ->
     let ces = List.map (clock_expr nodes streams) es
     and cever = clock_expr nodes streams ever in
@@ -152,14 +172,16 @@ let clock_node (nodes : (ident * c_node) list) (n : t_node) : c_node =
 
 (** Check the clocks for the file [f] *)
 let clock_file (f : t_file) : c_file =
-  try List.rev
-        (List.map snd
-           (List.fold_left (fun env n ->
-                (n.tn_name, (clock_node env n))::env) [] f))
-  with
-  | ClockError (msg, loc) ->
-    Printf.printf "Clock checking error : %s at %s\n"
-      msg (string_of_loc loc); exit 1
+  let nodes =
+    try List.rev
+          (List.map snd
+             (List.fold_left (fun env n ->
+                  (n.tn_name, (clock_node env n))::env) [] f.tf_nodes))
+    with
+    | ClockError (msg, loc) ->
+      Printf.printf "Clock checking error : %s at %s\n"
+        msg (string_of_loc loc); exit 1 in
+  { cf_nodes = nodes; cf_clocks = f.tf_clocks }
 
 (*                           Check equivalence between ASTs                    *)
 
@@ -186,11 +208,12 @@ let rec equiv_parse_clock_expr (t : t_expr) (c : c_expr) =
     c1 = c2 && equiv_parse_clock_expr e1 e2
   | TE_tuple es1, CE_tuple es2 ->
     List.for_all2 equiv_parse_clock_expr es1 es2
-  | TE_when (e1, id1, b1), CE_when (e2, id2, b2) ->
-    equiv_parse_clock_expr e1 e2 && id1 = id2 && b1 = b2
-  | TE_merge (id1, e11, e12), CE_merge (id2, e21, e22) ->
+  | TE_when (e1, c1, id1), CE_when (e2, c2, id2) ->
+    equiv_parse_clock_expr e1 e2 && c1 = c2 && id1 = id2
+  | TE_merge (id1, es1), CE_merge (id2, es2) ->
     id1 = id2 &&
-    equiv_parse_clock_expr e11 e21 && equiv_parse_clock_expr e12 e22
+    List.for_all2 (fun (c1, e1) (c2, e2) ->
+        c1 = c2 && equiv_parse_clock_expr e1 e2) es1 es2
   | _, _ -> false
 
 (** Check that a typed equation [t] and clocked equation [c] are equivalent *)
@@ -208,6 +231,7 @@ let equiv_parse_clock_node (t : t_node) (c : c_node) =
 
 (** Check that a typed file [t] and clocked file [c] are equivalent *)
 let equiv_parse_clock_file (t : t_file) (c : c_file) =
+  t.tf_clocks = c.cf_clocks &&
   try
-    List.for_all2 equiv_parse_clock_node t c
+    List.for_all2 equiv_parse_clock_node t.tf_nodes c.cf_nodes
   with _ -> false

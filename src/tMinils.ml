@@ -14,8 +14,8 @@ and t_expr_desc =
   | TE_app of ident * t_expr list * t_expr
   | TE_fby of const * t_expr
   | TE_tuple of t_expr list
-  | TE_when of t_expr * ident * bool
-  | TE_merge of ident * t_expr * t_expr
+  | TE_when of t_expr * constr * ident
+  | TE_merge of ident * (constr * t_expr) list
 
 type t_patt = Minils.k_patt
 type t_patt_desc = Minils.k_patt_desc
@@ -39,11 +39,15 @@ and string_of_expr_desc = function
                        (string_of_const c) (string_of_expr e)
   | TE_tuple es -> Printf.sprintf "(%s)"
                      (String.concat ", " (List.map string_of_expr es))
-  | TE_when (e, id, b) ->
-    Printf.sprintf (if b then "%s when %s" else "%s when not %s")
-      (string_of_expr e) id
-  | TE_merge (id, e1, e2) -> Printf.sprintf "merge %s (%s) (%s)"
-                               id (string_of_expr e1) (string_of_expr e2)
+  | TE_when (e, constr, clid) ->
+    Printf.sprintf "%s when %s(%s)"
+      (string_of_expr e) constr clid
+  | TE_merge (id, es) ->
+    Printf.sprintf "merge %s %s"
+      id (String.concat " "
+            (List.map
+               (fun (constr, e) -> Printf.sprintf "(%s -> %s)"
+                   constr (string_of_expr e)) es))
 
 type t_equation =
     { teq_patt: t_patt;
@@ -75,7 +79,11 @@ let string_of_node n =
     (String.concat "" (List.map (fun eq ->
          Printf.sprintf "  %s;\n" (string_of_equation eq)) n.tn_equs))
 
-type t_file = t_node list
+type t_file =
+  { tf_clocks: clockdec list;
+    tf_nodes: t_node list; }
 
 let string_of_file f =
-  String.concat "\n" (List.map string_of_node f)
+  Printf.sprintf "%s\n%s"
+    (String.concat "\n" (List.map string_of_clockdec f.tf_clocks))
+    (String.concat "\n" (List.map string_of_node f.tf_nodes))

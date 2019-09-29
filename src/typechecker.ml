@@ -31,6 +31,18 @@ let type_const = function
   | Cint _ -> Tint
   | Creal _ -> Treal
 
+(** Get the constructions associated with a clock type *)
+let constrs_of_clock clocks loc = function
+  | Tbool -> ["False";"True"]
+  | Tclock clid ->
+    (try List.assoc clid clocks
+     with _ -> raise (TypeError
+                        (Printf.sprintf "Clock %s not found in file" clid, loc)))
+  | ty -> raise (TypeError
+                   (Printf.sprintf
+                      "Type %s is not supported as a clock"
+                      (string_of_base_ty ty), loc))
+
 (** Gives the expected input types for an [expected] output types on op *)
 let type_op (inputs : base_ty list) loc op =
   match op with
@@ -56,7 +68,7 @@ let type_op (inputs : base_ty list) loc op =
                      (string_of_op op), loc))
 
 (** Check that an expression has the [expected] type *)
-let rec type_expr nodes streams (e : k_expr) : t_expr =
+let rec type_expr nodes streams clocks (e : k_expr) : t_expr =
   let loc = e.kexpr_loc in
   match e.kexpr_desc with
   | KE_const c ->
@@ -69,13 +81,13 @@ let rec type_expr nodes streams (e : k_expr) : t_expr =
                              id, e.kexpr_loc))) in
     { texpr_desc = TE_ident id; texpr_ty = bty; texpr_loc = e.kexpr_loc }
   | KE_op (op, es) ->
-    let tes = List.map (type_expr nodes streams) es in
+    let tes = List.map (type_expr nodes streams clocks) es in
     let outy = type_op (List.map (fun te -> te.texpr_ty) tes) e.kexpr_loc op in
     { texpr_desc = TE_op (op, tes); texpr_ty = outy; texpr_loc = loc }
   | KE_app (id, es, ever) ->
-    let tes = List.map (type_expr nodes streams) es in
+    let tes = List.map (type_expr nodes streams clocks) es in
     (* Check that reset stream is bool *)
-    let tever = type_expr nodes streams ever in
+    let tever = type_expr nodes streams clocks ever in
     if(tever.texpr_ty <> Tbool)
     then raise (TypeError
                   (Printf.sprintf
@@ -113,7 +125,7 @@ let rec type_expr nodes streams (e : k_expr) : t_expr =
     { texpr_desc = TE_app (id, tes, tever);
       texpr_ty = outy; texpr_loc = loc }
   | KE_fby (c, e) ->
-    let t1 = type_const c and te = type_expr nodes streams e in
+    let t1 = type_const c and te = type_expr nodes streams clocks e in
     if (t1 <> te.texpr_ty)
     then raise
         (TypeError
@@ -123,47 +135,62 @@ let rec type_expr nodes streams (e : k_expr) : t_expr =
             e.kexpr_loc));
     { texpr_desc = TE_fby(c, te); texpr_ty = t1; texpr_loc = loc }
   | KE_tuple es ->
-    let tes = (List.map (type_expr nodes streams) es) in
+    let tes = (List.map (type_expr nodes streams clocks) es) in
     let tys = List.map (fun te -> te.texpr_ty) tes in
     { texpr_desc = TE_tuple tes;
       texpr_ty = Ttuple tys; texpr_loc = loc }
-  | KE_when (e, cl, b) ->
+  | KE_when (e, constr, cl) ->
     let clt = (try base_ty_of_ty (List.assoc cl streams)
                with _ -> raise (TypeError
                                   (Printf.sprintf "Clock %s not found in node"
                                      cl, e.kexpr_loc))) in
-    if (clt <> Tbool)
-    then raise (TypeError
-                  (Printf.sprintf "Clock should be bool stream, found %s"
-                     (string_of_base_ty clt), e.kexpr_loc));
-    let te = type_expr nodes streams e in
-    { texpr_desc = TE_when (te, cl, b);
+    let constrs = constrs_of_clock clocks loc clt in
+    if not (List.mem constr constrs) then
+      raise (TypeError
+               (Printf.sprintf
+                  "Constructor %s does not belong to clock type %s"
+                  constr (string_of_base_ty clt), loc));
+    let te = type_expr nodes streams clocks e in
+    { texpr_desc = TE_when (te, constr, cl);
       texpr_ty = te.texpr_ty; texpr_loc = loc }
-  | KE_merge (cl, e1, e2) ->
+  | KE_merge (cl, es) ->
     let clt = (try base_ty_of_ty (List.assoc cl streams)
                with _ -> raise (TypeError
                                   (Printf.sprintf "Clock %s not found in node"
                                      cl, e.kexpr_loc))) in
-    if (clt <> Tbool)
-    then raise (TypeError
-                  (Printf.sprintf "Clock should be bool stream, found %s"
-                     (string_of_base_ty clt), e.kexpr_loc));
-    let te1 = type_expr nodes streams e1 and te2 = type_expr nodes streams e2 in
-    if (te1.texpr_ty <> te2.texpr_ty)
+
+    (* Check the constructors *)
+    let constrs = constrs_of_clock clocks loc clt in
+    if (constrs <> List.map fst es)
     then raise
         (TypeError
            (Printf.sprintf
-              "Both args of merge should have the same type, found %s and %s"
-              (string_of_base_ty te1.texpr_ty)
-              (string_of_base_ty te2.texpr_ty), e.kexpr_loc));
-    { texpr_desc = TE_merge (cl, te1, te2);
-      texpr_ty = te1.texpr_ty; texpr_loc = loc }
+              "Constructors in merge are incorrect for type %s :\
+               expected %s, found %s"
+              (string_of_base_ty clt)
+              (String.concat "," constrs)
+              (String.concat "," (List.map fst es)), loc));
+
+    (* Check the expression types *)
+    let tes = List.map
+        (fun (c, te) -> c, type_expr nodes streams clocks te) es in
+    let ty = (snd (List.hd tes)).texpr_ty in
+    List.iter (fun (_, te) ->
+        if (te.texpr_ty <> ty)
+        then raise
+            (TypeError
+               (Printf.sprintf
+                  "Both args of merge should have the same type, found %s and %s"
+                  (string_of_base_ty ty)
+                  (string_of_base_ty te.texpr_ty), e.kexpr_loc))) tes;
+    { texpr_desc = TE_merge (cl, tes);
+      texpr_ty = ty; texpr_loc = loc }
 
 (** Check that the equation [eq] is correctly typed.
     Returns the [out_streams] minus the ones we just type-checked *)
-let check_equation nodes streams out_streams (eq : k_equation) =
+let check_equation nodes streams out_streams clocks (eq : k_equation) =
   let (expected, os) = get_pattern_type out_streams eq.keq_patt
-  and te = type_expr nodes streams eq.keq_expr in
+  and te = type_expr nodes streams clocks eq.keq_expr in
   if te.texpr_ty <> expected
   then raise (TypeError
                 (Printf.sprintf
@@ -174,7 +201,7 @@ let check_equation nodes streams out_streams (eq : k_equation) =
   { teq_patt = eq.keq_patt; teq_expr = te }, os
 
 (** Check that the node [n] is correctly typed *)
-let check_node (nodes: (ident * t_node) list) (n : k_node) =
+let check_node (nodes: (ident * t_node) list) clocks (n : k_node) =
   let out_streams = (n.kn_local@n.kn_output) in
   let all_streams = (n.kn_input@out_streams) in
 
@@ -195,26 +222,24 @@ let check_node (nodes: (ident * t_node) list) (n : k_node) =
                                "Stream name %s was defined twice in node %s"
                                id n.kn_name, n.kn_loc)));
 
-  (* Check that all declared types are using bool clocks *)
+  (* Check that all declared types are using correct clocks *)
   ignore (List.fold_left (fun streams (id, (ty:ty)) -> match ty with
       | Base _ -> (id, ty)::streams
-      | Clocked (_, cl, _) ->
+      | Clocked (_, _, cl) ->
         let clt =
           (try base_ty_of_ty (List.assoc cl streams)
            with _ -> raise (TypeError
                               (Printf.sprintf "Clock %s not found in node %s"
                                  cl n.kn_name, n.kn_loc))) in
-        if (clt <> Tbool)
-        then raise (TypeError
-                      (Printf.sprintf "Clock should be bool stream, found %s"
-                         (string_of_base_ty clt), n.kn_loc));
+        ignore (constrs_of_clock clocks n.kn_loc clt);
         (id, ty)::streams
     ) [] all_streams);
 
   (* Check the equations of the node *)
   let teqs, rem_streams = List.fold_left
       (fun (teqs, streams) eq ->
-         let teq, streams = check_equation nodes all_streams streams eq in
+         let teq, streams =
+           check_equation nodes all_streams streams clocks eq in
          teq::teqs, streams)
       ([], out_streams) n.kn_equs in
   (match rem_streams with
@@ -231,10 +256,12 @@ let check_node (nodes: (ident * t_node) list) (n : k_node) =
 
 (** Check that the file [f] is correctly typed *)
 let check_file (f : k_file) : t_file =
+  let clocks = f.kf_clocks in
   try
     let nodes = List.fold_left (fun env n ->
-        (n.kn_name, check_node env n)::env) [] f in
-    List.map snd (List.rev nodes)
+        (n.kn_name, check_node env clocks n)::env) [] f.kf_nodes in
+    { tf_clocks = clocks;
+      tf_nodes = List.map snd (List.rev nodes); }
   with
   | UnexpectedEquationError (id, loc) ->
     Printf.printf "Type checking error : UnexpectedEquation for %s at %s\n"
@@ -248,7 +275,7 @@ let check_file (f : k_file) : t_file =
 
 (*                           Check equivalence between ASTs                    *)
 
-(** Check that a parsed pattern [p] and typed pattern [t] are equivalent *)
+(** Check that a parsed pattern [p] and typed pattearn [t] are equivalent *)
 let equiv_parse_clock_patt (k : k_patt) (t : t_patt) =
   k = t
 
@@ -266,11 +293,12 @@ let rec equiv_parse_clock_expr (k : k_expr) (t : t_expr) =
     c1 = c2 && equiv_parse_clock_expr e1 e2
   | KE_tuple es1, TE_tuple es2 ->
     List.for_all2 equiv_parse_clock_expr es1 es2
-  | KE_when (e1, id1, b1), TE_when (e2, id2, b2) ->
-    equiv_parse_clock_expr e1 e2 && id1 = id2 && b1 = b2
-  | KE_merge (id1, e11, e12), TE_merge (id2, e21, e22) ->
+  | KE_when (e1, c1, id1), TE_when (e2, c2, id2) ->
+    equiv_parse_clock_expr e1 e2 && c1 = c2 && id1 = id2
+  | KE_merge (id1, es1), TE_merge (id2, es2) ->
     id1 = id2 &&
-    equiv_parse_clock_expr e11 e21 && equiv_parse_clock_expr e12 e22
+    List.for_all2 (fun (c1, e1) (c2, e2) ->
+        c1 = c2 && equiv_parse_clock_expr e1 e2) es1 es2
   | _, _ -> false
 
 (** Check that a parsed equation [p] and typed equation [t] are equivalent *)
@@ -289,5 +317,6 @@ let equiv_parse_clock_node (k : k_node) (t : t_node) =
 (** Check that a parsed file [p] and typed file [t] are equivalent *)
 let equiv_parse_clock_file (k : k_file) (t : t_file) =
   try
-    List.for_all2 equiv_parse_clock_node k t
+    k.kf_clocks = t.tf_clocks &&
+    List.for_all2 equiv_parse_clock_node k.kf_nodes t.tf_nodes
   with _ -> false

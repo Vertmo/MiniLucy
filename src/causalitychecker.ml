@@ -15,8 +15,9 @@ let rec expr_vars (e : c_expr) =
      List.concat ((expr_vars ev)::(List.map expr_vars es))
    | CE_fby (_, _) -> []
    | CE_tuple es -> List.concat (List.map expr_vars es)
-   | CE_when (e, id, _) -> id::(expr_vars e)
-   | CE_merge (id, e1, e2) -> id::(expr_vars e1)@(expr_vars e2)
+   | CE_when (e, _, id) -> id::(expr_vars e)
+   | CE_merge (id, es) ->
+     id::(List.flatten (List.map (fun (_, e) -> expr_vars e) es))
   )@(clock_vars e.cexpr_clock)
 
 (** Get the variables bound by the pattern [p] *)
@@ -69,7 +70,7 @@ let check_node (n : c_node) =
     Return the dependency graphs *)
 let check_file (f : c_file) =
   try
-    List.iter check_node f
+    List.iter check_node f.cf_nodes
   with
   | CausalityError (msg, nodeid, loc) ->
     Printf.printf "Causality error : %s in node %s at %s"

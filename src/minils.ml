@@ -13,8 +13,8 @@ and k_expr_desc =
   | KE_app of ident * k_expr list * k_expr
   | KE_fby of const * k_expr
   | KE_tuple of k_expr list
-  | KE_when of k_expr * ident * bool
-  | KE_merge of ident * k_expr * k_expr
+  | KE_when of k_expr * constr * ident
+  | KE_merge of ident * (constr * k_expr) list
 
 let rec string_of_expr e =
   string_of_expr_desc e.kexpr_desc
@@ -32,11 +32,15 @@ and string_of_expr_desc = function
                        (string_of_const c) (string_of_expr e)
   | KE_tuple es -> Printf.sprintf "(%s)"
                      (String.concat ", " (List.map string_of_expr es))
-  | KE_when (e, id, b) ->
-    Printf.sprintf (if b then "%s when %s" else "%s when not %s")
-      (string_of_expr e) id
-  | KE_merge (id, e1, e2) -> Printf.sprintf "merge %s (%s) (%s)"
-                               id (string_of_expr e1) (string_of_expr e2)
+  | KE_when (e, constr, clid) ->
+    Printf.sprintf "%s when %s(%s)"
+      (string_of_expr e) constr clid
+  | KE_merge (id, es) ->
+    Printf.sprintf "merge %s %s"
+      id (String.concat " "
+            (List.map
+               (fun (constr, e) -> Printf.sprintf "(%s -> %s)"
+                   constr (string_of_expr e)) es))
 
 type k_patt =
   { kpatt_desc: k_patt_desc;
@@ -83,7 +87,11 @@ let string_of_node n =
     (String.concat "" (List.map (fun eq ->
          Printf.sprintf "  %s;\n" (string_of_equation eq)) n.kn_equs))
 
-type k_file = k_node list
+type k_file =
+  { kf_clocks: clockdec list;
+    kf_nodes: k_node list; }
 
 let string_of_file f =
-  String.concat "\n" (List.map string_of_node f)
+  Printf.sprintf "%s\n%s"
+    (String.concat "\n" (List.map string_of_clockdec f.kf_clocks))
+    (String.concat "\n" (List.map string_of_node f.kf_nodes))

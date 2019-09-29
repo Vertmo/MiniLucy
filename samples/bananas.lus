@@ -5,15 +5,17 @@ let
 tel;
 
 node count_bananas(banana : bool) returns (n : int);
-var count : int when banana;
+var count : int when True(banana);
 let
-  count = cumulative_sum(1 when banana) every (false when banana);
-  n = merge banana (count) ((0 fby n) when not banana);
+  count = cumulative_sum(1 when True(banana)) every (false when True(banana));
+  n = merge banana (True -> count) 
+                   (False -> (0 fby n) when False(banana));
 tel;
 
 node bad_count_bananas(banana : bool) returns (n : int);
-var count : int when banana;
+var count : int when True(banana);
 let
-  count = cumulative_sum(1) when banana;
-  n = merge banana (count) ((0 fby n) when not banana);
+  count = cumulative_sum(1) when True(banana);
+  n = merge banana (True -> count) 
+                   (False -> (0 fby n) when False(banana));
 tel;

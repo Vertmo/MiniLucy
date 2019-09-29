@@ -15,16 +15,17 @@ let
   x = 1 fby z; -- x = z fails
 tel;
   
-node test_clock() returns (x : bool; y : int when x; z : int);
+node test_clock() returns (x : bool; y : int when True(x); z : int);
 let
-  y = 0 when x;
-  z = merge x (y) (1 when not x);
+  y = 0 when True(x);
+  z = merge x (True -> y) (False -> 1 when False(x));
   x = false fby (z < 1); -- (z < 1) fails
 tel;
   
-node test_example(c : bool; k : int when c; x : int) returns (z : int when c; o : int);
+node test_example(c : bool; k : int when True(c); x : int) 
+returns (z : int when True(c); o : int);
 let
-  z = (((4 fby o) * 3) when c) + k;
-  o = merge c ((5 fby (z + (1 when c))) + (2 when c)) 
-  ((6 fby x) when not c);
+  z = (((4 fby o) * 3) when True(c)) + k;
+  o = merge c (True -> (5 fby (z + (1 when False(c)))) + (2 when False(c))) 
+              (False -> (6 fby x) when False(c));
 tel;

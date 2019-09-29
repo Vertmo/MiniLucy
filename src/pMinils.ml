@@ -15,8 +15,8 @@ and p_expr_desc =
   (* | PE_arrow of p_expr * p_expr
    * | PE_pre of p_expr *)
   | PE_tuple of p_expr list
-  | PE_when of p_expr * ident * bool
-  | PE_merge of ident * p_expr * p_expr
+  | PE_when of p_expr * constr * ident
+  | PE_merge of ident * (constr * p_expr) list
 
 let rec string_of_expr e =
   string_of_expr_desc e.pexpr_desc
@@ -37,11 +37,15 @@ and string_of_expr_desc = function
    * | PE_pre e -> Printf.sprintf "(pre %s)" (string_of_expr e) *)
   | PE_tuple es -> Printf.sprintf "(%s)"
                      (String.concat ", " (List.map string_of_expr es))
-  | PE_when (e, id, b) ->
-    Printf.sprintf (if b then "%s when %s" else "%s when not %s")
-      (string_of_expr e) id
-  | PE_merge (id, e1, e2) -> Printf.sprintf "merge %s (%s) (%s)"
-                               id (string_of_expr e1) (string_of_expr e2)
+  | PE_when (e, constr, clid) ->
+    Printf.sprintf "%s when %s(%s)"
+      (string_of_expr e) constr clid
+  | PE_merge (id, es) ->
+    Printf.sprintf "merge %s %s"
+      id (String.concat " "
+            (List.map
+               (fun (constr, e) -> Printf.sprintf "(%s -> %s)"
+                   constr (string_of_expr e)) es))
 
 type p_patt =
   { ppatt_desc: p_patt_desc;
@@ -88,7 +92,11 @@ let string_of_node n =
     (String.concat "" (List.map (fun eq ->
          Printf.sprintf "  %s;\n" (string_of_equation eq)) n.pn_equs))
 
-type p_file = p_node list
+type p_file =
+  { pf_clocks: clockdec list;
+    pf_nodes: p_node list; }
 
 let string_of_file f =
-  String.concat "\n" (List.map string_of_node f)
+  Printf.sprintf "%s\n%s"
+    (String.concat "\n" (List.map string_of_clockdec f.pf_clocks))
+    (String.concat "\n" (List.map string_of_node f.pf_nodes))

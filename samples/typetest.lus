@@ -33,14 +33,14 @@ let
   (r, b, i) = (1.0, true, 42);
 tel;
   
-node test_when(b : bool) returns (d:int when b);
+node test_when(b : bool) returns (d:int when True(b));
 let
-  d = 1 when b;
+  d = 1 when True(b);
 tel;
   
 node test_merge(b : bool; c : int) returns (e:int);
 let
-  e = merge b (c when b) (c when not b);
+  e = merge b (True -> c when True(b)) (False -> c when False(b));
 tel;
   
 node test_every(b : bool) returns (e : int);

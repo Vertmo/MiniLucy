@@ -1,11 +1,11 @@
 open Lexing
 
 let usage = "usage: " ^ Sys.argv.(0) ^
-            " [-parse] [-check] [-norm] [-translate] [-generate] [-asserts]\
-             [-o <output_file]\
+            " [-parse] [-desugar] [-check] [-norm] [-translate] [-generate]\
+             [-asserts] [-o <output_file]\
              <input_file>"
 
-type step = Parse | Check | Norm | Translate | Generate
+type step = Parse | Desugar | Check | Norm | Translate | Generate
 let asserts = ref false
 
 let step = ref Generate
@@ -16,6 +16,8 @@ let speclist = [
   ": set output file for c code");
   ("-parse", Arg.Unit (fun () -> step := Parse),
    ": parse and print the program");
+  ("-desugar", Arg.Unit (fun () -> step := Desugar),
+   ": parse, desugar and print the program");
   ("-check", Arg.Unit (fun () -> step := Check),
    ":check the program, and print it with annotated clocks");
   ("-norm", Arg.Unit (fun () -> step := Norm),
@@ -55,6 +57,10 @@ let main filename step =
 
   (* Desugar *)
   let file = Desugarizer.desugar_file p_file in
+  if (step = Desugar) then (
+    print_endline (Minils.string_of_file file);
+    exit 0
+  );
 
   (* Check *)
   let tfile = Typechecker.check_file file in

@@ -15,8 +15,8 @@ and c_expr_desc =
   | CE_app of ident * c_expr list * c_expr
   | CE_fby of const * c_expr
   | CE_tuple of c_expr list
-  | CE_when of c_expr * ident * bool
-  | CE_merge of ident * c_expr * c_expr
+  | CE_when of c_expr * constr * ident
+  | CE_merge of ident * (constr * c_expr) list
 
 let rec string_of_expr e =
   Printf.sprintf "(%s {%s})"
@@ -36,11 +36,15 @@ and string_of_expr_desc = function
                        (string_of_const c) (string_of_expr e)
   | CE_tuple es -> Printf.sprintf "(%s)"
                      (String.concat ", " (List.map string_of_expr es))
-  | CE_when (e, id, b) ->
-    Printf.sprintf (if b then "%s when %s" else "%s when not %s")
-      (string_of_expr e) id
-  | CE_merge (id, e1, e2) -> Printf.sprintf "merge %s (%s) (%s)"
-                               id (string_of_expr e1) (string_of_expr e2)
+  | CE_when (e, constr, clid) ->
+    Printf.sprintf "%s when %s(%s)"
+      (string_of_expr e) constr clid
+  | CE_merge (id, es) ->
+    Printf.sprintf "merge %s %s"
+      id (String.concat " "
+            (List.map
+               (fun (constr, e) -> Printf.sprintf "(%s -> %s)"
+                   constr (string_of_expr e)) es))
 
 type c_patt =
   { cpatt_desc: c_patt_desc;
@@ -87,7 +91,11 @@ let string_of_node n =
     (String.concat "" (List.map (fun eq ->
          Printf.sprintf "  %s;\n" (string_of_equation eq)) n.cn_equs))
 
-type c_file = c_node list
+type c_file =
+  { cf_clocks: clockdec list;
+    cf_nodes: c_node list; }
 
 let string_of_file f =
-  String.concat "\n" (List.map string_of_node f)
+  Printf.sprintf "%s\n%s"
+    (String.concat "\n" (List.map string_of_clockdec f.cf_clocks))
+    (String.concat "\n" (List.map string_of_node f.cf_nodes))

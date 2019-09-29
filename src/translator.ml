@@ -30,30 +30,30 @@ let rec translate_cexpr env (x : ident) (e : n_cexpr) : instr =
         { nexpr_desc = e';
           nexpr_ty = e.ncexpr_ty; nexpr_clock = e.ncexpr_clock } in
     Assign (x, e'')
-  | NCE_merge (id, e1, e2) ->
-    Case (id, [translate_cexpr env x e1], [translate_cexpr env x e2])
+  | NCE_merge (id, es) ->
+    Case (id, List.map (fun (c, e) -> c, [translate_cexpr env x e]) es)
 
 (** Protects the execution of an instruction with a clock *)
 let rec control (cl : clock) (ins : instr) : instr =
   match cl with
   | Base -> ins
-  | Cl (cl', clid) -> Case (clid, [control cl' ins], [])
-  | NotCl (cl', clid) -> Case (clid, [], [control cl' ins])
+  | Cl (cl', constr, clid) ->
+    Case (clid, [constr, [control cl' ins]])
   | Ctuple _ -> invalid_arg "control"
 
-(** Join the control structures *)
-let rec join i1 i2 =
-  match i1, i2 with
-  | Case (x1, i11, i12), Case (x2, i21, i22) when x1 = x2 ->
-    [Case (x1, join_list (i11@i21), join_list (i12@i22))]
-  | _, _ -> [i1;i2]
-and join_list instrs =
-  match instrs with
-  | [] -> []
-  | i1::is ->
-    (match join_list is with
-     | [] -> [i1]
-     | i2::is -> (join i1 i2)@is)
+(** Join the control structures FIXME *)
+(* let rec join i1 i2 =
+ *   match i1, i2 with
+ *   | Case (x1, is1), Case (x2, is2) when x1 = x2 ->
+ *     [Case (x1, List.map2 (fun (c1, i1) (_, i2) -> (c1, join_list i1@i2)) is1 is2)]
+ *   | _, _ -> [i1;i2]
+ * and join_list instrs =
+ *   match instrs with
+ *   | [] -> []
+ *   | i1::is ->
+ *     (match join_list is with
+ *      | [] -> [i1]
+ *      | i2::is -> (join i1 i2)@is) *)
 
 (** Translate an equation *)
 let translate_eq env = function
@@ -71,7 +71,7 @@ let translate_eq env = function
     { env with si = (Reset o)::env.si;
                j = (o, fid)::env.j;
                s = (control cl (StepAssign (ids, o, es')))::
-                   (control cl (Case (everid, [Reset o], [])))::env.s }
+                   (control cl (Case (everid, [("True", [Reset o])])))::env.s }
 
 (** Translate a node *)
 let translate_node outputs (n : n_node) : machine =
@@ -90,7 +90,7 @@ let translate_node outputs (n : n_node) : machine =
     m_reset = env.si;
     m_step = input, output,
              List.sort_uniq (fun (v1, _) (v2, _) -> String.compare v1 v2) env.d,
-             join_list
+             (* join_list FIXME *)
                (List.stable_sort (fun i1 i2 ->
                    let b1 = assign_state i1 and b2 = assign_state i2 in
                    if b1 && not b2 then 1
@@ -98,8 +98,12 @@ let translate_node outputs (n : n_node) : machine =
 
 (** Translate the full file *)
 let translate_file (f : n_file) =
-  List.map (translate_node
-              (List.map (fun n -> (n.nn_name, List.map fst n.nn_output)) f)) f
+  let clocks = f.nf_clocks in
+  { clocks = clocks;
+    machines = List.map
+        (translate_node
+           (List.map (fun n ->
+                (n.nn_name, List.map fst n.nn_output)) f.nf_nodes)) f.nf_nodes }
 
 (*                           Check equivalence between ASTs                    *)
 (* TODO *)

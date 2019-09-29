@@ -11,7 +11,7 @@ and n_expr_desc =
   | NE_const of const
   | NE_ident of ident
   | NE_op of op * n_expr list
-  | NE_when of n_expr * ident * bool
+  | NE_when of n_expr * constr * ident
 
 let rec string_of_expr e =
   Printf.sprintf "(%s {%s})"
@@ -24,9 +24,9 @@ and string_of_expr_desc = function
   | NE_op (op, es) -> Printf.sprintf "(%s [%s])"
                         (string_of_op op)
                         (String.concat "; " (List.map string_of_expr es))
-  | NE_when (e, id, b) ->
-    Printf.sprintf (if b then "%s when %s" else "%s when not %s")
-      (string_of_expr e) id
+  | NE_when (e, c, id) ->
+    Printf.sprintf "%s when %s(%s)"
+      (string_of_expr e) c id
 
 type n_cexpr =
   { ncexpr_desc: n_cexpr_desc;
@@ -34,7 +34,7 @@ type n_cexpr =
     ncexpr_clock: clock; }
 
 and n_cexpr_desc =
-  | NCE_merge of ident * n_cexpr * n_cexpr
+  | NCE_merge of ident * (constr * n_cexpr) list
   | NCE_expr of n_expr_desc
 
 let rec string_of_cexpr e =
@@ -43,9 +43,12 @@ let rec string_of_cexpr e =
     (string_of_clock e.ncexpr_clock)
 
 and string_of_cexpr_desc = function
-  | NCE_merge (id, e1, e2) ->
-    Printf.sprintf "merge %s (%s) (%s)"
-      id (string_of_cexpr e1) (string_of_cexpr e2)
+  | NCE_merge (id, es) ->
+    Printf.sprintf "merge %s %s"
+      id (String.concat " "
+            (List.map
+               (fun (constr, e) -> Printf.sprintf "(%s -> %s)"
+                   constr (string_of_cexpr e)) es))
   | NCE_expr e -> string_of_expr_desc e
 
 type n_equation =
@@ -85,7 +88,11 @@ let string_of_node n =
     (String.concat "" (List.map (fun eq ->
          Printf.sprintf "  %s;\n" (string_of_equation eq)) n.nn_equs))
 
-type n_file = n_node list
+type n_file =
+  { nf_clocks: clockdec list;
+    nf_nodes : n_node list; }
 
 let string_of_file f =
-  String.concat "\n" (List.map string_of_node f)
+  Printf.sprintf "%s\n%s"
+    (String.concat "\n" (List.map string_of_clockdec f.nf_clocks))
+    (String.concat "\n" (List.map string_of_node f.nf_nodes))

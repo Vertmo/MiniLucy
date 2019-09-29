@@ -21,7 +21,7 @@ type instr =
   | StAssign of (ident * expr)
   | Reset of ident
   | StepAssign of (ident list * ident * expr list)
-  | Case of ident * instr list * instr list
+  | Case of ident * (constr * instr list) list
 
 let rec string_of_instr = function
   | Assign (id, e) ->
@@ -36,9 +36,11 @@ let rec string_of_instr = function
     Printf.sprintf "(%s) := %s.step(%s)"
       (String.concat ", " ids) fid
       (String.concat ", " (List.map string_of_expr es))
-  | Case (id, instrCl, instrNCl) ->
-    Printf.sprintf "case(%s) {\nTrue -> %s\nFalse -> %s\n}"
-      id (string_of_instrs instrCl) (string_of_instrs instrNCl)
+  | Case (id, instrs) ->
+    Printf.sprintf "case(%s) {%s}\n"
+      id
+      (String.concat "\n" (List.map (fun (c, ins) ->
+           Printf.sprintf "%s: %s;" c (string_of_instrs ins)) instrs))
 
 and string_of_instrs instrs =
   String.concat "\n" (List.map string_of_instr instrs)
@@ -51,8 +53,8 @@ let rec assign_state = function
   | StAssign _ -> true
   | Reset _ -> false
   | StepAssign _ -> false
-  | Case (_, i1, i2) ->
-    List.exists assign_state i1 || List.exists assign_state i2
+  | Case (_, instrs) ->
+    List.exists (fun (_, ins) -> List.exists assign_state ins) instrs
 
 let string_of_p p =
   String.concat "; " (List.map (fun (id, t) ->
@@ -82,7 +84,11 @@ let string_of_machine m =
     (string_of_p input) (string_of_p output) (string_of_p vars)
     (string_of_instrs instrs)
 
-type file = machine list
+type file =
+  { clocks : clockdec list;
+    machines : machine list }
 
 let string_of_file f =
-  String.concat "\n" (List.map string_of_machine f)
+  Printf.sprintf "%s\n%s"
+    (String.concat "\n" (List.map string_of_clockdec f.clocks))
+    (String.concat "\n" (List.map string_of_machine f.machines))

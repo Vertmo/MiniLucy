@@ -6,12 +6,14 @@ type ty =
   | Tvoid
   | Tint | Tfloat
   | Tident of ident
+  | Tenum of ident
   | Tpointer of ty
 
 let rec string_of_ty = function
   | Tvoid -> "void"
   | Tint -> "int" | Tfloat -> "float"
   | Tident id -> id
+  | Tenum id -> Printf.sprintf "enum %s" id
   | Tpointer ty -> Printf.sprintf "%s*" (string_of_ty ty)
 
 type const =
@@ -81,6 +83,7 @@ type instr =
   | If of expr * instr list * instr list
   | Call of ident * expr list
   | VarDec of ty * ident
+  | SwitchCase of (ident * (ident * instr list) list)
 
 let rec string_of_instr (indent_level : int) (i : instr) =
   let indent = String.make indent_level '\t' in
@@ -103,6 +106,14 @@ let rec string_of_instr (indent_level : int) (i : instr) =
       (String.concat "," (List.map string_of_expr es))
   | VarDec (ty, id) ->
     Printf.sprintf "%s%s %s;" indent (string_of_ty ty) id
+  | SwitchCase (id, cases) ->
+    Printf.sprintf "%sswitch(%s) {\n%s\n%s}\n" indent id indent
+      (String.concat "\n" (List.map (fun (c, instr) ->
+           Printf.sprintf "%s\tcase %s:\n%s\n%s\t\tbreak;"
+             indent c
+             (String.concat "\n"
+                (List.map (string_of_instr (indent_level + 2)) instr))
+             indent) cases))
 
 type fundef = {
   fun_name : ident;
@@ -119,10 +130,14 @@ let string_of_fundef (f : fundef) =
     (String.concat "\n" (List.map (string_of_instr 1) f.fun_body))
 
 type def =
+  | Enum of ident * ident list
   | Struct of structdef
   | Fun of fundef
 
 let string_of_def = function
+  | Enum (id, constrs) ->
+    Printf.sprintf "enum %s {%s};"
+      id (String.concat "," constrs)
   | Struct std -> string_of_structdef std
   | Fun fd -> string_of_fundef fd
 

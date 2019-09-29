@@ -58,5 +58,5 @@ tel;
   
 node test_merge_nary(a : c3) returns (x : int);
 let
-  x = merge a (E -> 1 when E(a)) (D -> 2 when D(a)) (F -> 3 when F(a)); 
+  x = merge a (E -> 2 when E(a)) (D -> 1 when D(a)) (F -> 3 when F(a)); 
 tel;

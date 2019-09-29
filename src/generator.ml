@@ -10,12 +10,18 @@ let ty_of_base_ty : base_ty -> MicroC.ty = function
   | Tint | Tbool -> Tint
   | Treal -> Tfloat
   | Ttuple _ -> invalid_arg "ty_of_base_ty"
+  | Tclock id -> Tenum ("_clock_"^id)
 
 (** Translate a Lustre const to a C const *)
 let generate_const : Asttypes.const -> MicroC.const = function
   | Cint i -> Int i
   | Cbool b -> if b then Int 1 else Int 0
   | Creal f -> Float f
+
+(** Generate code for a clock declaration *)
+let generate_clockdec (id, constrs) =
+  Enum ("_clock_"^id,
+        List.map (fun c -> Printf.sprintf "_clock_%s_%s" id c) constrs)
 
 (** Generate code for an expression *)
 let rec generate_expr outputs : Obc.expr -> MicroC.expr = function
@@ -33,7 +39,7 @@ let rec generate_expr outputs : Obc.expr -> MicroC.expr = function
     else If (List.nth ges 0, List.nth ges 1, List.nth ges 2)
 
 (** Generate code for an instruction *)
-let rec generate_instr instances outputs : Obc.instr -> MicroC.instr list =
+let rec generate_instr instances tys outputs : Obc.instr -> MicroC.instr list =
   function
   | Assign (id, e) ->
     if (List.mem_assoc id outputs)
@@ -55,14 +61,34 @@ let rec generate_instr instances outputs : Obc.instr -> MicroC.instr list =
          if (List.mem_assoc id outputs)
          then Assign (PField ("_out", id), e)
          else Assign (Ident id, e)) ids oids)
-  | Case (id, t, e) ->
-    [If (Ident id,
-         List.flatten (List.map (generate_instr instances outputs) t),
-         List.flatten (List.map (generate_instr instances outputs) e))]
+  | Case (id, is) ->
+    let constrs = List.map fst is in
+    if constrs = ["False";"True"]
+    then [If (Ident id,
+              List.flatten (List.map (generate_instr instances tys outputs)
+                              (snd (List.nth is 1))),
+              List.flatten (List.map (generate_instr instances tys outputs)
+                              (snd (List.nth is 0))))]
+    else if constrs = ["True"]
+    then [If (Ident id,
+              List.flatten (List.map (generate_instr instances tys outputs)
+                              (snd (List.hd is))), [])]
+    else if constrs = ["False"]
+    then [If (Ident id, [],
+              List.flatten (List.map (generate_instr instances tys outputs)
+                              (snd (List.hd is))))]
+    else
+      let clid = (match (List.assoc id tys) with
+          | Tclock id -> id
+          | _ -> failwith "Should not happen") in
+      [SwitchCase (id, List.map (fun (c, i) ->
+           Printf.sprintf "_clock_%s_%s" clid c,
+           List.flatten (List.map (generate_instr instances tys outputs) i)) is)]
 
 (** Generate code for a machine *)
 let generate_machine (m : machine) : def list =
   let (inputs, outputs, locals, step_body) = m.m_step in
+  let tys = inputs@outputs@locals in
   let st_mem = {
     struct_name = m.m_name^"_mem";
     struct_fields =
@@ -80,7 +106,7 @@ let generate_machine (m : machine) : def list =
     fun_ret = Tvoid;
     fun_args = ["_self", Tpointer (Tident (m.m_name^"_mem"))];
     fun_body = List.flatten
-        (List.map (generate_instr m.m_instances outputs) m.m_reset);
+        (List.map (generate_instr m.m_instances tys outputs) m.m_reset);
   }
   and fun_step = {
     fun_name = m.m_name^"_step";
@@ -92,14 +118,15 @@ let generate_machine (m : machine) : def list =
     fun_body =
       (List.map (fun (id, ty) -> VarDec (ty_of_base_ty ty, id)) locals)@
       (List.flatten
-         (List.map (generate_instr m.m_instances outputs) step_body))
+         (List.map (generate_instr m.m_instances tys outputs) step_body))
   } in
   [Struct st_mem; Struct st_out;
    Fun fun_reset; Fun fun_step]
 
 (** Generate code for a whole file *)
 let generate_file (f : Obc.file) : MicroC.file =
-  List.concat (List.map generate_machine f)
+  (List.map generate_clockdec f.clocks)@
+  (List.concat (List.map generate_machine f.machines))
 
 (*                           Check equivalence between ASTs                    *)
 (* TODO *)

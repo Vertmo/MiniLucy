@@ -25,10 +25,11 @@ let rec expr_vars (e : n_expr) =
 
 let rec cexpr_vars (e : n_cexpr) =
   (match e.ncexpr_desc with
-   | NCE_merge (id, e1, e2) -> id::(cexpr_vars e1)@(cexpr_vars e2)
-   | NCE_expr e' -> (expr_vars
-                       { nexpr_desc = e';
-                         nexpr_ty = e.ncexpr_ty; nexpr_clock = e.ncexpr_clock })
+   | NCE_merge (id, es) ->
+     id::(List.flatten (List.map (fun (_, e) -> cexpr_vars e) es))
+   | NCE_expr e' ->
+     (expr_vars { nexpr_desc = e';
+                  nexpr_ty = e.ncexpr_ty; nexpr_clock = e.ncexpr_clock })
   )@(clock_vars e.ncexpr_clock)
 
 (** Get the variables used by an equation *)
@@ -71,4 +72,4 @@ let schedule_node (n : n_node) =
   { n with nn_equs = sorted_equs; }
 
 let schedule_file (f : n_file) =
-  List.map schedule_node f
+  { f with nf_nodes = List.map schedule_node f.nf_nodes }

@@ -21,17 +21,20 @@ let rec normE (d : n_equation list) (e : c_expr) :
     let x = Atom.fresh "_var" in
     { nexpr_desc = NE_ident x; nexpr_ty = ty; nexpr_clock = cl },
     (NQ_fby (x, c, ne))::d, (x, Base ty)::vars
-  | CE_when (e, id, b) ->
+  | CE_when (e, constr, clid) ->
     let ne, d, vars = normE d e in
-    { nexpr_desc = NE_when (ne, id, b); nexpr_ty = ty; nexpr_clock = cl },
+    { nexpr_desc = NE_when (ne, constr, clid); nexpr_ty = ty; nexpr_clock = cl },
     d, vars
-  | CE_merge (id, e1, e2) ->
+  | CE_merge (clid, es) ->
     let y = Atom.fresh "_var" in
-    let ne1, d, vs1 = normCE d e1 in let ne2, d, vs2 = normCE d e2 in
+    let nes, d, vs =
+      List.fold_left (fun (nes, d, vs) (c, e) ->
+          let ne, d, vs' = normCE d e in
+          ((c, ne)::nes, d, vs@vs')) ([], d, []) es in
     { nexpr_desc = NE_ident y; nexpr_ty = ty; nexpr_clock = cl },
-    (NQ_ident (y, { ncexpr_desc = (NCE_merge (id, ne1, ne2));
+    (NQ_ident (y, { ncexpr_desc = (NCE_merge (clid, List.rev nes));
                       ncexpr_ty = ty; ncexpr_clock = cl } ))::d,
-    (y, Base ty)::(vs1@vs2)
+    (y, Base ty)::vs
   | CE_app (fid, es, ever) ->
     let nes, d, vs1 = normEs d es in let x, d, vs2 = normV d ever in
     let y = Atom.fresh "_var" in
@@ -97,7 +100,8 @@ let norm_node (n : c_node) =
 
 (** Normalize the whole file *)
 let norm_file (f : c_file) =
-  List.map norm_node f
+  { nf_clocks = f.cf_clocks;
+    nf_nodes = List.map norm_node f.cf_nodes }
 
 (*                           Check equivalence between ASTs                    *)
 (* TODO *)

@@ -10,8 +10,10 @@
     List.iter (fun (s,k) -> Hashtbl.add h s k)
       [
 	"and", AND;
+  "automaton", AUTOMATON;
 	"bool", BOOL;
   "div", DIV;
+  "end", END;
 	"else", ELSE;
   "every", EVERY;
   "fby", FBY;
@@ -31,6 +33,7 @@
 	"then", THEN;
   "type", TYPE;
 	"true", CONST_BOOL(true);
+  "until", UNTIL;
 	"var", VAR;
   "when", WHEN;
   "xor", XOR;
@@ -94,6 +97,8 @@ rule token = parse
       { EQUAL }
   | ","
       { COMMA }
+  | "|"
+      { PIPE }
   | _
       { raise (Lexical_error (lexeme lexbuf)) }
   | eof

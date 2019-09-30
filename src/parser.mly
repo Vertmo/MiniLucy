@@ -10,6 +10,7 @@
 
 %token AND
 %token ARROW
+%token AUTOMATON
 %token BOOL
 %token COLON
 %token COMMA
@@ -19,6 +20,7 @@
 %token <float> CONST_REAL
 %token DIV
 %token ELSE
+%token END
 %token EOF
 %token EQUAL
 %token EVERY
@@ -36,6 +38,7 @@
 %token NODE
 %token NOT
 %token OR
+%token PIPE
 %token PLUS
 (* %token PRE *)
 %token RETURNS
@@ -46,6 +49,7 @@
 %token TEL
 %token THEN
 %token TYPE
+%token UNTIL
 %token VAR
 %token WHEN
 %token XOR
@@ -99,12 +103,12 @@ node:
 | NODE IDENT LPAREN in_params RPAREN
   RETURNS LPAREN out_params RPAREN SEMICOL
   local_params
-  LET eq_list TEL semi_opt
+  LET instr_list TEL semi_opt
     { { pn_name = $2;
 	pn_input = $4;
 	pn_output = $8;
 	pn_local = $11;
-	pn_equs = $13;
+	pn_instrs = $13;
 	pn_loc = ($startpos, $endpos) } }
 ;
 
@@ -149,11 +153,31 @@ param:
         List.map (fun id -> (id, typ)) $1 }
 ;
 
-eq_list:
-| eq
-    { [$1] }
-| eq eq_list
+instr_list:
+| /* empty */ { [] }
+| instr instr_list
     { $1 :: $2 }
+;
+
+instr:
+| eq
+    { Eq $1 }
+| AUTOMATON auto_branch_list END SEMICOL
+    { Automaton $2 }
+;
+
+auto_branch_list:
+| auto_branch { [$1] }
+| auto_branch auto_branch_list { $1::$2 }
+;
+
+auto_branch:
+| PIPE IDENT ARROW instr_list until_list { ($2, $4, $5) }
+;
+
+until_list:
+| /* empty */ { [] }
+| UNTIL expr THEN IDENT SEMICOL until_list { ($2, $4)::$6 }
 ;
 
 eq:

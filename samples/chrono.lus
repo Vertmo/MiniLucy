@@ -1,0 +1,32 @@
+node chrono(StSt : bool; Rst : bool) returns (disp_1 : int; disp_2 : int);
+let
+  automaton
+  | CHRONO ->
+    automaton
+    | STOP ->
+      s = 0 fby s;
+      m = 0 fby s;
+      run = false;
+      until StSt then STOP;
+    | START ->
+      d = 0 fby ((d + 1) mod 100);
+      s = if (d < (0 fby d)) 
+          then (((0 fby s) + 1) mod 60)
+          else (0 fby s);
+      m = if (s < (0 fby s))
+          then (((0 fby mm) + 1) mod 60)
+          else (0 fby m);
+      run = true;
+      until StSt then START;
+    end;
+    until Rst and not run then CHRONO;
+  end;
+  automaton
+  | TIME ->
+    disp_1 = s;
+    disp_2 = m;
+    until Rst and run then LAP;
+  | LAP ->
+    until Rst then TIME;
+  end;
+tel;

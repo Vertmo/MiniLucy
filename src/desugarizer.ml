@@ -29,12 +29,16 @@ let desugar_equation (eq : p_equation) : k_equation =
   { keq_patt = desugar_patt eq.peq_patt;
     keq_expr = desugar_expr eq.peq_expr; }
 
+let desugar_instr = function
+  | Eq eq -> desugar_equation eq
+  | Automaton branches -> failwith "Not yet implemented"
+
 let desugar_node (n : p_node) : k_node =
   { kn_name = n.pn_name;
     kn_input = n.pn_input;
     kn_output = n.pn_output;
     kn_local = n.pn_local;
-    kn_equs = List.map desugar_equation n.pn_equs;
+    kn_equs = List.map desugar_instr n.pn_instrs;
     kn_loc = n.pn_loc }
 
 let desugar_file (f : p_file) : k_file =

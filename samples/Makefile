@@ -1,7 +1,10 @@
 MINILUCY := ../minilucy.byte
 
-all: fulladder.elf bananas.elf heat.elf clocktest.elf abro.elf \
-	typetest.c causalitytest.c translationtest.c
+TARGETS := \
+	fulladder.elf bananas.elf heat.elf clocktest.elf abro.elf \
+	typetest.c causalitytest.c translationtest.c automatatest.c
+
+all: $(TARGETS)
 
 %.elf: main_%.c %.c
 	gcc -o $@ $<
@@ -10,4 +13,4 @@ all: fulladder.elf bananas.elf heat.elf clocktest.elf abro.elf \
 	$(MINILUCY) -asserts -o $@ $^
 
 clean:
-	rm -f *.elf *.o
+	rm -f $(TARGETS)

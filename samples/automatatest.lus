@@ -1,0 +1,11 @@
+node auto1() returns (x : int);
+let
+  automaton
+  | INC ->
+    x = 0 fby x + 1;
+    until x > 10 then DEC;
+  | DEC ->
+    x = 0 fby x - 1;
+    until x = 0 then INC;
+  end;
+tel;

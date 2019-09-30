@@ -71,12 +71,31 @@ let string_of_equation eq =
     (string_of_patt eq.peq_patt)
     (string_of_expr eq.peq_expr)
 
+type p_until = p_expr * constr
+
+let string_of_until (e, c) =
+  Printf.sprintf "until %s then %s;" (string_of_expr e) c
+
+type p_instr =
+  | Eq of p_equation
+  | Automaton of (constr * p_instr list * p_until list) list
+
+let rec string_of_instr = function
+  | Eq eq -> Printf.sprintf "%s;" (string_of_equation eq)
+  | Automaton branches ->
+    Printf.sprintf "automaton\n%s"
+      (String.concat "\n" (List.map (fun (c, ins, untils) ->
+           Printf.sprintf "| %s ->\n%s\n%s" c
+             (String.concat "\n" (List.map string_of_instr ins))
+             (String.concat "\n" (List.map string_of_until untils)))
+          branches))
+
 type p_node =
     { pn_name: ident;
       pn_input: (ident * ty) list;
       pn_output: (ident * ty) list;
       pn_local: (ident * ty) list;
-      pn_equs: p_equation list;
+      pn_instrs: p_instr list;
       pn_loc: location; }
 
 let string_of_node n =
@@ -89,8 +108,8 @@ let string_of_node n =
     (string_of_ident_type_list n.pn_input)
     (string_of_ident_type_list n.pn_output)
     (string_of_ident_type_list n.pn_local)
-    (String.concat "" (List.map (fun eq ->
-         Printf.sprintf "  %s;\n" (string_of_equation eq)) n.pn_equs))
+    (String.concat "" (List.map (fun i ->
+         Printf.sprintf "  %s\n" (string_of_instr i)) n.pn_instrs))
 
 type p_file =
   { pf_clocks: clockdec list;

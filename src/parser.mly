@@ -269,7 +269,7 @@ btyp:
 
 typ:
   | btyp { Base $1 }
-  | btyp WHEN IDENT LPAREN IDENT RPAREN { Clocked ($1, $3, $5) }
+  | typ WHEN IDENT LPAREN IDENT RPAREN { Clocked ($1, $3, $5) }
 ;
 
 semi_opt:

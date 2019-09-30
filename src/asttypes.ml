@@ -25,26 +25,27 @@ let rec string_of_base_ty = function
 
 type ty =
   | Base of base_ty
-  | Clocked of base_ty * constr * ident
+  | Clocked of ty * constr * ident
 
-let string_of_ty = function
+let rec string_of_ty = function
   | Base bty -> string_of_base_ty bty
   | Clocked (bty, constr, id) ->
     Printf.sprintf "%s when %s(%s)"
-      (string_of_base_ty bty) constr id
+      (string_of_ty bty) constr id
 
-let base_ty_of_ty : ty -> base_ty = function
-  | Base t | Clocked (t, _, _) -> t
+let rec base_ty_of_ty : ty -> base_ty = function
+  | Base t -> t
+  | Clocked (t, _, _) -> base_ty_of_ty t
 
 type clock =
   | Base
   | Cl of clock * constr * ident
   | Ctuple of clock list
 
-let clock_of_ty : ty -> clock = function
+let rec clock_of_ty : ty -> clock = function
   | Base _ -> Base
-  | Clocked (_, constr, id) ->
-    Cl (Base, constr, id)
+  | Clocked (ty, constr, id) ->
+    Cl (clock_of_ty ty, constr, id)
 
 let rec string_of_clock = function
   | Base -> "base"

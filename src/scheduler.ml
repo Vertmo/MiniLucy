@@ -3,11 +3,6 @@
 open Asttypes
 open NMinils
 
-module IdentMap = Map.Make(String)
-
-(** Dependency graph *)
-type dep_graph = (ident list) IdentMap.t
-
 (** Get the variables defined by an equation *)
 let def_vars = function
   | NQ_ident (id, _) -> [id]
@@ -20,7 +15,7 @@ let rec expr_vars (e : n_expr) =
    | NE_const _ -> []
    | NE_ident id -> [id]
    | NE_op (_, es) -> List.flatten (List.map expr_vars es)
-   | NE_when (e, clid, _) -> clid::(expr_vars e)
+   | NE_when (e, _, clid) -> clid::(expr_vars e)
   )@(clock_vars e.nexpr_clock)
 
 let rec cexpr_vars (e : n_cexpr) =
@@ -39,37 +34,31 @@ let used_vars = function
   | NQ_app (_, _, es, evid, cl) ->
     evid::(clock_vars cl)@(List.flatten (List.map expr_vars es))
 
-(** Compute the dependencies introduced by the equation [eq] *)
-let eq_dependencies (eq : n_equation) : dep_graph =
-  let defined = def_vars eq
-  and used = List.sort_uniq String.compare (used_vars eq) in
-  IdentMap.of_seq (List.to_seq (List.map (fun l -> (l, used)) defined))
-
-(** Gets all the streams [x] depends on *)
-let get_dependencies (x : ident) (graph : dep_graph) =
-  let rec depth_first (visited : ident list) (current : ident) =
-    let next =
-      try IdentMap.find current graph
-      with Not_found -> [] in
-    List.fold_left (fun vis n' ->
-        if List.mem n' vis then vis else depth_first (n'::vis) n')
-      visited next in
-  depth_first [] x
-
+(** Schedule a node *)
 let schedule_node (n : n_node) =
-  let graph = List.fold_left
-      (fun graph eq -> IdentMap.union
-          (fun _ l1 l2 -> failwith "Should not happen (typing)")
-              graph (eq_dependencies eq))
-      IdentMap.empty n.nn_equs in
-  let sorted_equs = List.sort (fun eq1 eq2 ->
-      let defs1 = def_vars eq1 and defs2 = def_vars eq2 in
-      if List.exists
-          (fun df1 ->
-             List.exists (fun df2 ->
-                 List.mem df2 (get_dependencies df1 graph)) defs2) defs1
-      then 1 else -1) n.nn_equs in
+  let rec top_sort defs equs =
+    let (equs, rest) = List.partition (fun eq ->
+        let used = used_vars eq in
+        List.for_all (fun u -> List.mem u defs) used) equs in
+    if (List.length rest = 0) then equs
+    else equs@(top_sort ((List.flatten (List.map def_vars equs))@defs) rest) in
+  let sorted_equs = top_sort (List.map fst n.nn_input) n.nn_equs in
   { n with nn_equs = sorted_equs; }
 
 let schedule_file (f : n_file) =
   { f with nf_nodes = List.map schedule_node f.nf_nodes }
+
+(*                      Check that the scheduling is correct                  *)
+
+let schedule_is_correct_node n =
+  let defined =
+    List.fold_left (fun defs eq ->
+        let used = List.sort_uniq String.compare (used_vars eq) in
+        if not (List.for_all (fun v -> List.mem v defs) used)
+        then failwith (String.concat "," used);
+        (def_vars eq)@defs) (List.map fst n.nn_input) n.nn_equs in
+  List.for_all (fun v -> List.mem v defined)
+    (List.map fst (n.nn_local@n.nn_output))
+
+let schedule_is_correct_file f =
+    List.for_all schedule_is_correct_node f.nf_nodes

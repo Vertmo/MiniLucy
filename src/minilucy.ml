@@ -76,6 +76,7 @@ let main filename step =
   (* Normalize *)
   let nfile = Normalizer.norm_file cfile in
   let nfile = Scheduler.schedule_file nfile in
+  if !asserts then assert (Scheduler.schedule_is_correct_file nfile);
   if (step = Norm) then (
     print_endline (NMinils.string_of_file nfile);
     exit 0

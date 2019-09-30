@@ -26,6 +26,6 @@ node test_example(c : bool; k : int when True(c); x : int)
 returns (z : int when True(c); o : int);
 let
   z = (((4 fby o) * 3) when True(c)) + k;
-  o = merge c (True -> (5 fby (z + (1 when False(c)))) + (2 when False(c))) 
+  o = merge c (True -> (5 fby (z + (1 when True(c)))) + (2 when True(c))) 
               (False -> (6 fby x) when False(c));
 tel;

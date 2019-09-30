@@ -68,18 +68,19 @@ let rec clock_expr nodes streams (e : t_expr) =
       cexpr_clock = Ctuple cls; cexpr_loc = loc}
   | TE_when (ew, constr, clid) ->
     let cew = clock_expr nodes streams ew in
+    let clc = List.assoc clid streams in
+    if(clc <> cew.cexpr_clock)
+    then raise
+        (ClockError
+           (Printf.sprintf
+              "Argument of when should be on the same clock \
+               as the clock id %s: expected %s, found %s"
+           clid (string_of_clock clc) (string_of_clock cew.cexpr_clock), loc));
     { cexpr_desc = CE_when (cew, constr, clid); cexpr_ty = ty;
       cexpr_clock = Cl (cew.cexpr_clock, constr, clid); cexpr_loc = loc }
   | TE_merge (clid, es) ->
     let ces = List.map (fun (c, e) -> c, clock_expr nodes streams e) es in
-    let ce = snd (List.hd ces) in
-    let base, clid = match ce.cexpr_clock with
-      | Base ->
-        raise (ClockError
-                 (Printf.sprintf "Argument %s of merge is not on a clock"
-                    (string_of_expr ce), loc))
-      | Cl (base, _, clid) -> base, clid
-      | Ctuple _ -> failwith "Should not happen" in
+    let base = List.assoc clid streams in
 
     (* Verify that all the clocks are on the same base and using the same
        stream, and that they are on the right constructor  *)

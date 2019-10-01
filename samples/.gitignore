@@ -6,3 +6,4 @@ typetest.c
 clocktest.c
 causalitytest.c
 translationtest.c
+automatatest.c

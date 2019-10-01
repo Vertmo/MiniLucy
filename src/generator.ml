@@ -17,6 +17,8 @@ let generate_const : Asttypes.const -> MicroC.const = function
   | Cint i -> Int i
   | Cbool b -> if b then Int 1 else Int 0
   | Creal f -> Float f
+  | Cconstr (c, clty) ->
+    EnumField (Printf.sprintf "_clock_%s_%s" clty c)
 
 (** Generate code for a clock declaration *)
 let generate_clockdec (id, constrs) =

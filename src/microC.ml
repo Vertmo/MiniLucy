@@ -18,10 +18,12 @@ let rec string_of_ty = function
 
 type const =
   | Int of int | Float of float
+  | EnumField of string
 
 let string_of_const = function
   | Int i -> string_of_int i
   | Float f -> string_of_float f
+  | EnumField s -> s
 
 type structdef = {
   struct_name : ident;
@@ -56,7 +58,7 @@ type expr =
   | If of (expr * expr * expr)
 
 let string_of_cop = function
-  | Op_eq -> "=" | Op_neq -> "!=" | Op_lt -> "<" | Op_le -> "<="
+  | Op_eq -> "==" | Op_neq -> "!=" | Op_lt -> "<" | Op_le -> "<="
   | Op_gt -> ">" | Op_ge -> ">="
   | Op_add -> "+" | Op_sub -> "-" | Op_mul -> "*" | Op_div -> "/" | Op_mod -> "%"
   | Op_not -> "~" | Op_and -> "&" | Op_or -> "|" | Op_xor -> "^"

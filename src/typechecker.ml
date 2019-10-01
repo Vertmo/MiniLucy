@@ -30,6 +30,7 @@ let type_const = function
   | Cbool _ -> Tbool
   | Cint _ -> Tint
   | Creal _ -> Treal
+  | Cconstr (_, tyid) -> Tclock tyid
 
 (** Get the constructions associated with a clock type *)
 let constrs_of_clock clocks loc = function

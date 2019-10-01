@@ -1,6 +1,8 @@
 type location = Lexing.position * Lexing.position
 let dummy_loc = Lexing.dummy_pos, Lexing.dummy_pos
 
+let dummy_loc = Lexing.dummy_pos, Lexing.dummy_pos
+
 type ident = string
 type constr = string
 
@@ -66,11 +68,13 @@ type const =
   | Cbool of bool
   | Cint of int
   | Creal of float
+  | Cconstr of constr * ident (* constructor * clock type identifier *)
 
 let string_of_const = function
   | Cbool b -> if b then "true" else "false"
   | Cint i -> string_of_int i
   | Creal f -> string_of_float f
+  | Cconstr (c, _) -> c
 
 type op =
   | Op_eq | Op_neq | Op_lt | Op_le | Op_gt | Op_ge

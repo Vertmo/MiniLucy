@@ -1,11 +1,30 @@
-node auto1() returns (x : int);
+node auto_simpl() returns (x : int);
 let
   automaton
   | INC ->
     x = 0 fby x + 1;
-    until x > 10 then DEC;
+    until x = 10 then DEC;
   | DEC ->
     x = 0 fby x - 1;
     until x = 0 then INC;
+  end;
+tel;
+  
+node auto_mult() returns (x : int);
+let
+  automaton
+  | A ->
+    automaton
+    | A1 ->
+      x = 0 fby x + 1;
+      until x = 3 then A2;
+    | A2 ->
+      x = 0 fby x + 2;
+      until x = 7 then A1;
+    end;
+    until x = 10 then B;
+  | B ->
+    x = 0 fby x - 5;
+    until x = 0 then A;
   end;
 tel;

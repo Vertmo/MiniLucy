@@ -1,5 +1,6 @@
 (** Desugarizer from parsed AST to kernel AST *)
 
+open Asttypes
 open PMinils
 open Minils
 
@@ -29,19 +30,202 @@ let desugar_equation (eq : p_equation) : k_equation =
   { keq_patt = desugar_patt eq.peq_patt;
     keq_expr = desugar_expr eq.peq_expr; }
 
-let desugar_instr = function
-  | Eq eq -> desugar_equation eq
-  | Automaton branches -> failwith "Not yet implemented"
+(*                            Automata processing                              *)
 
-let desugar_node (n : p_node) : k_node =
+(** Get the vars defined in a pattern *)
+let get_patt_var pat =
+  match pat.ppatt_desc with
+  | PP_ident id -> id
+  | PP_tuple ids ->
+    failwith "Tuple assignment is not (yet) supported in automatas"
+
+(** Get the vars defined in an instruction *)
+let rec get_instr_vars = function
+  | Eq eq -> [get_patt_var eq.peq_patt]
+  | Automaton branches ->
+    List.flatten (List.map (fun (_, ins, _) ->
+        List.flatten (List.map get_instr_vars ins)) branches)
+
+(** Tree of automatas *)
+type automata_tree =
+  | Leaf of p_equation
+  | Node of ident * (constr * automata_tree list * p_until list) list
+
+(** Get the tree represneting a hierarchy of automata *)
+let rec get_automata_tree = function
+  | Eq eq -> Leaf eq
+  | Automaton branches ->
+    Node (Atom.fresh "_auto_state",
+          List.map (fun (c, ins, untils) ->
+              (c, List.map get_automata_tree ins, untils)) branches)
+
+(** Automata-derived clock *)
+type automata_clock =
+  | Base of ident * constr list
+  | Clocked of automata_clock * constr * ident
+
+(** Get the clocks of the automata tree *)
+let rec get_automata_clocks : automata_tree -> (automata_clock list) =
+  function
+  | Leaf eq -> []
+  | Node (clid, branches) ->
+    let newCl = (Base (clid, (List.map (fun (c, _, _) -> c) branches))) in
+    let cls = List.map (fun (c, trs, _) ->
+        let cls = List.flatten (List.map get_automata_clocks trs) in
+        List.map (fun cl -> Clocked (cl, c, clid)) cls) branches in
+    newCl::(List.flatten cls)
+
+(** Get a clock declaration for the automaton clock *)
+let rec clockdec_of_automata_clock : automata_clock -> clockdec =
+  function
+  | Base (id, constrs) -> ("_ty"^id, constrs)
+  | Clocked (cl, _, _) -> clockdec_of_automata_clock cl
+
+let clockvar_of_automata_clock cl =
+  let rec ty_of_automata_clock : automata_clock -> ty = function
+    | Base (id, _) -> Base (Tclock ("_ty"^id))
+    | Clocked (cl, constr, clid) ->
+      Clocked (ty_of_automata_clock cl, constr, clid)
+  and ident_of_automata_clock = function
+    | Base (id, _) -> id
+    | Clocked (cl, _, _) -> ident_of_automata_clock cl in
+  (ident_of_automata_clock cl, ty_of_automata_clock cl)
+
+(** Tree of expressions *)
+type expr_tree =
+  | None
+  | Leaf of k_expr
+  | Node of ident * (constr * expr_tree) list
+
+(** Get the expression tree for [var] in an automata tree *)
+let rec get_expr_tree (tree : automata_tree) var =
+  match tree with
+  | Leaf eq ->
+    if (get_patt_var eq.peq_patt) = var
+    then Leaf (desugar_expr eq.peq_expr) else None
+  | Node (clid, branches) ->
+    let subtrees = List.map (fun (c, trs, _) ->
+        c, List.fold_left (fun n tr ->
+            if n = None then get_expr_tree tr var else n) None trs) branches in
+    Node (clid, subtrees)
+
+(** Merge a tree of expressions according to clocks and constructors *)
+let generate_merged_exprs (tree : expr_tree) =
+  let rec gen_mer_e interm = function
+    | None ->
+      invalid_arg "generate_merged_exprs"
+    (* TODO treat local bindings ? *)
+    | Leaf e ->
+      List.fold_left (fun e (c, clid) ->
+          { kexpr_desc = KE_when (e, c, clid); kexpr_loc = dummy_loc })
+        e (List.rev interm)
+    | Node (clid, branches) ->
+      let eMerge = KE_merge (clid, List.map (fun (c, t) ->
+          let e = gen_mer_e ((c, clid)::interm) t in
+          (c, e)) branches) in
+      { kexpr_desc = eMerge;
+        kexpr_loc = dummy_loc } in
+  gen_mer_e [] tree
+
+type until_tree =
+  | Node of ident * (constr * k_expr * until_tree list) list
+
+(** Desugar a list of until statement in an automaton *)
+let desugar_untils clid auto_constr untils =
+  let untils = List.rev untils in
+  let startE = { kexpr_desc = KE_const (Cconstr (auto_constr, "_ty"^clid));
+                 kexpr_loc = dummy_loc; } in
+  List.fold_left (fun e (cond, constr) ->
+      let e' = KE_op (Op_if,
+                      [desugar_expr cond;
+                       { kexpr_desc = KE_const (Cconstr (constr, "_ty"^clid));
+                         kexpr_loc = dummy_loc };
+                       e]) in
+      { kexpr_desc = e'; kexpr_loc = dummy_loc }) startE untils
+
+(** Get the until tree in an automata tree *)
+let rec get_until_tree : automata_tree -> until_tree = function
+  | Leaf eq -> invalid_arg "get_until_tree"
+  | Node (clid, branches) ->
+    let untils = List.map (fun (c, instrs, unt) ->
+        c, desugar_untils clid c unt,
+        (List.fold_left (fun trs i ->
+             try (get_until_tree i)::trs
+             with _ -> trs) [] instrs)) branches in
+    Node (clid, untils)
+
+(** Generate a set of equations from an until tree *)
+let rec generate_merged_untils tree =
+  let rec gen_mer_u interm = function
+    | Node (clid, branches) ->
+      (* Compute the base cases *)
+      let base =
+        KE_merge (clid, List.map (fun (c, e, _) ->
+            let e' = List.fold_left (fun e (c, clid) ->
+                { kexpr_desc = KE_when (e, c, clid); kexpr_loc = dummy_loc }
+              ) e (List.rev interm) in
+            c, { kexpr_desc = KE_when (e', c, clid);
+                 kexpr_loc = dummy_loc; }) branches) in
+      let (constr1, _, _) = List.hd branches in
+      let base =
+        { kexpr_desc =
+            KE_fby (Cconstr (constr1, "_ty"^clid),
+                    { kexpr_desc = base ; kexpr_loc = dummy_loc });
+              kexpr_loc = dummy_loc; } in
+      let base =
+        { keq_patt = { kpatt_desc = KP_ident clid; kpatt_loc = dummy_loc };
+          keq_expr = base } in
+
+      (* Compute the recursive cases *)
+      let recu = List.flatten (List.map (fun (c, _, trs) ->
+          List.flatten
+            (List.map (gen_mer_u ((c, clid)::interm)) trs)) branches) in
+      base::recu in
+  gen_mer_u [] tree
+
+let rec desugar_instr instr =
+  match instr with
+  | Eq eq -> [desugar_equation eq], []
+  | Automaton branches ->
+    (* Get the tree representing the hierarchy of automatas *)
+    let automataTree = get_automata_tree instr in
+
+    (* Get the variables and the expressions they correspond to *)
+    let vars = List.sort_uniq String.compare (get_instr_vars instr) in
+    let trees = List.combine vars
+        (List.map (get_expr_tree automataTree) vars) in
+
+    (* Create the equations from the found expressions *)
+    let eqs = List.map (fun (v, tr) ->
+        { keq_patt = { kpatt_desc = KP_ident v; kpatt_loc = dummy_loc; };
+          keq_expr = generate_merged_exprs tr; }) trees in
+
+    (* Get the untils *)
+    let untilTree = get_until_tree automataTree in
+    let untils = generate_merged_untils untilTree in
+
+    (* Create the necessary clock types and clocks *)
+    let clocks = get_automata_clocks automataTree in
+    (eqs@untils, clocks)
+
+let desugar_node (n : p_node) =
+  let (eqs, clocks) =
+    List.fold_left (fun (eqs, cl) ins ->
+        let (eqs', cl') = desugar_instr ins in
+        (eqs@eqs', cl@cl')) ([], []) n.pn_instrs in
   { kn_name = n.pn_name;
     kn_input = n.pn_input;
     kn_output = n.pn_output;
-    kn_local = n.pn_local;
-    kn_equs = List.map desugar_instr n.pn_instrs;
-    kn_loc = n.pn_loc }
+    kn_local = n.pn_local@
+               (List.map clockvar_of_automata_clock clocks);
+    kn_equs = eqs;
+    kn_loc = n.pn_loc },
+    List.map clockdec_of_automata_clock clocks
 
 let desugar_file (f : p_file) : k_file =
-  { kf_clocks = List.map (fun (c, constrs) ->
-        (c, List.sort String.compare constrs)) f.pf_clocks;
-    kf_nodes = List.map desugar_node f.pf_nodes; }
+  let (nodes, clocks) =
+    List.fold_left (fun (nod, cl) n ->
+      let (n', cl') = desugar_node n in (n'::nod, cl@cl')) ([], []) f.pf_nodes in
+  { kf_clocks = (List.map (fun (c, constrs) ->
+        (c, List.sort String.compare constrs)) f.pf_clocks)@clocks;
+    kf_nodes = List.rev nodes; }

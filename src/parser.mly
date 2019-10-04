@@ -29,6 +29,7 @@
 %token REAL
 %token <string> IDENT
 %token IF
+%token IN
 %token INT
 %token LET
 %token LPAREN
@@ -172,7 +173,13 @@ auto_branch_list:
 ;
 
 auto_branch:
-| PIPE IDENT ARROW instr_list until_list { ($2, $4, $5) }
+| PIPE IDENT ARROW let_list instr_list until_list { ($2, $4, $5, $6) }
+;
+
+let_list:
+| /* empty */ { [] }
+| LET IDENT COLON typ EQUAL expr IN let_list
+  { ($2, $4, $6)::$8 }
 ;
 
 until_list:

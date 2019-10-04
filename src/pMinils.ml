@@ -71,6 +71,12 @@ let string_of_equation eq =
     (string_of_patt eq.peq_patt)
     (string_of_expr eq.peq_expr)
 
+type p_let = ident * ty * p_expr
+
+let string_of_let (id, ty, e) =
+  Printf.sprintf "let %s : %s = %s in"
+    id (string_of_ty ty) (string_of_expr e)
+
 type p_until = p_expr * constr
 
 let string_of_until (e, c) =
@@ -78,14 +84,15 @@ let string_of_until (e, c) =
 
 type p_instr =
   | Eq of p_equation
-  | Automaton of (constr * p_instr list * p_until list) list
+  | Automaton of (constr * p_let list * p_instr list * p_until list) list
 
 let rec string_of_instr = function
   | Eq eq -> Printf.sprintf "%s;" (string_of_equation eq)
   | Automaton branches ->
     Printf.sprintf "automaton\n%s"
-      (String.concat "\n" (List.map (fun (c, ins, untils) ->
-           Printf.sprintf "| %s ->\n%s\n%s" c
+      (String.concat "\n" (List.map (fun (c, lets, ins, untils) ->
+           Printf.sprintf "| %s ->\n%s\n%s\n%s" c
+             (String.concat "\n" (List.map string_of_let lets))
              (String.concat "\n" (List.map string_of_instr ins))
              (String.concat "\n" (List.map string_of_until untils)))
           branches))

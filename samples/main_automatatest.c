@@ -19,7 +19,17 @@ int main() {
 
   for(int i = 0; i < 30; i++) {
     auto_mult_step(&mem2, &out2);
-    printf("x : %d\n", out2.x);
+    printf("x : %d, y : %d\n", out2.x, out2.y);
+  }
+
+  printf("Test auto_app\n====================\n");
+  auto_app_mem mem3;
+  auto_app_out out3;
+  auto_app_reset(&mem3);
+
+  for(int i = 0; i < 30; i++) {
+    auto_app_step(&mem3, &out3);
+    printf("x : %d\n", out3.x);
   }
   return 0;
 }

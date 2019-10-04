@@ -2,6 +2,7 @@
 fulladder.c
 bananas.c
 heat.c
+chrono.c
 typetest.c
 clocktest.c
 causalitytest.c

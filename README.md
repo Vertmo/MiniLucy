@@ -28,3 +28,51 @@ let
 tel;
 ```
 where b1 would need to be "on b1" for it to work
+
+### Automata
+
+Clocks are used to discriminate between expressions in different states.
+This means equation must be defined in every state for a given value (possibility of local binding in automaton).
+
+State clock are defined from merged `until` equations
+
+#### Resets
+
+A bit more difficult. An application must be on a proper clock in order to execute only at the right times
+
+Solutions:
+
+Use a reset clock on the same clock as the branches clock. This clock will be defined during any step the automaton is active in. This means that the functions will be called too much (not a problem since it is reset + no side effect)
+
+Example:
+```
+node auto_simpl() returns (x : int);
+let
+  automaton
+  | INC ->
+    x = 0 fby x + 1;
+    until x = 5 then DEC;
+  | DEC ->
+    x = 0 fby x - 2;
+    until x = -10 then INC;
+  end;
+tel;
+```
+
+becomes 
+
+```
+node auto_simpl() returns (x:int);
+var _auto_state1:_ty_auto_state1; _auto_state1INC_reset:bool; _auto_state1DEC_reset:bool;
+let
+  x = merge _auto_state1 
+      (DEC -> (if [(false fby _auto_state1DEC_reset) when DEC(_auto_state1); 0 when DEC(_auto_state1); (0 fby (- [x; 2]) when DEC(_auto_state1))])) 
+      (INC -> (if [(false fby _auto_state1INC_reset) when INC(_auto_state1); 0 when INC(_auto_state1); (0 fby (+ [x; 1]) when INC(_auto_state1))]));
+
+  _auto_state1 = (INC fby merge _auto_state1 (DEC -> (if [(= [x; (- [10])]); INC; DEC]) when DEC(_auto_state1)) (INC -> (if [(= [x; 5]); DEC; INC]) when INC(_auto_state1)));
+  _auto_state1INC_reset = merge _auto_state1 (DEC -> true when DEC(_auto_state1)) (INC -> false when INC(_auto_state1));
+  _auto_state1DEC_reset = merge _auto_state1 (DEC -> false when DEC(_auto_state1)) (INC -> true when INC(_auto_state1));
+tel
+```
+
+Test for when / merge in expressions (+ every for functions could cause an issue, replace it totally by the reset clock ?)

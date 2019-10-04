@@ -19,6 +19,7 @@
   "fby", FBY;
 	"false", CONST_BOOL(false);
 	"if", IF;
+  "in", IN;
 	"int", INT;
 	"let", LET;
   "merge", MERGE;

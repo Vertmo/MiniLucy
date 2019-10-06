@@ -50,7 +50,8 @@ let rec get_instr_vars = function
 type automata_tree =
   | Leaf of p_equation
   | Node of ident *
-            (constr * p_let list * automata_tree list * p_until list) list
+            (constr * ((ident * ident * ty * p_expr) list) *
+             automata_tree list * p_until list) list
 
 (** Get the tree represneting a hierarchy of automata *)
 let rec get_automata_tree = function
@@ -58,7 +59,9 @@ let rec get_automata_tree = function
   | Automaton branches ->
     Node (Atom.fresh "_auto_state",
           List.map (fun (c, lets, ins, untils) ->
-              (c, lets, List.map get_automata_tree ins, untils)) branches)
+              (c, List.map (fun (id, ty, e) ->
+                 let nid = Atom.fresh ("_let_"^id) in (id, nid, ty, e)) lets,
+               List.map get_automata_tree ins, untils)) branches)
 
 (** Automata-derived clock *)
 type automata_clock =
@@ -92,11 +95,33 @@ let clockvar_of_automata_clock cl =
     | Clocked (cl, _, _) -> ident_of_automata_clock cl in
   (ident_of_automata_clock cl, ty_of_automata_clock cl)
 
+(** Apply a substitution of variables to an expression *)
+let rec apply_subst x y e =
+  let desc = match e.kexpr_desc with
+    | KE_const c -> KE_const c
+    | KE_ident id -> if id = x then KE_ident y else KE_ident id
+    | KE_op (op, es) -> KE_op (op, List.map (apply_subst x y) es)
+    | KE_app (fid, es, ev) ->
+      KE_app (fid, List.map (apply_subst x y) es, apply_subst x y ev)
+    | KE_fby (c, e) -> KE_fby (c, apply_subst x y e)
+    | KE_tuple es -> KE_tuple (List.map (apply_subst x y) es)
+    | KE_when (e, c, clid) ->
+      KE_when (apply_subst x y e, c, if clid = x then y else clid)
+    | KE_merge (clid, branches) ->
+      KE_merge ((if clid = x then y else clid),
+                List.map (fun (c, e) -> c, apply_subst x y e) branches)
+  in { e with kexpr_desc = desc }
+
+(** Apply several substitutions to an expression *)
+let apply_substs substs e =
+  List.fold_left (fun e (x, y) -> apply_subst x y e) e substs
+
 (** Tree of expressions *)
 type expr_tree =
   | None
   | Leaf of k_expr
-  | Node of ident * (constr * expr_tree) list
+  (* The second parameter is a set of applicable substitutions *)
+  | Node of ident * ((constr * (ident * ident) list * expr_tree) list)
 
 (** Get the expression tree for [var] in an automata tree *)
 let rec get_expr_tree (tree : automata_tree) var =
@@ -105,10 +130,12 @@ let rec get_expr_tree (tree : automata_tree) var =
     if (get_patt_var eq.peq_patt) = var
     then Leaf (desugar_expr eq.peq_expr) else None
   | Node (clid, branches) ->
-    let subtrees = List.map (fun (c, _, trs, _) ->
-        c, List.fold_left (fun n tr ->
-            if n = None then get_expr_tree tr var else n) None trs) branches in
-    if (List.for_all (fun (c, n) -> n = None) subtrees)
+    let subtrees = List.map (fun (c, lets, trs, _) ->
+        (c,
+         (List.map (fun (id, nid, _, _) -> id, nid) lets),
+         List.fold_left (fun n tr ->
+            if n = None then get_expr_tree tr var else n) None trs)) branches in
+    if (List.for_all (fun (c, _, n) -> n = None) subtrees)
     then None else Node (clid, subtrees)
 
 (** Add a list of when in front of an equation *)
@@ -165,8 +192,9 @@ let generate_merged_exprs (tree : expr_tree) =
       let eMerge =
         KE_merge (clid,
                   List.sort (fun (s1, _) (s2, _) -> String.compare s1 s2)
-                    (List.map (fun (c, t) ->
-                         let e = gen_mer_e ((c, clid)::whens) t in
+                    (List.map (fun (c, substs, t) ->
+                         let e = apply_substs substs
+                             (gen_mer_e ((c, clid)::whens) t) in
                          (c, e)) branches)) in
       { kexpr_desc = eMerge;
         kexpr_loc = dummy_loc } in
@@ -175,7 +203,8 @@ let generate_merged_exprs (tree : expr_tree) =
 (** Tree of local let bindings *)
 type let_tree =
   | None
-  | Leaf of (ident * ty * k_expr)
+  (* The first ident is for the original id (in code), the second for the fresh id *)
+  | Leaf of (ident * ident * ty * k_expr)
   | Node of ident * (constr * let_tree list) list
 
 (** Get the let-tree of an automata tree *)
@@ -183,20 +212,29 @@ let rec get_let_tree : automata_tree -> let_tree = function
   | Leaf eq -> None
   | Node (clid, branches) ->
     Node (clid, List.map (fun (c, lets, ins, _) ->
-        c, (List.map (fun (id, ty, e) -> Leaf (id, ty, desugar_expr e)) lets)@
+        c, (List.map (fun (id, nid, ty, e) -> Leaf (id, nid, ty, desugar_expr e)) lets)@
            (List.map get_let_tree ins)
       ) branches)
 
 (** Generate the local bindings equations from a let-tree *)
-let generate_local_bindings (t : let_tree) : (k_equation * (ident * ty)) list =
-  let rec gen_loc_b whens = function
-    | None -> []
-    | Leaf (id, ty, e) ->
-      [{ keq_patt = { kpatt_desc = KP_ident id; kpatt_loc = dummy_loc };
-         keq_expr = e }, (id, ty)]
+let generate_local_bindings (t : let_tree) :
+  ((ident * ident) list) * ((k_equation * (ident * ty)) list) =
+  let rec gen_loc_b substs = function
+    | None -> [], []
+    | Leaf (id, nid, ty, e) ->
+      let substs = (id, nid)::substs in
+      [(id, nid)],
+      [{ keq_patt = { kpatt_desc = KP_ident nid; kpatt_loc = dummy_loc };
+         keq_expr = apply_substs substs e }, (nid, ty)]
     | Node (clid, branches) ->
-      List.flatten (List.map (fun (c, trs) ->
-          List.flatten (List.map (gen_loc_b ((c, clid)::whens)) trs)) branches)
+      List.fold_left (fun (substs, equs) (c, trs) ->
+          let (substs', equs') =
+            List.fold_left
+              (fun (substs, equs) tr ->
+                 let (substs', equs') = gen_loc_b substs tr in
+                 (substs@substs', equs@equs'))
+              ([], []) trs in
+          (substs@substs', equs@equs')) ([], []) branches
   in gen_loc_b [] t
 
 (** Tree of until equations *)
@@ -268,14 +306,14 @@ let desugar_instr instr =
     let trees = List.combine vars
         (List.map (get_expr_tree automataTree) vars) in
 
+    (* Create the equations for the local let bindings *)
+    let lettree = get_let_tree automataTree in
+    let lsubst, leqs = generate_local_bindings lettree in
+
     (* Create the equations from the found expressions *)
     let eqs = List.map (fun (v, tr) ->
         { keq_patt = { kpatt_desc = KP_ident v; kpatt_loc = dummy_loc; };
-          keq_expr = generate_merged_exprs tr; }) trees in
-
-    (* Create the equations for the local let bindings *)
-    let letTree = get_let_tree automataTree in
-    let leqs = generate_local_bindings letTree in
+          keq_expr = apply_substs lsubst (generate_merged_exprs tr); }) trees in
 
     (* Get the untils *)
     let untilTree = get_until_tree automataTree in

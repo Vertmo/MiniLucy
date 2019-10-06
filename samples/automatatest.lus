@@ -6,7 +6,8 @@ let
     x = 0 fby x + u;
     until x > 5 then DEC;
   | DEC ->
-    x = 0 fby x - 2;
+    let u : int = 2 in
+    x = 0 fby x - u;
     until x < -10 then INC;
   end;
 tel;

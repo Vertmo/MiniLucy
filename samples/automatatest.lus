@@ -16,12 +16,13 @@ node auto_mult() returns (x : int; y : int);
 let
   automaton
   | A ->
+    let l : int = 1 in
     automaton
     | A1 ->
-      x = 0 fby x + 1;
+      x = 0 fby x + l;
       until x > 3 then A2;
     | A2 ->
-      x = 0 fby x + 2;
+      x = 0 fby x + (2 * l);
       until x > 7 then A1;
     end;
     y = 0 fby y + 1;
@@ -42,7 +43,8 @@ node auto_app() returns (x : int);
 let
   automaton
   | APP1 ->
-    x = 0 fby cumulative_sum(1);
+    let v : int = cumulative_sum(1) in
+    x = 0 fby v;
     until x > 4 then APP2;
   | APP2 ->
     x = cumulative_sum(-2);

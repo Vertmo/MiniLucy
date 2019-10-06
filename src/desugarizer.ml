@@ -144,12 +144,28 @@ let rec add_whens e = function
   | (c, clid)::tl ->
     { kexpr_desc = KE_when (add_whens e tl, c, clid); kexpr_loc = dummy_loc }
 
+(** Add a list of when in front of a type *)
+let rec add_whens_ty ty = function
+  | [] -> ty
+  | (c, clid)::tl ->
+    Asttypes.Clocked (add_whens_ty ty tl, c, clid)
+
+(** Extract a list of constructor * clockid for whens *)
+let rec whens_of_ty : ty -> (constr * ident) list = function
+  | Base _ -> []
+  | Clocked (ty, c, clid) -> (c, clid)::(whens_of_ty ty)
+
 (** Reset the term and add some whens where they are needed *)
-let rec reset_expr x whens e =
-  let desc, should_add_when = match e.kexpr_desc with
-    | KE_const c -> KE_const c, true
-    | KE_ident id -> KE_ident id, true
-    | KE_op (op, es) -> KE_op (op, List.map (reset_expr x whens) es), false
+let rec reset_expr x whens nwhens e =
+  match e.kexpr_desc with
+    | KE_const c -> add_whens e whens
+    | KE_ident id ->
+      let nwhens = try List.assoc id nwhens with _ -> [] in
+      add_whens e (List.filter (fun (_, clid) ->
+          not (List.mem clid nwhens)) whens)
+    | KE_op (op, es) ->
+      { e with kexpr_desc =
+                 KE_op (op, List.map (reset_expr x whens nwhens) es) }
     | KE_app (fid, es, _) ->
       let rexpr = { kexpr_desc = KE_ident x; kexpr_loc = dummy_loc } in
       let rexpr = { kexpr_desc = KE_fby (Cbool false, rexpr);
@@ -157,7 +173,9 @@ let rec reset_expr x whens e =
       let (constr, clid) = List.hd whens in
       let rexpr = { kexpr_desc = KE_when (rexpr, constr, clid);
                    kexpr_loc = dummy_loc } in
-      KE_app (fid, List.map (fun e -> reset_expr x whens e) es, rexpr), false
+      { e with kexpr_desc =
+                 KE_app (fid, List.map (fun e -> reset_expr x whens nwhens e) es,
+                         rexpr) }
     | KE_fby (c, e) ->
       let cond = { kexpr_desc = KE_ident x; kexpr_loc = dummy_loc } in
       let cond = { kexpr_desc = KE_fby (Cbool false, cond);
@@ -167,38 +185,37 @@ let rec reset_expr x whens e =
                    kexpr_loc = dummy_loc } in
       let the =
         add_whens { kexpr_desc = KE_const c; kexpr_loc = dummy_loc } whens
-      and el = { kexpr_desc = KE_fby (c, reset_expr x whens e);
+      and el = { kexpr_desc = KE_fby (c, reset_expr x whens nwhens e);
                  kexpr_loc = dummy_loc } in
-      KE_op (Op_if, [cond; the; el]), false
-    | KE_tuple es -> KE_tuple (List.map (reset_expr x whens) es), false
+      { e with kexpr_desc = KE_op (Op_if, [cond; the; el]) }
+    | KE_tuple es ->
+      { e with kexpr_desc = KE_tuple (List.map (reset_expr x whens nwhens) es) }
     | KE_when (e, constr, clid) ->
       failwith "when construct not supported in automata"
-      (* KE_when ((reset_expr x whens e), constr, clid), false *)
     | KE_merge (id, es) ->
       failwith "merge construct not supported in automata"
-      (* KE_merge (id, List.map (fun (c, e) -> c, (reset_expr x whens e)) es), false *)
-  in if should_add_when
-  then add_whens { e with kexpr_desc = desc } whens
-  else { e with kexpr_desc = desc }
 
 (** Merge a tree of expressions according to clocks and constructors *)
 let generate_merged_exprs (tree : expr_tree) =
-  let rec gen_mer_e whens = function
+  let rec gen_mer_e whens nwhens = function
     | None -> invalid_arg "gen_mer_e"
     | Leaf e ->
       let reset = (snd (List.hd whens))^(fst (List.hd whens))^"_reset" in
-      reset_expr reset whens e
+      reset_expr reset whens nwhens e
     | Node (clid, branches) ->
       let eMerge =
         KE_merge (clid,
                   List.sort (fun (s1, _) (s2, _) -> String.compare s1 s2)
                     (List.map (fun (c, substs, t) ->
+                         let whens = (c, clid)::whens in
                          let e = apply_substs substs
-                             (gen_mer_e ((c, clid)::whens) t) in
+                             (gen_mer_e whens
+                                ((List.map (fun (id, _) ->
+                                   id, (List.map snd whens)) substs)@nwhens) t) in
                          (c, e)) branches)) in
       { kexpr_desc = eMerge;
         kexpr_loc = dummy_loc } in
-  gen_mer_e [] tree
+  gen_mer_e [] [] tree
 
 (** Tree of local let bindings *)
 type let_tree =
@@ -219,23 +236,28 @@ let rec get_let_tree : automata_tree -> let_tree = function
 (** Generate the local bindings equations from a let-tree *)
 let generate_local_bindings (t : let_tree) :
   ((ident * ident) list) * ((k_equation * (ident * ty)) list) =
-  let rec gen_loc_b substs = function
+  let rec gen_loc_b substs whens = function
     | None -> [], []
     | Leaf (id, nid, ty, e) ->
       let substs = (id, nid)::substs in
+      let reset = (snd (List.hd whens))^(fst (List.hd whens))^"_reset" in
       [(id, nid)],
       [{ keq_patt = { kpatt_desc = KP_ident nid; kpatt_loc = dummy_loc };
-         keq_expr = apply_substs substs e }, (nid, ty)]
+         keq_expr = reset_expr reset whens
+             (List.map (fun (_, nid) -> nid, List.map snd whens)
+                ((id, nid)::substs))
+             (apply_substs substs e) },
+       (nid, add_whens_ty ty whens)]
     | Node (clid, branches) ->
       List.fold_left (fun (substs, equs) (c, trs) ->
           let (substs', equs') =
             List.fold_left
               (fun (substs, equs) tr ->
-                 let (substs', equs') = gen_loc_b substs tr in
+                 let (substs', equs') = gen_loc_b substs ((c, clid)::whens) tr in
                  (substs@substs', equs@equs'))
               ([], []) trs in
           (substs@substs', equs@equs')) ([], []) branches
-  in gen_loc_b [] t
+  in gen_loc_b [] [] t
 
 (** Tree of until equations *)
 type until_tree =
@@ -348,11 +370,6 @@ let desugar_node (n : p_node) =
                (id, c, List.filter (fun c' -> c' <> c) constrs))) constrs)
         clockvars clockdecs) in
 
-  (* Extract a list of constructor * clockid for whens *)
-  let rec whens_of_ty : ty -> (constr * ident) list = function
-    | Base _ -> []
-    | Clocked (ty, c, clid) -> (c, clid)::(whens_of_ty ty) in
-
   (* Reset equations *)
   let reset_equs = List.map (fun ((id, ty), (clid, c, otherconstrs)) ->
       let texpr = { kexpr_desc = KE_const (Cbool false); kexpr_loc = dummy_loc }
@@ -369,8 +386,7 @@ let desugar_node (n : p_node) =
   { kn_name = n.pn_name;
     kn_input = n.pn_input;
     kn_output = n.pn_output;
-    kn_local = n.pn_local@locals@
-               clockvars@(List.map fst resetclocks);
+    kn_local = n.pn_local@clockvars@locals@(List.map fst resetclocks);
     kn_equs = eqs@reset_equs;
     kn_loc = n.pn_loc },
   clockdecs

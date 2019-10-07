@@ -3,12 +3,13 @@ open PMinils
 
 let usage = "usage: " ^ Sys.argv.(0) ^
             " [-parse] [-desugar] [-check] [-norm] [-translate] [-generate]\
-             [-asserts] [-o <output_file>]\
+             [-asserts] [-avr] [-o <output_file>]\
              [-interpret <name> <k>]\
              <input_file>"
 
 type step = Parse | Desugar | Check | Norm | Translate | Generate
 let asserts = ref false
+let targetAvr = ref false
 
 let step = ref Generate
 let output = ref None
@@ -30,6 +31,8 @@ let speclist = [
    ": print the program translated to the Obc language");
   ("-generate", Arg.Unit (fun () -> step := Generate),
    ": print the generated C code");
+  ("-avr", Arg.Unit (fun () -> targetAvr := true),
+   ": generate avr-compatible C and compile it");
   ("-asserts", Arg.Unit (fun () -> asserts := true),
    ": turns on assertions");
   ("-interpret",
@@ -121,12 +124,21 @@ let _ =
     exit 0
   );
 
-  (* Generate *)
-  let ccode = Generator.generate_file mfile in
-  match !output with
-  | None -> print_endline (MicroC.string_of_file ccode);
-  | Some s ->
-    let outc = open_out s in
-    output_string outc (MicroC.string_of_file ccode);
-    close_out outc
+  if(not !targetAvr) then (
+    (* Generate for GCC *)
+    let ccode = Generator.generate_file mfile in
+    match !output with
+    | None -> print_endline (MicroC.string_of_file ccode);
+    | Some s ->
+      let outc = open_out s in
+      output_string outc (MicroC.string_of_file ccode);
+      close_out outc
+  ) else (
+    (* Generate for AVR *)
+    let ccode = AvrGenerator.generate_file mfile in
+    print_endline (MicroC.string_of_file ccode) (* TODO *)
+    (* avr-g++ -g -fno-exceptions -Wall -std=c++11 -O2 -Wnarrowing -Wl,-Os -fdata-sections -ffunction-sections -Wl,-gc-sections -mmcu=atmega328p -DF_CPU=16000000 -DDEVICE_ARDUINO_UNO test.c -o test.avr
+       avr-objcopy -O ihex -R .eeprom test.avr test.hex
+    *)
+  )
 

@@ -42,7 +42,7 @@ A bit more difficult. An application must be on a proper clock in order to execu
 
 Solutions:
 
-Use a reset clock on the same clock as the branches clock. This clock will be defined during any step the automaton is active in. This means that the functions will be called too much (not a problem since it is reset + no side effect)
+Use a reset clock on the same clock as the state clock. This clock will be defined during any step the automaton is active in. This is not a problem as we add whens later on to subsample (in order to not call the functions too much)
 
 Example:
 ```
@@ -75,4 +75,8 @@ let
 tel
 ```
 
-Test for when / merge in expressions (+ every for functions could cause an issue, replace it totally by the reset clock ?)
+Limitations:
+* No when / merge (difficult to reset)
+* No tuple assignment (difficult to form merge expressions) so only unary function applications
+* No "every" : use generated reset clocks
+Is this really an issue ? We can ask the user to chose between clocks and automata since the two features are two ways to express the same thing

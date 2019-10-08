@@ -136,9 +136,27 @@ let _ =
   ) else (
     (* Generate for AVR *)
     let ccode = AvrGenerator.generate_file mfile in
-    print_endline (MicroC.string_of_file ccode) (* TODO *)
-    (* avr-g++ -g -fno-exceptions -Wall -std=c++11 -O2 -Wnarrowing -Wl,-Os -fdata-sections -ffunction-sections -Wl,-gc-sections -mmcu=atmega328p -DF_CPU=16000000 -DDEVICE_ARDUINO_UNO test.c -o test.avr
-       avr-objcopy -O ihex -R .eeprom test.avr test.hex
-    *)
+    match !output with
+    | None -> print_endline (MicroC.string_of_file ccode)
+    | Some hexfile ->
+      let cfile = (Filename.remove_extension hexfile)^".c" in
+      let avrfile = (Filename.remove_extension hexfile)^".avr" in
+
+      let outc = open_out cfile in
+      output_string outc (MicroC.string_of_file ccode);
+      close_out outc;
+
+      let libdir = "../src/" (* TODO*) in
+      ignore (Sys.command
+                (Printf.sprintf
+                             "avr-g++ -g -fno-exceptions -Wall -std=c++11 \
+                              -O2 -Wnarrowing\ -Wl,-Os -fdata-sections \
+                              -ffunction-sections -Wl,-gc-sections \
+                              -mmcu=atmega328p -DF_CPU=16000000 \
+                              -I %s %s -o %s" libdir cfile avrfile));
+      ignore (Sys.command
+                (Printf.sprintf
+                   "avr-objcopy -O ihex -R .eeprom %s %s"
+                   avrfile hexfile))
   )
 

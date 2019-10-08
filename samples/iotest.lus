@@ -1,0 +1,6 @@
+node main(pin8 : bool; pin9 : bool; pinA5 : int) 
+returns (pin10 : bool; pin3 : int);
+let
+  pin10 = pin8 or pin9;
+  pin3 = pinA5;
+tel;

@@ -12,4 +12,4 @@ minilucy.byte: $(MLS)
 	ocamlc -o $@ $^
 
 clean:
-	rm -f parser.ml parser.mli lexer.ml *.cmi *.cmo *.byte
+	rm -f parser.ml parser.mli lexer.ml *.cmi *.cmo *.byte avrlib.o

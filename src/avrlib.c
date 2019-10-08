@@ -10,7 +10,7 @@
 volatile uint8_t *get_port_addr(uint8_t pin) {
   if (pin < 8) return &PORTD;
   if (pin < 14) return &PORTB;
-  if (pin < 20) return &DDRC;
+  if (pin < 20) return &PORTC;
   return 0;
 }
 
@@ -105,6 +105,7 @@ void avr_analog_write(uint8_t pin, int val) {
     TCCR0A |= (1 << WGM01) | (1 << WGM00);
     TCCR0B |= (1 << CS01);
     break;
+
   case TIMER0B:
     OCR0B = val;
     sbi(TCCR0A, COM0B1);
@@ -156,6 +157,7 @@ uint16_t avr_analog_read(uint8_t ch) {
     is_inited = 1;
   }
 
+  ch += 2;
   ch &= 0b00000111;  // AND operation with 7
   ADMUX = (ADMUX & 0xF8)|ch; // clears the bottom 3 bits before ORing
   // start single convertion

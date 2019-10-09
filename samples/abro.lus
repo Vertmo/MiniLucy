@@ -1,0 +1,12 @@
+node edge(x : bool) returns (y : bool);
+let
+  y = x and not (true fby x);
+tel;
+  
+node abro(a : bool; b : bool; r : bool) returns (o : bool);
+var seenA : bool; seenB : bool;
+let
+  o = edge(seenA and seenB);
+  seenA = not r and (a or (false fby seenA));
+  seenB = not r and (a or (false fby seenB));
+tel;

@@ -275,48 +275,48 @@ let check_file (f : k_file) : t_file =
 
 (*                           Check equivalence between ASTs                    *)
 
-(** Check that a parsed pattern [p] and typed pattearn [t] are equivalent *)
-let equiv_parse_clock_patt (k : k_patt) (t : t_patt) =
+(** Check that a pattern [k] and typed pattearn [t] are equivalent *)
+let equiv_typed_patt (k : k_patt) (t : t_patt) =
   k = t
 
-(** Check that a parsed expr [p] and typed expr [t] are equivalent *)
-let rec equiv_parse_clock_expr (k : k_expr) (t : t_expr) =
+(** Check that an expr [k] and typed expr [t] are equivalent *)
+let rec equiv_typed_expr (k : k_expr) (t : t_expr) =
   match k.kexpr_desc, t.texpr_desc with
   | KE_const c1, TE_const c2 -> c1 = c2
   | KE_ident c1, TE_ident c2 -> c1 = c2
   | KE_op (op1, es1), TE_op (op2, es2) ->
-    op1 = op2 && List.for_all2 equiv_parse_clock_expr es1 es2
+    op1 = op2 && List.for_all2 equiv_typed_expr es1 es2
   | KE_app (id1, es1, ev1), TE_app (id2, es2, ev2) ->
-    id1 = id2 && List.for_all2 equiv_parse_clock_expr es1 es2 &&
-    equiv_parse_clock_expr ev1 ev2
+    id1 = id2 && List.for_all2 equiv_typed_expr es1 es2 &&
+    equiv_typed_expr ev1 ev2
   | KE_fby (c1, e1), TE_fby (c2, e2) ->
-    c1 = c2 && equiv_parse_clock_expr e1 e2
+    c1 = c2 && equiv_typed_expr e1 e2
   | KE_tuple es1, TE_tuple es2 ->
-    List.for_all2 equiv_parse_clock_expr es1 es2
+    List.for_all2 equiv_typed_expr es1 es2
   | KE_when (e1, c1, id1), TE_when (e2, c2, id2) ->
-    equiv_parse_clock_expr e1 e2 && c1 = c2 && id1 = id2
+    equiv_typed_expr e1 e2 && c1 = c2 && id1 = id2
   | KE_merge (id1, es1), TE_merge (id2, es2) ->
     id1 = id2 &&
     List.for_all2 (fun (c1, e1) (c2, e2) ->
-        c1 = c2 && equiv_parse_clock_expr e1 e2) es1 es2
+        c1 = c2 && equiv_typed_expr e1 e2) es1 es2
   | _, _ -> false
 
-(** Check that a parsed equation [p] and typed equation [t] are equivalent *)
-let equiv_parse_clock_eq (k : k_equation) (t : t_equation) =
-  equiv_parse_clock_patt k.keq_patt t.teq_patt &&
-  equiv_parse_clock_expr k.keq_expr t.teq_expr
+(** Check that an equation [k] and typed equation [t] are equivalent *)
+let equiv_typed_eq (k : k_equation) (t : t_equation) =
+  equiv_typed_patt k.keq_patt t.teq_patt &&
+  equiv_typed_expr k.keq_expr t.teq_expr
 
-(** Check that a parsed node [p] and typed node [t] are equivalent *)
-let equiv_parse_clock_node (k : k_node) (t : t_node) =
+(** Check that a node [k] and typed node [t] are equivalent *)
+let equiv_typed_node (k : k_node) (t : t_node) =
   k.kn_name = t.tn_name &&
   k.kn_input = t.tn_input &&
   k.kn_output = t.tn_output &&
   k.kn_local = t.tn_local &&
-  List.for_all2 equiv_parse_clock_eq k.kn_equs t.tn_equs
+  List.for_all2 equiv_typed_eq k.kn_equs t.tn_equs
 
-(** Check that a parsed file [p] and typed file [t] are equivalent *)
-let equiv_parse_clock_file (k : k_file) (t : t_file) =
+(** Check that a file [k] and typed file [t] are equivalent *)
+let equiv_typed_file (k : k_file) (t : t_file) =
   try
     k.kf_clocks = t.tf_clocks &&
-    List.for_all2 equiv_parse_clock_node k.kf_nodes t.tf_nodes
+    List.for_all2 equiv_typed_node k.kf_nodes t.tf_nodes
   with _ -> false

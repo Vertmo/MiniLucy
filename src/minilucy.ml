@@ -64,9 +64,9 @@ let main filename step =
 
   (* Check *)
   let tfile = Typechecker.check_file file in
-  if !asserts then assert (Typechecker.equiv_parse_clock_file file tfile);
+  if !asserts then assert (Typechecker.equiv_typed_file file tfile);
   let cfile = Clockchecker.clock_file tfile in
-  if !asserts then assert (Clockchecker.equiv_parse_clock_file tfile cfile);
+  if !asserts then assert (Clockchecker.equiv_clock_file tfile cfile);
   Causalitychecker.check_file cfile;
   if (step = Check) then (
     print_endline (CMinils.string_of_file cfile);
@@ -75,6 +75,7 @@ let main filename step =
 
   (* Normalize *)
   let nfile = Normalizer.norm_file cfile in
+  if !asserts then assert (Normalizer.equiv_norm_file cfile nfile);
   let nfile = Scheduler.schedule_file nfile in
   if !asserts then assert (Scheduler.schedule_is_correct_file nfile);
   if (step = Norm) then (

@@ -127,6 +127,3 @@ let generate_machine (m : machine) : def list =
 let generate_file (f : Obc.file) : MicroC.file =
   (List.map generate_clockdec f.clocks)@
   (List.concat (List.map generate_machine f.machines))
-
-(*                           Check equivalence between ASTs                    *)
-(* TODO *)

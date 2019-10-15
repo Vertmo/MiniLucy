@@ -21,7 +21,7 @@ let rec translate_expr env (e : n_expr) : expr =
     Op (op, List.map (translate_expr env) es)
   | NE_when (e, _, _) -> translate_expr env e
 
-(** Translate a c-expression, and adds some local variables *)
+(** Translate a c-expression *)
 let rec translate_cexpr env (x : ident) (e : n_cexpr) : instr =
   match e.ncexpr_desc with
   | NCE_expr e' ->
@@ -120,4 +120,76 @@ let translate_file (f : n_file) =
                 (n.nn_name, List.map fst n.nn_output)) f.nf_nodes)) f.nf_nodes }
 
 (*                           Check equivalence between ASTs                    *)
-(* TODO *)
+
+let rec clock_of_list acc : _ -> clock = function
+  | [] -> acc
+  | (c, clid)::tl ->
+    clock_of_list (Cl (acc, c, clid)) tl
+
+(** Get ids assigned *)
+let rec get_assigned cls = function
+  | Assign (id, e) -> [id, clock_of_list Base cls]
+  | StAssign _ -> []
+  | Reset _ -> []
+  | StepAssign (ids, _, _) -> List.map (fun id -> id, clock_of_list Base cls) ids
+  | Case (clid, branches) ->
+    List.flatten (List.map (fun (c, i) ->
+        List.flatten (List.map (get_assigned ((c, clid)::cls)) i)) branches)
+
+(** Get ids assigned in the state *)
+let rec get_stassigned cls = function
+  | Assign (id, e) -> []
+  | StAssign (id, e) -> [id, clock_of_list Base cls]
+  | Reset _ -> []
+  | StepAssign (ids, _, _) -> []
+  | Case (clid, branches) ->
+    List.flatten (List.map (fun (c, i) ->
+        List.flatten (List.map (get_stassigned ((c, clid)::cls)) i)) branches)
+
+(** Verify equality of the two upper clocks *)
+let top_clocks_eq cl1 cl2 = match cl1, cl2 with
+  | Base, Base -> true
+  | Cl (_, _, id1), Cl (_, _, id2) when id1 = id2 -> true
+  | _ -> false
+
+(** Merge the clocks in the retrieved list *)
+let rec merge_clocks = function
+  | [] -> []
+  | (id, cl)::tl ->
+    let (leq, lneq) = List.partition (fun (id', cl') ->
+        id = id' && top_clocks_eq cl cl') tl in
+    (match leq with
+     | [] -> (id, cl)::(merge_clocks lneq)
+     | _ -> (match cl with
+         | Cl (cl, _, _) -> merge_clocks ((id, cl)::lneq)
+         | _ -> failwith "Should not happen"))
+
+let equiv_translate_node (n : n_node) (m : machine) =
+  let (inp, outp, loc, code) = m.m_step in
+
+  let assigned = List.flatten (List.map (get_assigned []) code)
+  and stassigned = List.flatten (List.map (get_stassigned []) code) in
+  let merged = merge_clocks (assigned@stassigned) in
+
+  let clocks = List.map (fun (id, ty) -> id, clock_of_ty ty)
+      (n.nn_local@n.nn_output) in
+
+  (List.map fst n.nn_input) = (List.map fst inp) &&
+  (List.map fst n.nn_output) = (List.map fst outp) &&
+  (* Check that all the output are assigned *)
+  List.for_all (fun id -> List.mem_assoc id assigned) (List.map fst n.nn_output) &&
+  (* Check that all the locals are assigned (either in the state or not) *)
+  List.for_all (fun id -> List.mem_assoc id (assigned@stassigned))
+    (List.map fst n.nn_local) &&
+  (* Check that all the non-fresh variables are correctly clocked
+     (the fresh variables introduced by the normalization aren't correctly)
+     clock-annotated anyway for simplicity of the normalization *)
+  List.for_all (fun (id, cl) ->
+      let cl' = List.assoc id merged in
+      (String.sub id 0 1 = "_") || (cl = cl')) clocks
+
+let equiv_translate_file (n : n_file) (m : file) =
+  try
+    n.nf_clocks = m.clocks &&
+    List.for_all2 equiv_translate_node n.nf_nodes m.machines
+  with _ -> false

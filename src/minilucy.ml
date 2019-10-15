@@ -85,6 +85,7 @@ let main filename step =
 
   (* Translate *)
   let mfile = Translator.translate_file nfile in
+  if !asserts then assert (Translator.equiv_translate_file nfile mfile);
   if (step = Translate) then (
     print_endline (Obc.string_of_file mfile);
     exit 0

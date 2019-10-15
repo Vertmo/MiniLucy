@@ -57,10 +57,10 @@ type automata_tree =
 let rec get_automata_tree = function
   | Eq eq -> Leaf eq
   | Automaton branches ->
-    Node (Atom.fresh "_auto_state",
+    Node (Atom.fresh "auto_state",
           List.map (fun (c, lets, ins, untils) ->
               (c, List.map (fun (id, ty, e) ->
-                 let nid = Atom.fresh ("_let_"^id) in (id, nid, ty, e)) lets,
+                 let nid = Atom.fresh ("let_"^id) in (id, nid, ty, e)) lets,
                List.map get_automata_tree ins, untils)) branches)
 
 (** Automata-derived clock *)

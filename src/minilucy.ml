@@ -2,7 +2,8 @@ open Lexing
 
 let usage = "usage: " ^ Sys.argv.(0) ^
             " [-parse] [-desugar] [-check] [-norm] [-translate] [-generate]\
-             [-asserts] [-o <output_file]\
+             [-asserts] [-o <output_file>]\
+             [-interpret <name> <k>]\
              <input_file>"
 
 type step = Parse | Desugar | Check | Norm | Translate | Generate
@@ -10,6 +11,8 @@ let asserts = ref false
 
 let step = ref Generate
 let output = ref None
+let interpret_name = ref None
+let interpret_k = ref 0
 
 let speclist = [
   ("-o", Arg.String (fun s -> output := Some s),
@@ -27,7 +30,11 @@ let speclist = [
   ("-generate", Arg.Unit (fun () -> step := Generate),
    ": print the generated C code");
   ("-asserts", Arg.Unit (fun () -> asserts := true),
-   ": turns on assertions")
+   ": turns on assertions");
+  ("-interpret",
+   Arg.Tuple [Arg.String (fun s -> interpret_name := Some s);
+              Arg.Int (fun k -> interpret_k := k)],
+   ": run <k> step for the node <name>, with random inputs")
 ]
 
 let print_position outx lexbuf =
@@ -63,18 +70,12 @@ let main filename step =
   );
 
   (* Let's interpr this a bit ! *)
-  Random.self_init ();
-  List.iter (fun n ->
-      let init = Interpr.get_node_init
-          (Interpr.generate_rd_input file.kf_clocks n) n in
-      print_endline (n.kn_name);
-      List.iter (fun (id, v) ->
-          print_endline (Printf.sprintf "(%s, %s)"
-                           id (Interpr.string_of_value v))) init;
-      let trans = Interpr.get_node_trans n in
-      ignore (trans (Interpr.generate_rd_input file.kf_clocks n, init))
-    ) file.kf_nodes;
-  exit 0;
+  match (!interpret_name) with
+  | Some name ->
+    (* Interpr.run_file file; *)
+    Interpr.run_node file name !interpret_k;
+    exit 0; (* TEMP *)
+  | None -> ();
 
   (* Check *)
   let tfile = Typechecker.check_file file in

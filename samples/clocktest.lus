@@ -17,8 +17,8 @@ node test_op(b : bool) returns (z : int when True(b));
 var x : int when True(b); y : int when True(b);
 let
   x = 1 when True(b); 
-  y = 2 when True(b);
   z = x + y;
+  y = 2 when True(b);
 tel;
   
 node test_tuple(b : bool; c : bool) 

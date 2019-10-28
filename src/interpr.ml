@@ -35,6 +35,7 @@ let value_of_const = function
   | Cbool b -> Bool b
   | Cint i -> Int i
   | Creal r -> Real r
+  | Cconstr (c, _) -> Constr c
 
 (** Apply a unary operator *)
 let apply_unary op e =
@@ -167,15 +168,14 @@ and get_node_init nodes ins (n : k_node) : state * assoc =
     else (match stack with
         | [] -> gnt_aux (List.tl eqs) [List.hd eqs] env insts
         | hd::tl ->
-          let (env', insts') =
-            (try (get_eq_init nodes env (snd hd))
-             with MissingInEnv id ->
-               let eqmis =
-                 (try List.find (fun (decs, _) -> List.mem id decs) eqs
-                  with _ -> raise (CausalityError id)) in
-               gnt_aux (List.remove_assoc (fst eqmis) eqs)
-                 (eqmis::stack) env insts)
-          in gnt_aux eqs tl (env@env') (insts@insts'))
+          (try (let (env', insts') = get_eq_init nodes env (snd hd) in
+                gnt_aux eqs tl (env@env') (insts@insts'))
+           with MissingInEnv id ->
+             let eqmis =
+               (try List.find (fun (decs, _) -> List.mem id decs) eqs
+                with _ -> raise (CausalityError id)) in
+             gnt_aux (List.remove_assoc (fst eqmis) eqs)
+               (eqmis::stack) env insts))
   in let (locouts, insts) = gnt_aux equs [] ins [] in
   St (locouts, insts),
   List.filter (fun (id, _) -> List.mem_assoc id n.kn_output) locouts
@@ -300,8 +300,8 @@ and get_node_trans nodes (n : k_node) : trans_node =
         | [] -> gnt_aux (List.tl eqs) [List.hd eqs] env insts
         | hd::tl ->
           (* Try to compute an equation *)
-          let (env', insts') =
-            (try ((snd hd) (env, st))
+          (try let (env', insts') = ((snd hd) (env, st)) in
+             gnt_aux eqs tl (env@env') (insts@insts')
              (* If we're missing something, we need to add
                 it to the compute stack *)
              with MissingInEnv id ->
@@ -309,8 +309,7 @@ and get_node_trans nodes (n : k_node) : trans_node =
                  (try List.find (fun (decs, _) -> List.mem id decs) eqs
                   with _ -> raise (CausalityError id)) in
                gnt_aux (List.remove_assoc (fst eqmis) eqs)
-                 (eqmis::stack) env insts)
-          in gnt_aux eqs tl (env@env') (insts@insts'))
+                 (eqmis::stack) env insts))
     in let (locouts, insts) = gnt_aux transfuns [] inputs
            (match st with St (_, insts) -> insts) in
   St (locouts, insts),

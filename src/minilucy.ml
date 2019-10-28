@@ -62,6 +62,20 @@ let main filename step =
     exit 0
   );
 
+  (* Let's interpr this a bit ! *)
+  Random.self_init ();
+  List.iter (fun n ->
+      let init = Interpr.get_node_init
+          (Interpr.generate_rd_input file.kf_clocks n) n in
+      print_endline (n.kn_name);
+      List.iter (fun (id, v) ->
+          print_endline (Printf.sprintf "(%s, %s)"
+                           id (Interpr.string_of_value v))) init;
+      let trans = Interpr.get_node_trans n in
+      ignore (trans (Interpr.generate_rd_input file.kf_clocks n, init))
+    ) file.kf_nodes;
+  exit 0;
+
   (* Check *)
   let tfile = Typechecker.check_file file in
   if !asserts then assert (Typechecker.equiv_typed_file file tfile);

@@ -66,6 +66,12 @@ let string_of_equation eq =
     (string_of_patt eq.keq_patt)
     (string_of_expr eq.keq_expr)
 
+(** Variables defined by an equation *)
+let defined_of_equation eq =
+  match eq.keq_patt.kpatt_desc with
+  | KP_ident id -> [id]
+  | KP_tuple ids -> ids
+
 type k_node =
     { kn_name: ident;
       kn_input: (ident * ty) list;

@@ -4,25 +4,52 @@ open Asttypes
 open Minils
 
 exception InterpreterError of string
-exception MissingInEnv of ident
+exception NotYetCalculated of ident
 exception CausalityError of ident
+exception StreamError of ident * string
 
 (** Value of the interpreter *)
-type value = Nil
+type value = Bottom
+           | Nil
            | Int of int | Bool of bool | Real of float
            | Constr of ident
            | Tuple of value list
 
-(** Association from name to values (either state or inputs or outputs) *)
+(** Stream of values. Latest value is at head of the stream *)
+type stream = (ident * value list)
+
+(** Association from name to value (inputs and outputs) *)
 type assoc = (ident * value) list
 
-(** Instance of a node *)
-type instance = ((ident * location) * state)
+(** Association from name to stream of values (states) *)
+type assoc_str = (ident * value list) list
+
+(** Add a value in front of the correct stream *)
+let add_val strs x v : assoc_str =
+  let str = try List.assoc x strs
+    with Not_found -> [] in
+  (x, v::str)::(List.remove_assoc x strs)
+
+(** ``Fills`` the Bottom at the beginning of the stream.
+    If the calculated value is nil, simply remove the head of the stream
+    If the head of the stream is not bottom, exception *)
+let fill_val strs x v : assoc_str =
+  let str = try List.assoc x strs
+    with Not_found -> raise (StreamError (x, "stream not found")) in
+  match str with
+  | Bottom::tl ->
+    let str = if (v = Nil) then tl else v::tl in
+    (x, str)::(List.remove_assoc x strs)
+  | _ -> raise (StreamError (x, "does not begin with bottom"))
 
 (** Node state *)
-and state = St of assoc * instance list
+type state = St of assoc_str * instance list
+
+(** Instance of a node *)
+and instance = ((ident * location) * state)
 
 let rec string_of_value = function
+  | Bottom -> "bottom"
   | Nil -> "nil"
   | Int i -> string_of_int i
   | Bool b -> if b then "true" else "false"
@@ -108,80 +135,45 @@ let apply_op op vs =
     | 3 -> apply_if (List.nth vs 0) (List.nth vs 1) (List.nth vs 2)
     | _ -> raise (InterpreterError "Wrong number of arguments for an op")
 
-(** Get the initial state for an expression *)
-let rec get_expr_init nodes ins (e : k_expr) : (value * instance list) =
+(** Get the initial state for an instances in an expression *)
+let rec expr_init_instances nodes (e : k_expr) : instance list =
   match e.kexpr_desc with
-  | KE_const c -> value_of_const c, []
-  | KE_ident x ->
-    (match List.assoc_opt x ins with
-     | Some v -> v
-     | None -> raise (MissingInEnv x)), []
+  | KE_const c -> [] | KE_ident x -> []
   | KE_op (op, es) ->
-    let vis = List.map (get_expr_init nodes ins) es in
-    let vs = List.map fst vis and is = List.map snd vis in
-    apply_op op vs, (List.concat is)
+    let is = List.map (expr_init_instances nodes) es in
+    List.flatten is
   | KE_app (fid, es, e) ->
-    let vis = List.map (get_expr_init nodes ins) es in
-    let vs = List.map fst vis and is = List.map snd vis in
-    let _, ie = get_expr_init nodes ins e in
+    let is = List.map (expr_init_instances nodes) es
+    and ie = expr_init_instances nodes e in
     let n = List.assoc fid nodes in
-    let ins = List.map2 (fun (id, _) v -> id, v) n.kn_input vs in
-    let (st, outs) = get_node_init nodes ins n in
-    (match outs with
-     | [(_, v)] -> v
-     | vs -> Tuple (List.map snd vs)),
+    let st = get_node_init nodes n in
     (((fid, e.kexpr_loc), st)::ie@(List.concat is))
-  | KE_fby (c, _) -> value_of_const c, []
+  | KE_fby (_, e) -> expr_init_instances nodes e
   | KE_tuple es ->
-    let vis = List.map (get_expr_init nodes ins) es in
-    let vs = List.map fst vis and is = List.map snd vis in
-    Tuple vs, List.concat is
-  | KE_when (e, _, _) -> get_expr_init nodes ins e
+    let is = List.map (expr_init_instances nodes) es in
+    List.flatten is
+  | KE_when (e, _, _) -> expr_init_instances nodes e
   | KE_merge (clid, brs) ->
-    let c = (match (List.assoc_opt clid ins) with
-        | None -> raise (MissingInEnv clid)
-        | Some c -> c) in
-    let c = (match c with
-        | Bool true -> "True" | Bool false -> "False"
-        | Constr c -> c
-        | _ -> failwith "merge expects either bool or constr") in
-    let e = (match (List.assoc_opt c brs) with
-        | None -> failwith "constructor not found in merge branches"
-        | Some e -> e) in
-    get_expr_init nodes ins e
+    List.flatten (List.map (fun (_, e) -> expr_init_instances nodes e) brs)
 
 (** Get the initial states for an equation *)
-and get_eq_init nodes ins (e : k_equation) =
-  let (v, is) = get_expr_init nodes ins e.keq_expr in
+and get_eq_init nodes (e : k_equation) : (assoc_str * instance list) =
+  let is = expr_init_instances nodes e.keq_expr in
   match e.keq_patt.kpatt_desc with
-  | KP_ident id -> [(id, v)], is
-  | KP_tuple ids ->
-    (match v with
-     | Tuple vs -> List.combine ids vs
-     | _ -> []), is
+  | KP_ident id -> [(id, [])], is
+  | KP_tuple ids -> List.map (fun id -> (id, [])) ids, is
 
 (** Get the initial state for a node *)
-and get_node_init nodes ins (n : k_node) : state * assoc =
-  let equs = List.map (fun e -> defined_of_equation e, e) n.kn_equs in
-  let rec gnt_aux eqs stack env insts =
-    if (eqs = [] && stack = []) then env, insts
-    else (match stack with
-        | [] -> gnt_aux (List.tl eqs) [List.hd eqs] env insts
-        | hd::tl ->
-          (try (let (env', insts') = get_eq_init nodes env (snd hd) in
-                gnt_aux eqs tl (env@env') (insts@insts'))
-           with MissingInEnv id ->
-             let eqmis =
-               (try List.find (fun (decs, _) -> List.mem id decs) eqs
-                with _ -> raise (CausalityError id)) in
-             gnt_aux (List.remove_assoc (fst eqmis) eqs)
-               (eqmis::stack) env insts))
-  in let (locouts, insts) = gnt_aux equs [] ins [] in
-  St (locouts, insts),
-  List.filter (fun (id, _) -> List.mem_assoc id n.kn_output) locouts
+and get_node_init nodes n : state =
+  let vis = List.map (get_eq_init nodes) n.kn_equs in
+  let vs = List.flatten (List.map fst vis)
+  and is = List.flatten (List.map snd vis) in
+  St (vs, is)
 
-(** Transition function for expressions *)
-type trans_expr = (assoc * state) -> (value * instance list)
+(** Transition function for expressions.
+    The second parameter indicated the index of the value we're trying to
+    calculate (used to know when to use consts in fby) *)
+type trans_expr = state -> int -> (value * instance list)
 
 (** Transition function for nodes (input, st) -> (st, output) *)
 type trans_node = (assoc * state) -> (state * assoc)
@@ -206,66 +198,73 @@ let rec get_instances insts (e : k_expr) =
     List.flatten (List.map (fun (_, e) -> get_instances insts e) brs)
 
 (** Get the transition function for an expression *)
-let rec get_expr_trans nodes (e : k_expr) : trans_expr =
+let rec get_expr_trans nodes fbys (e : k_expr) : trans_expr =
   match e.kexpr_desc with
-  | KE_const c -> fun _ -> value_of_const c, []
+  | KE_const c -> fun _ _ -> value_of_const c, []
   | KE_ident id ->
-    (fun (env, _) ->
-       match (List.assoc_opt id env) with
-       | None -> raise (MissingInEnv id)
-       | Some v -> v, [])
+    (fun (St (strs, _)) _ ->
+       let str = List.assoc id strs in
+       match try List.nth str fbys with _ -> List.nth str (fbys-1) with
+       | Bottom -> raise (NotYetCalculated id)
+       | v -> v, [])
   | KE_op (op, es) ->
-    let ts = List.map (get_expr_trans nodes) es in
-    fun cont ->
-      let vis = List.map (fun t -> t cont) ts in
+    let ts = List.map (get_expr_trans nodes fbys) es in
+    fun cont tocalc ->
+      let vis = List.map (fun t -> t cont tocalc) ts in
       let vs = List.map fst vis and is = List.map snd vis in
       apply_op op vs, (List.flatten is)
   | KE_app (fid, es, e) ->
-    let ts = List.map (get_expr_trans nodes) es in
-    let te = get_expr_trans nodes e in
+    let ts = List.map (get_expr_trans nodes fbys) es in
+    let te = get_expr_trans nodes fbys e in
     let n = List.assoc fid nodes in
-    fun cont ->
-      let vis = List.map (fun t -> t cont) ts and (ve, ie)= te cont in
+    fun st tocalc ->
+      let vis = List.map (fun t -> t st tocalc) ts
+      and (ve, ie)= te st tocalc in
       let vs = List.map fst vis and is = List.map snd vis in
       let ins = List.map2 (fun (id, _) v -> id, v) n.kn_input vs in
       let (st, outs) = (match ve with
-        | Bool true -> get_node_init nodes ins n
+          | Bool true ->
+            let init = get_node_init nodes n in
+            get_node_trans nodes n (ins, init)
         | _ ->
-          try (let st = List.assoc (fid, e.kexpr_loc)
-              (match cont with (_, St (_, ins)) -> ins) in
-               get_node_trans nodes n (ins, st))
-          with Not_found -> get_node_init nodes ins n) in
+          let st = List.assoc (fid, e.kexpr_loc)
+              (match st with St (_, ins) -> ins) in
+          get_node_trans nodes n (ins, st)) in
       (match outs with
        | [(id, v)] -> v
        | vs -> (Tuple (List.map snd vs))),
       (((fid, e.kexpr_loc), st)::ie@(List.concat is))
-  | KE_fby (_, e) ->
-    let t = get_expr_trans nodes e in
-    fun (env, St (st, ins)) -> t ((st@env), St ([], ins))
+  | KE_fby (c, e) ->
+    let t = get_expr_trans nodes (fbys+1) e in
+    fun st tocalc -> if tocalc <= fbys
+      then (value_of_const c), get_instances (match st with St (_, i) -> i) e
+      else t st tocalc
   | KE_tuple es ->
-    let ts = List.map (get_expr_trans nodes) es in
-    fun cont ->
-      let vis = List.map (fun t -> t cont) ts in
+    let ts = List.map (get_expr_trans nodes fbys) es in
+    fun st tocalc ->
+      let vis = List.map (fun t -> t st tocalc) ts in
       let vs = List.map fst vis and is = List.map snd vis in
       Tuple vs, (List.flatten is)
   | KE_when (e, constr, clid) ->
-    let t = get_expr_trans nodes e in
-    fun (env, st) ->
-      let c = (match (List.assoc_opt clid env) with
-        | None -> raise (MissingInEnv clid)
-        | Some c -> c) in
+    let t = get_expr_trans nodes fbys e in
+    fun st tocalc ->
+      let (St (strs, _)) = st in
+      let c = (match List.nth (List.assoc clid strs) fbys with
+        | Bottom -> raise (NotYetCalculated clid)
+        | c -> c) in
       if (match c with
           | Bool true -> constr = "True"
           | Bool false -> constr = "False"
           | Constr constr' -> constr = constr'
           | _ -> failwith "when expects either bool or constr")
-      then t (env, st)
+      then t st tocalc
       else Nil, (get_instances (match st with St (_, i) -> i) e)
   | KE_merge (clid, brs) ->
-    fun (env, st) ->
-      let c = (match (List.assoc_opt clid env) with
-          | None -> raise (MissingInEnv clid)
-          | Some c -> c) in
+    fun st tocalc ->
+      let St (strs, insts) = st in
+      let c = (match List.nth (List.assoc clid strs) fbys with
+          | Bottom -> raise (NotYetCalculated clid)
+          | c -> c) in
       let c = (match c with
           | Bool true -> "True" | Bool false -> "False"
           | Constr c -> c
@@ -274,46 +273,55 @@ let rec get_expr_trans nodes (e : k_expr) : trans_expr =
           | None -> failwith "constructor not found in merge branches"
           | Some e -> e) in
       let insts = (match st with St (_, i) -> i) in
-      let (v, ins) = get_expr_trans nodes e (env, st) in
+      let (v, ins) = get_expr_trans nodes fbys e st tocalc in
       v, ins@(List.flatten (List.map (fun (_, e) -> get_instances insts e)
                               (List.remove_assoc c brs)))
 
 (** Get the transitions for an equation *)
-and get_eq_trans nodes (e : k_equation) = fun cont ->
-  let (v, is) = get_expr_trans nodes e.keq_expr cont in
-  match e.keq_patt.kpatt_desc with
-  | KP_ident id -> [(id, v)], is
-  | KP_tuple ids ->
-    (match v with
-     | Tuple vs -> List.combine ids vs
-     | _ -> []), is
+and get_eq_trans nodes (e : k_equation) =
+  let trans = get_expr_trans nodes 0 e.keq_expr in
+  let defs = defined_of_equation e in
+  fun st ->
+    let St (strs, insts) = st in
+    let (v, is) = trans st (List.length (List.assoc (List.hd defs) strs)-1) in
+    St ((match e.keq_patt.kpatt_desc with
+        | KP_ident id -> fill_val strs id v
+        | KP_tuple ids ->
+          (match v with
+           | Tuple vs -> List.fold_left2 fill_val strs ids vs
+           | _ -> [])), insts@is)
 
 (** Get transition functions for a node *)
 and get_node_trans nodes (n : k_node) : trans_node =
   (* Transition functions for all the equations *)
   let transfuns = List.map (fun eq ->
       defined_of_equation eq, get_eq_trans nodes eq) n.kn_equs in
-  fun (inputs, st) ->
-    let rec gnt_aux eqs stack env insts =
-      if (eqs = [] && stack = []) then env, insts
+  fun (inputs, St (strs, insts)) ->
+  (* Add the new inputs to the relevant streams *)
+  let strs = List.fold_left (fun strs (x, v) ->
+      add_val strs x v) strs inputs in
+  (* Add Bottom in front of everything to calculate *)
+  let locouts = List.map (fun (id, _) -> id) (n.kn_local@n.kn_output) in
+  let strs = List.fold_left (fun strs x -> add_val strs x Bottom) strs locouts in
+    let rec gnt_aux eqs stack st : state =
+      if (eqs = [] && stack = []) then st
       else (match stack with
-        | [] -> gnt_aux (List.tl eqs) [List.hd eqs] env insts
+        | [] -> gnt_aux (List.tl eqs) [List.hd eqs] st
         | hd::tl ->
           (* Try to compute an equation *)
-          (try let (env', insts') = ((snd hd) (env, st)) in
-             gnt_aux eqs tl (env@env') (insts@insts')
+          (try gnt_aux eqs tl ((snd hd) st)
              (* If we're missing something, we need to add
                 it to the compute stack *)
-             with MissingInEnv id ->
+             with NotYetCalculated id ->
                let eqmis =
                  (try List.find (fun (decs, _) -> List.mem id decs) eqs
                   with _ -> raise (CausalityError id)) in
                gnt_aux (List.remove_assoc (fst eqmis) eqs)
-                 (eqmis::stack) env insts))
-    in let (locouts, insts) = gnt_aux transfuns [] inputs
-           (match st with St (_, insts) -> insts) in
-  St (locouts, insts),
-  List.filter (fun (id, _) -> List.mem_assoc id n.kn_output) locouts
+                 (eqmis::stack) st))
+  in let St (strs, insts) = gnt_aux transfuns [] (St (strs, insts)) in
+  St (strs, insts),
+  List.map (fun (id, l) -> id, try List.hd l with _ -> Nil)
+    (List.filter (fun (id, _) -> List.mem_assoc id n.kn_output) strs)
 
 (*                          Running the interpreter                          *)
 
@@ -336,24 +344,19 @@ let run_node (f : k_file) (name : ident) k =
   Random.self_init ();
   let ns = List.map (fun n -> (n.kn_name, n)) f.kf_nodes in
   let node = List.assoc name ns in
-  let (init, _) = get_node_init ns
-      (generate_rd_input f.kf_clocks node) node in
-  print_endline "Initial state:";
-  List.iter (fun (id, v) ->
-      print_endline (Printf.sprintf "(%s, %s)"
-                       id (string_of_value v)))
-    (match init with St (st, _) -> st);
+  let init = get_node_init ns node in
   let trans = get_node_trans ns node in
   let rec aux n st =
     match n with
     | 0 -> st
     | n -> aux (n-1) (fst (trans (generate_rd_input f.kf_clocks node, st)))
   in
-  print_endline (Printf.sprintf "After %d iterations:" k);
   let st = (aux k init) in
-  List.iter (fun (id, v) ->
-      print_endline (Printf.sprintf "(%s, %s)"
-                       id (string_of_value v)))
+  print_endline (Printf.sprintf "Streams after %d iterations:" k);
+  List.iter (fun (id, vs) ->
+      print_endline (Printf.sprintf "(%s, [%s])"
+                       id (String.concat ";"
+                             (List.map string_of_value (List.rev vs)))))
     (match st with St (st, _) -> st)
 
 let run_file (f : k_file) =

@@ -10,7 +10,7 @@ tel;
   
 node test_op(x : int) returns (y : bool);
 let
-  y = x < (x+(x-2));
+  y = x < (x*2-20);
 tel;
   
 node test_node(x : bool; y : int) returns (z : bool);
@@ -25,7 +25,7 @@ tel;
   
 node test_fby() returns (z : int);
 let
-  z = 1 fby 2;
+  z = 0 fby (z + (1 fby z));
 tel;
   
 node test_tuple() returns (i:int; b:bool; r:real);

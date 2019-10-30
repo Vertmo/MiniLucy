@@ -75,9 +75,7 @@ let translate_eq env = function
     { env with s = (control e.ncexpr_clock (translate_cexpr env id e))::env.s; }
   | NQ_fby (x, c, e) ->
     let e' = translate_expr env e in
-    { env with m = (x, e.nexpr_ty)::env.m;
-               d = List.remove_assoc x env.d;
-               si = (StAssign (x, Const c))::env.si;
+    { env with si = (StAssign (x, Const c))::env.si;
                s = (control e.nexpr_clock (StAssign (x, e')))::env.s}
   | NQ_app (ids, fid, es, everid, cl) ->
     let es' = List.map (translate_expr env) es in
@@ -87,16 +85,23 @@ let translate_eq env = function
                s = (control cl (StepAssign (ids, o, es')))::
                    (control cl (Case (everid, [("True", [Reset o])])))::env.s }
 
+(** Collect the list of variables that need to be stored into memory
+    They are the one declared using fby equations *)
+let collect_mem env = function
+  | NQ_ident _ -> env
+  | NQ_fby (x, _, e) ->
+    { env with m = (x, e.nexpr_ty)::env.m;
+               d = List.remove_assoc x env.d }
+  | NQ_app _ -> env
+
 (** Translate a node *)
 let translate_node outputs (n : n_node) : machine =
   let input = List.map (fun (id, ty) -> id, base_ty_of_ty ty) n.nn_input
   and local = List.map (fun (id, ty) -> id, base_ty_of_ty ty) n.nn_local
   and output = List.map (fun (id, ty) -> id, base_ty_of_ty ty) n.nn_output in
-  let env = List.fold_left translate_eq {
-      m = []; si = []; j = [];
-      d = local;
-      s = []
-    } n.nn_equs in
+  let env = { m = []; si = []; j = []; d = local; s = [] } in
+  let env = List.fold_left collect_mem env n.nn_equs in
+  let env = List.fold_left translate_eq env n.nn_equs in
   { m_name = n.nn_name;
     m_memory = env.m;
     m_instances = List.map

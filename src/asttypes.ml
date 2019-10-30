@@ -1,8 +1,6 @@
 type location = Lexing.position * Lexing.position
 let dummy_loc = Lexing.dummy_pos, Lexing.dummy_pos
 
-let dummy_loc = Lexing.dummy_pos, Lexing.dummy_pos
-
 type ident = string
 type constr = string
 

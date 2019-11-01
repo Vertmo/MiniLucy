@@ -5,18 +5,18 @@ let
   | CHRONO ->
     automaton
     | STOP ->
-      s = 0 fby s;
-      m = 0 fby m;
+      s = pre s;
+      m = pre m;
       run = false;
       until StSt then START;
     | START ->
-      let d : int = 0 fby ((d + 1) mod 100) in
-      s = if (d < (0 fby d)) 
-          then (((0 fby s) + 1) mod 60)
-          else (0 fby s);
-      m = if (s < (0 fby s))
-          then (((0 fby m) + 1) mod 60)
-          else (0 fby m);
+      let d : int = (pre d + 1) mod 100 in
+      s = if (d < (pre d)) 
+          then (((pre s) + 1) mod 60)
+          else pre s;
+      m = if (s < (pre s))
+          then (((pre m) + 1) mod 60)
+          else pre m;
       run = true;
       until StSt then STOP;
     end;
@@ -27,8 +27,8 @@ let
     disp_2 = m;
     until Rst and run then LAP;
   | LAP ->
-    disp_1 = 0 fby disp_1;
-    disp_2 = 0 fby disp_2;
+    disp_1 = pre disp_1;
+    disp_2 = pre disp_2;
     until Rst then TIME;
   end;
 tel;

@@ -24,6 +24,7 @@ let rec desugar_expr (e : p_expr) : k_expr =
       let cond = { kexpr_desc = KE_fby (Cbool true, cond);
                    kexpr_loc = e.pexpr_loc } in
       KE_op (Op_if, [cond; desugar_expr c; desugar_expr e])
+    | PE_pre e -> KE_fby (Cnil, desugar_expr e)
     | PE_tuple es -> KE_tuple (List.map desugar_expr es)
     | PE_when (e, constr, clid) -> KE_when (desugar_expr e, constr, clid)
     | PE_merge (id, es) ->

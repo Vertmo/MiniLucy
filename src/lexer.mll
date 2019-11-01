@@ -27,7 +27,7 @@
 	"node", NODE;
 	"not", NOT;
 	"or", OR;
-  (* "pre", PRE; *)
+  "pre", PRE;
 	"real", REAL;
 	"returns", RETURNS;
 	"tel", TEL;

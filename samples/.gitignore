@@ -8,3 +8,4 @@ clocktest.c
 causalitytest.c
 translationtest.c
 automatatest.c
+sugartest.c

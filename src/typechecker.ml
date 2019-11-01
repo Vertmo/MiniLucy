@@ -5,6 +5,7 @@ open Minils
 open TMinils
 
 exception TypeError of (string * location)
+exception MissingHintError of location
 exception MissingEquationError of (ident * location)
 exception UnexpectedEquationError of (ident * location)
 
@@ -25,12 +26,21 @@ let get_pattern_type (streams : (ident * ty) list) pat =
        ([], streams) ids in
     Ttuple (List.rev tys), streams
 
-(** Check that [const] has the [expected] type *)
-let type_const = function
+(** Typecheck constant. Can take a [hint] for the nil case *)
+let type_const ?hint loc = function
   | Cbool _ -> Tbool
   | Cint _ -> Tint
   | Creal _ -> Treal
   | Cconstr (_, tyid) -> Tclock tyid
+  | Cnil ->
+    (match hint with
+     | Some t ->
+       if t = Tbool || t = Tint || t = Treal then t
+       else raise (TypeError
+                     (Printf.sprintf "Type %s incompatible with constant nil"
+                        (string_of_base_ty t), loc))
+     | None ->
+       raise (MissingHintError loc))
 
 (** Get the constructions associated with a clock type *)
 let constrs_of_clock clocks loc = function
@@ -44,7 +54,7 @@ let constrs_of_clock clocks loc = function
                       "Type %s is not supported as a clock"
                       (string_of_base_ty ty), loc))
 
-(** Gives the expected input types for an [expected] output types on op *)
+(** Gives operator output type relating to input types *)
 let type_op (inputs : base_ty list) loc op =
   match op with
   | Op_eq | Op_neq
@@ -68,12 +78,21 @@ let type_op (inputs : base_ty list) loc op =
                      (String.concat "," (List.map string_of_base_ty inputs))
                      (string_of_op op), loc))
 
+(** Provides hints for input of an operator *)
+let hint_op hint arity = function
+  | Op_sub | Op_not -> List.init arity (fun _ -> hint)
+  | Op_eq | Op_neq | Op_lt | Op_le | Op_gt | Op_ge -> [None;None]
+  | Op_add | Op_mul | Op_div | Op_and | Op_or | Op_xor -> [hint;hint]
+  | Op_mod -> [Some Tint;Some Tint]
+  | Op_if -> [Some Tbool;hint;hint]
+
 (** Check that an expression has the [expected] type *)
-let rec type_expr nodes streams clocks (e : k_expr) : t_expr =
+let rec type_expr ?hint nodes streams clocks (e : k_expr) : t_expr =
   let loc = e.kexpr_loc in
   match e.kexpr_desc with
   | KE_const c ->
-    { texpr_desc = TE_const c; texpr_ty = type_const c; texpr_loc = e.kexpr_loc }
+    { texpr_desc = TE_const c; texpr_ty = type_const ?hint loc c;
+      texpr_loc = e.kexpr_loc }
   | KE_ident id ->
     let bty =
       (try base_ty_of_ty (List.assoc id streams)
@@ -82,7 +101,27 @@ let rec type_expr nodes streams clocks (e : k_expr) : t_expr =
                              id, e.kexpr_loc))) in
     { texpr_desc = TE_ident id; texpr_ty = bty; texpr_loc = e.kexpr_loc }
   | KE_op (op, es) ->
-    let tes = List.map (type_expr nodes streams clocks) es in
+    (* This is a bit more complicated than expected, because we need to keep
+       some hints if we want Nil constants to be typed further down the line *)
+    let hints = hint_op hint (List.length es) op in
+    let tes = if op = Op_if
+      then [type_expr ~hint:Tbool nodes streams clocks (List.nth es 0);
+            type_expr ?hint nodes streams clocks (List.nth es 1);
+            type_expr ?hint nodes streams clocks (List.nth es 2)]
+      else
+        let rec get_one_type = function
+          | [] -> None
+          | (e, hint)::tl ->
+            try Some (type_expr ?hint:hint nodes streams clocks e)
+            with (MissingHintError _) -> get_one_type tl in
+        match (get_one_type (List.combine es hints)) with
+        | None ->
+          raise (TypeError
+                   (Printf.sprintf
+                      "Could not infer types of operands of expression %s"
+                      (Minils.string_of_expr e), loc))
+        | Some e ->
+          List.map (type_expr ~hint:(e.texpr_ty) nodes streams clocks) es in
     let outy = type_op (List.map (fun te -> te.texpr_ty) tes) e.kexpr_loc op in
     { texpr_desc = TE_op (op, tes); texpr_ty = outy; texpr_loc = loc }
   | KE_app (id, es, ever) ->
@@ -126,15 +165,16 @@ let rec type_expr nodes streams clocks (e : k_expr) : t_expr =
     { texpr_desc = TE_app (id, tes, tever);
       texpr_ty = outy; texpr_loc = loc }
   | KE_fby (c, e) ->
-    let t1 = type_const c and te = type_expr nodes streams clocks e in
-    if (t1 <> te.texpr_ty)
+    let te = type_expr ?hint nodes streams clocks e in
+    let tc = type_const ~hint:te.texpr_ty loc c in
+    if (tc <> te.texpr_ty)
     then raise
         (TypeError
            (Printf.sprintf
               "Both sides of fby should have the same type, found %s and %s"
-              (string_of_base_ty t1) (string_of_base_ty te.texpr_ty),
+              (string_of_base_ty tc) (string_of_base_ty te.texpr_ty),
             e.kexpr_loc));
-    { texpr_desc = TE_fby(c, te); texpr_ty = t1; texpr_loc = loc }
+    { texpr_desc = TE_fby(c, te); texpr_ty = tc; texpr_loc = loc }
   | KE_tuple es ->
     let tes = (List.map (type_expr nodes streams clocks) es) in
     let tys = List.map (fun te -> te.texpr_ty) tes in
@@ -151,7 +191,7 @@ let rec type_expr nodes streams clocks (e : k_expr) : t_expr =
                (Printf.sprintf
                   "Constructor %s does not belong to clock type %s"
                   constr (string_of_base_ty clt), loc));
-    let te = type_expr nodes streams clocks e in
+    let te = type_expr ?hint nodes streams clocks e in
     { texpr_desc = TE_when (te, constr, cl);
       texpr_ty = te.texpr_ty; texpr_loc = loc }
   | KE_merge (cl, es) ->
@@ -174,7 +214,7 @@ let rec type_expr nodes streams clocks (e : k_expr) : t_expr =
 
     (* Check the expression types *)
     let tes = List.map
-        (fun (c, te) -> c, type_expr nodes streams clocks te) es in
+        (fun (c, te) -> c, type_expr ?hint nodes streams clocks te) es in
     let ty = (snd (List.hd tes)).texpr_ty in
     List.iter (fun (_, te) ->
         if (te.texpr_ty <> ty)
@@ -190,8 +230,8 @@ let rec type_expr nodes streams clocks (e : k_expr) : t_expr =
 (** Check that the equation [eq] is correctly typed.
     Returns the [out_streams] minus the ones we just type-checked *)
 let check_equation nodes streams out_streams clocks (eq : k_equation) =
-  let (expected, os) = get_pattern_type out_streams eq.keq_patt
-  and te = type_expr nodes streams clocks eq.keq_expr in
+  let (expected, os) = get_pattern_type out_streams eq.keq_patt in
+  let te = type_expr ~hint:expected nodes streams clocks eq.keq_expr in
   if te.texpr_ty <> expected
   then raise (TypeError
                 (Printf.sprintf
@@ -273,6 +313,9 @@ let check_file (f : k_file) : t_file =
   | TypeError (msg, loc) ->
     Printf.printf "Type checking error : %s at %s\n"
       msg (string_of_loc loc); exit 1
+  | MissingHintError loc ->
+    Printf.printf "Type checking error : Could not infer type of nil at %s"
+      (string_of_loc loc); exit 1
 
 (*                           Check equivalence between ASTs                    *)
 

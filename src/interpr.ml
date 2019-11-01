@@ -63,6 +63,7 @@ let value_of_const = function
   | Cint i -> Int i
   | Creal r -> Real r
   | Cconstr (c, _) -> Constr c
+  | Cnil -> Nil
 
 (** Apply a unary operator *)
 let apply_unary op e =

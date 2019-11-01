@@ -67,12 +67,14 @@ type const =
   | Cint of int
   | Creal of float
   | Cconstr of constr * ident (* constructor * clock type identifier *)
+  | Cnil (* Can convert to the necessary type *)
 
 let string_of_const = function
   | Cbool b -> if b then "true" else "false"
   | Cint i -> string_of_int i
   | Creal f -> string_of_float f
   | Cconstr (c, _) -> c
+  | Cnil -> "nil"
 
 type op =
   | Op_eq | Op_neq | Op_lt | Op_le | Op_gt | Op_ge

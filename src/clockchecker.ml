@@ -24,140 +24,156 @@ let rec compose_clock cl1 cl2 =
   | Cl (base, constr, clid) -> Cl (compose_clock base cl2, constr, clid)
   | Ctuple cls -> Ctuple (List.map (fun cl -> compose_clock cl cl2) cls)
 
-(** Substitute a (CE_ident) to another identifier in a clock expression *)
-let subst_clock (x : ident) (y : c_expr) (cl : clock) =
-  let rec subst_aux (x : ident) (y : ident) = function
-    | Base -> Base
-    | Cl (base, constr, x') ->
-      Cl (subst_aux x y base, constr, if x = x' then y else x')
-    | Ctuple cls ->
-      Ctuple (List.map (subst_aux x y) cls) in
-  match y.cexpr_desc with
-  | CE_ident y -> subst_aux x y cl
-  | _ -> cl
+(** Unify two clocks [cl1] and [cl2] *)
+let rec unify_clock cl1 cl2 =
+  match cl1, cl2 with
+  | Base, Base -> ([], Base, Base)
+  | c, Base -> ([], c, Base)
+  | Base, c -> ([], Base, c)
+  | Cl (b1, c1, clid1), Cl (b2, c2, clid2) ->
+    if c1 <> c2
+    then raise (ClockError
+                  (Printf.sprintf "Could not unify clocks %s and %s"
+                     (string_of_clock cl1) (string_of_clock cl2), dummy_loc));
+    let (assocs, b1, b2) = unify_clock b1 b2 in
+    ((clid1, clid2)::assocs, b1, b2)
+  | _, _ ->
+    raise (ClockError
+             (Printf.sprintf "Clock tuple not supported in unification",
+              dummy_loc))
+
+(** Apply a set of substitutions to a clock *)
+let rec apply_substs substs = function
+  | Base -> Base
+  | Cl (base, constr, clid) ->
+    (match (List.assoc_opt clid substs) with
+     | Some clid -> Cl (apply_substs substs base, constr, clid)
+     | None -> Cl (apply_substs substs base, constr, clid))
+  | Ctuple cls ->
+    Ctuple (List.map (apply_substs substs) cls)
+
+(** Remove the whens in front of an expression *)
+let rec strip_whens e =
+  match e.texpr_desc with
+  | TE_when (e, _, _) -> strip_whens e
+  | _ -> e
 
 (** Check and get the clocked version of expression [e] *)
-let rec clock_expr nodes streams (e : t_expr) =
+let rec clock_expr nodes streams expected_cl (e : t_expr) =
   let loc = e.texpr_loc and ty = e.texpr_ty in
   match e.texpr_desc with
   | TE_const c ->
+    (* A constant can be subsampled to any clock ! *)
     { cexpr_desc = CE_const c; cexpr_ty = ty;
-      cexpr_clock = Base; cexpr_loc = loc }
+      cexpr_clock = expected_cl; cexpr_loc = loc }
   | TE_ident id ->
     let cl = (List.assoc id streams) in
-    { cexpr_desc = CE_ident id; cexpr_ty = ty;
-      cexpr_clock = cl; cexpr_loc = loc }
-  | TE_op (op, es) ->
-    let ces = List.map (clock_expr nodes streams) es in
-    let cl = (List.hd ces).cexpr_clock in
-    if (not (List.for_all (fun ce -> ce.cexpr_clock = cl) ces))
-    then raise (ClockError
-                  (Printf.sprintf
-                     "All the operands of %s should be on the same clock"
-                   (string_of_op op), loc));
-    { cexpr_desc = CE_op (op, ces); cexpr_ty = ty;
-      cexpr_clock = cl; cexpr_loc = loc}
-  | TE_fby (c, e) ->
-    let ce = clock_expr nodes streams e in
-    { cexpr_desc = CE_fby (c, ce) ; cexpr_ty = ty;
-      cexpr_clock = ce.cexpr_clock; cexpr_loc = loc }
-  | TE_tuple es ->
-    let ces = List.map (clock_expr nodes streams) es in
-    let cls = List.map (fun ce -> ce.cexpr_clock) ces in
-    { cexpr_desc = CE_tuple ces; cexpr_ty = ty;
-      cexpr_clock = Ctuple cls; cexpr_loc = loc}
-  | TE_when (ew, constr, clid) ->
-    let cew = clock_expr nodes streams ew in
-    let clc = List.assoc clid streams in
-    if(clc <> cew.cexpr_clock)
+    if (cl <> expected_cl)
     then raise
         (ClockError
            (Printf.sprintf
-              "Argument of when should be on the same clock \
-               as the clock id %s: expected %s, found %s"
-           clid (string_of_clock clc) (string_of_clock cew.cexpr_clock), loc));
-    { cexpr_desc = CE_when (cew, constr, clid); cexpr_ty = ty;
-      cexpr_clock = Cl (cew.cexpr_clock, constr, clid); cexpr_loc = loc }
-  | TE_merge (clid, es) ->
-    let ces = List.map (fun (c, e) -> c, clock_expr nodes streams e) es in
-    let base = List.assoc clid streams in
-
-    (* Verify that all the clocks are on the same base and using the same
-       stream, and that they are on the right constructor  *)
-    List.iter (fun (constr, ce) -> match ce.cexpr_clock with
-        | Base ->
-          raise (ClockError
-                   (Printf.sprintf "Argument %s of merge is not on a clock"
-                      (string_of_expr ce), loc))
-        | Cl (base', constr', clid') ->
-          if base' <> base
-          then raise (ClockError
-                        (Printf.sprintf
-                           "Arguments of merge are not on the same base :\
-                            %s and %s found"
-                           (string_of_clock base)
-                           (string_of_clock base'), loc));
-          if clid <> clid'
-          then raise (ClockError
-                        (Printf.sprintf
-                           "Arguments of merge are not on the same clock :\
-                            %s and %s found" clid clid', loc));
-          if constr <> constr'
-          then raise (ClockError
-                        (Printf.sprintf
-                           "Argument %s of merge is not on the right \
-                            clock constructor, expected %s, found %s"
-                           (string_of_expr ce) constr constr', ce.cexpr_loc))
-        | Ctuple _ -> failwith "Should not happen") ces;
-      { cexpr_desc = CE_merge (clid, ces); cexpr_ty = ty;
-      cexpr_clock = base; cexpr_loc = loc }
-  | TE_app (fid, es, ever) ->
-    let ces = List.map (clock_expr nodes streams) es
-    and cever = clock_expr nodes streams ever in
-    let node = List.assoc fid nodes in
-
-    (* Check the association between formal and actual parameters are correct,
-       and get an association table for clocks passed as parameters *)
-    let assocs =
-      List.fold_left2 (fun assocs (id, ty) actual ->
-          let clform = List.fold_left (fun cl (x, y) -> subst_clock x y cl)
-              (clock_of_ty ty) assocs in
-          let clform = compose_clock clform cever.cexpr_clock in
-          if(clform <> actual.cexpr_clock)
-          then raise
+              "The stream %s doesn't have the expected clock %s (found %s)"
+              id (string_of_clock cl) (string_of_clock expected_cl),
+            loc));
+    { cexpr_desc = CE_ident id; cexpr_ty = ty;
+      cexpr_clock = cl; cexpr_loc = loc }
+  | TE_op (op, es) ->
+    let ces = List.map (clock_expr nodes streams expected_cl) es in
+    { cexpr_desc = CE_op (op, ces); cexpr_ty = ty;
+      cexpr_clock = expected_cl; cexpr_loc = loc}
+  | TE_fby (c, e) ->
+    let ce = clock_expr nodes streams expected_cl e in
+    { cexpr_desc = CE_fby (c, ce) ; cexpr_ty = ty;
+      cexpr_clock = ce.cexpr_clock; cexpr_loc = loc }
+  | TE_tuple es ->
+    (match expected_cl with
+     | Ctuple cls ->
+       let ces = List.map2 (clock_expr nodes streams) cls es in
+       { cexpr_desc = CE_tuple ces; cexpr_ty = ty;
+         cexpr_clock = expected_cl; cexpr_loc = loc}
+     | _ -> raise
+              (ClockError
+                 (Printf.sprintf "Incorrect clock for tuple : %s"
+                    (string_of_clock expected_cl), loc)))
+  | TE_when (ew, constr, clid) ->
+    (match expected_cl with
+     | Cl (expected_cl, constr', clid') ->
+       let cew = clock_expr nodes streams expected_cl ew in
+       if(clid <> clid' || constr <> constr')
+       then raise
+           (ClockError
+              (Printf.sprintf
+                 "Wrong clock parameters for when expression:\
+                  expected %s, found %s(%s)"
+                 (string_of_clock expected_cl) constr' clid, loc));
+       { cexpr_desc = CE_when (cew, constr, clid); cexpr_ty = ty;
+         cexpr_clock = Cl (cew.cexpr_clock, constr, clid); cexpr_loc = loc }
+     | _ -> raise
               (ClockError
                  (Printf.sprintf
-                    "Wrong clock for argument %s of %s : expected %s, found %s"
-                    id fid (string_of_clock clform)
-                    (string_of_clock actual.cexpr_clock), loc));
-          (id, actual)::assocs)
-        [] node.cn_input ces in
+                    "Incorrect clock for when expression: %s"
+                    (string_of_clock expected_cl), loc)))
+  | TE_merge (clid, es) ->
+    (* Get the type of the clock *)
+    let ces = List.map (fun (c, e) ->
+        c, clock_expr nodes streams (Cl (expected_cl, c, clid)) e) es in
 
-    (* Compute the output clocks by substitution and composition *)
-    let outcls = List.map (fun (_, ty) ->
-        let cl = List.fold_left (fun cl (x, y) -> subst_clock x y cl)
-            (clock_of_ty ty) assocs in
-        compose_clock cl cever.cexpr_clock)
-        node.cn_output in
-    let outcl =
-      (match outcls with
-       | [] -> failwith "Should not happen (syntax)"
-       | [cl] -> cl
-       | _ -> Ctuple outcls) in
+    { cexpr_desc = CE_merge (clid, ces); cexpr_ty = ty;
+      cexpr_clock = expected_cl; cexpr_loc = loc }
+  | TE_app (fid, es, ever) ->
+    (* Output clocks of the application should be the expected clock *)
+    let output_cls = (match expected_cl with
+      | Ctuple cls -> cls
+      | cl -> [cl]) in
+    let node = List.assoc fid nodes in
+
+    (* Checking the relation between formal and expected output clocks
+       allow us to get the "base" clock for the called node *)
+    let unifiers =
+      List.map2 (fun (_, ty) actual -> unify_clock (clock_of_ty ty) actual
+                ) node.cn_output output_cls in
+    let (_, _, base) = List.hd unifiers in
+    let substs = List.flatten (List.map (fun (s, _, _) -> s) unifiers) in
+
+    (* Verify that the unifiers are compatible *)
+    if not ((List.for_all (fun (_, b1, b2) -> b1 = Base && b2 = base) unifiers))
+    then raise (ClockError ("Unifiers are not compatible", loc));
+
+    (* Verify that substitutions are compatible *)
+    let rec verif_substs = function
+      | [] -> ()
+      | (x, y)::tl -> ((match List.assoc_opt x tl with
+          | Some y' -> if y' <> y then
+              raise (ClockError ("Unifiers are not compatible", loc));
+          | None -> ()); verif_substs tl)
+    in verif_substs substs;
+
+    (* This base clock should be the clock of the "every" expression *)
+    let cever = clock_expr nodes streams base ever in
+
+    (* And should be used to clock the actual parameters of the function *)
+    let ces = List.map2 (fun e (id, ty) ->
+        (* Verify that the correct clock is passed *)
+        if (List.mem_assoc id substs) then (
+          let id' = List.assoc id substs in
+          if ((strip_whens e).texpr_desc <> TE_ident id') then
+            raise
+              (ClockError
+                 (Printf.sprintf
+                    "Clock %s should be passed to function, %s found instead"
+                    id' (TMinils.string_of_expr e), loc))
+        );
+        let cl = apply_substs substs (clock_of_ty ty) in
+        clock_expr nodes streams (compose_clock cl base) e)
+        es node.cn_input in
+
     { cexpr_desc = CE_app (fid, ces, cever); cexpr_ty = ty;
-      cexpr_clock = outcl; cexpr_loc = loc }
+      cexpr_clock = expected_cl; cexpr_loc = loc }
 
 (** Check the clocks for the equation [eq] *)
 let clock_equation nodes streams (eq : t_equation) =
-  let (expected, pat) = get_pattern_clock streams eq.teq_patt
-  and ce = clock_expr nodes streams eq.teq_expr in
-  if (ce.cexpr_clock <> expected)
-  then raise (ClockError
-                (Printf.sprintf
-                   "Wrong clock for equation %s; expected %s, found %s"
-                   (TMinils.string_of_equation eq)
-                   (string_of_clock expected)
-                   (string_of_clock ce.cexpr_clock), eq.teq_expr.texpr_loc));
+  let (expected, pat) = get_pattern_clock streams eq.teq_patt in
+  let ce = clock_expr nodes streams expected eq.teq_expr in
   { ceq_patt = pat ; ceq_expr = ce }
 
 (** Check the clocks for the node [f] *)

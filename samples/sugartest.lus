@@ -1,0 +1,9 @@
+node test_arrow(x : int) returns (z : int);
+let
+  z = x -> 2 * x;
+tel;
+  
+node test_arrow_clock(x : int; b : bool) returns (z : int when True(b));
+let
+  z = (x when True(b)) -> (2 * (x when True(b)));
+tel;

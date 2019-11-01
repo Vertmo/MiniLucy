@@ -57,7 +57,7 @@
 
 
 %nonassoc ELSE
-(* %right ARROW *)
+%right ARROW
 %left OR
 %left XOR
 %left AND
@@ -238,8 +238,8 @@ expr:
     { mk_expr (PE_op (Op_or, [$1; $3])) $startpos $endpos }
 | expr XOR expr
     { mk_expr (PE_op (Op_xor, [$1; $3])) $startpos $endpos }
-(* | expr ARROW expr
- *     { mk_expr (PE_arrow ($1, $3)) $startpos $endpos } *)
+| expr ARROW expr
+    { mk_expr (PE_arrow ($1, $3)) $startpos $endpos }
 | const FBY expr
     { mk_expr (PE_fby ($1, $3)) $startpos $endpos }
 | MINUS expr

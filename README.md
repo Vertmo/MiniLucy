@@ -80,3 +80,19 @@ Limitations:
 * No tuple assignment (difficult to form merge expressions) so only unary function applications
 * No "every" : use generated reset clocks
 Is this really an issue ? We can ask the user to chose between clocks and automata since the two features are two ways to express the same thing
+
+### Interpreter
+
+Using (unbounded) streams for the sake of simplicity. Will be (hopefully) used to check how the automaton semantics and kernel (translated) semantics coincide.
+
+While using it, I found a big problem with clocks: suppose the equation
+
+```
+  x = merge b (True -> 0 fby (x when True(b))) (False -> 1 fby (x when False(b)))
+```
+
+Now, if the clocks are indeed influenced by the `fby`, and the `b` behind the `fby` refer to the previous value of `b`, then we have a problem, because the return value of this expression could be `Nil`. If the clocks are not influenced by `fby`, then we are prevented from doing something like:
+```
+  b = false fby (merge b (True -> false) (False -> true))
+```
+which would be a causality error. And I need this to compile automata !

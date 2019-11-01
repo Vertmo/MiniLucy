@@ -16,15 +16,20 @@ tel;
 node test_op(b : bool) returns (z : int when True(b));
 var x : int when True(b); y : int when True(b);
 let
-  x = 1 when True(b); 
+  x = 1;  -- Implicit subclocking for constants
   z = x + y;
-  y = 2 when True(b);
+  y = 2;
+tel;
+  
+node test_app0(b1 : bool; c1 : bool) returns (z : int when True(c1) when True(b1));
+let
+  z = test_op(b1 when True(c1));
 tel;
   
 node test_tuple(b : bool; c : bool) 
 returns (x : int when True(b); y : int when True(c));
 let
-  (x, y) = (1 when True(b), 2 when True(c));
+  (x, y) = (1, 2);
 tel;
   
 node test_fby(b : bool) returns (x : int when True(b));
@@ -35,8 +40,8 @@ tel;
 node test_merge(b : bool) returns (x : int);
 var t1 : int when True(b); t2 : int when False(b);
 let
-  t1 = 1 when True(b);
-  t2 = 2 when False(b);
+  t1 = 1;
+  t2 = 2;
   x = merge b (True -> t1) (False -> t2);
 tel;
   
@@ -54,10 +59,10 @@ tel;
   
 node test_nary1(a : c1) returns (x : int when A(a));
 let
-  x = 1 when A(a);
+  x = 1;
 tel;
   
 node test_merge_nary(a : c3) returns (x : int);
 let
-  x = merge a (E -> 2 when E(a)) (D -> 1 when D(a)) (F -> 3 when F(a)); 
+  x = merge a (E -> 2) (D -> 1) (F -> 3); 
 tel;

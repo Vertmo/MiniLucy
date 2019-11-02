@@ -33,12 +33,23 @@ let add_val strs x v : assoc_str =
 (** ``Fills`` the Bottom at the beginning of the stream.
     If the calculated value is nil, simply remove the head of the stream
     If the head of the stream is not bottom, exception *)
-let fill_val strs x v : assoc_str =
+let fill_val tys strs x v : assoc_str =
   let str = try List.assoc x strs
     with Not_found -> raise (StreamError (x, "stream not found")) in
   match str with
   | Bottom::tl ->
-    let str = if (v = Nil) then tl else v::tl in
+    let str = if (v = Bottom) then tl
+      else if (v = Nil) then
+        (match List.assoc x tys with
+         | Tint -> Int 0
+         | Tbool -> Bool false
+         | Treal -> Real 0.
+         | ty ->
+           raise
+             (InterpreterError
+                (Printf.sprintf "Value nil could not be converted to type %s"
+                   (string_of_base_ty ty))))::tl
+      else v::tl in
     (x, str)::(List.remove_assoc x strs)
   | _ -> raise (StreamError (x, "does not begin with bottom"))
 
@@ -69,9 +80,11 @@ let value_of_const = function
 let apply_unary op e =
   match (op, e) with
   | Op_not, Bool b -> Bool (not b)
+  | Op_not, Nil -> Bool (true)
   | Op_not, Int i -> Int (lnot i)
   | Op_sub, Int i -> Int (-i)
   | Op_sub, Real r -> Real (-.r)
+  | Op_sub, Nil -> Nil
   | _,_ -> failwith "Invalid unary op"
 
 (** Apply comparator *)
@@ -89,14 +102,22 @@ let apply_comp comp vl vr =
 let apply_arith fint ffloat el er =
   match el, er with
   | Int il, Int ir -> Int (fint il ir)
+  | Int il, Nil -> Int (fint il 0)
+  | Nil, Int ir -> Int (fint 0 ir)
   | Real fl, Real fr -> Real (ffloat fl fr)
+  | Real fl, Nil -> Real (ffloat fl 0.)
+  | Nil, Real fr -> Real (ffloat 0. fr)
   | _, _ -> failwith "Invalid args for arith op"
 
 (** Apply logic operator *)
 let apply_logic fbool fint el er =
   match el, er with
   | Bool bl, Bool br -> Bool (fbool bl br)
+  | Bool bl, Nil -> Bool (fbool bl false)
+  | Nil, Bool br -> Bool (fbool false br)
   | Int il, Int ir -> Int (fint il ir)
+  | Int il, Nil -> Int (fint il 0)
+  | Nil, Int ir -> Int (fint 0 ir)
   | _, _ -> failwith "Invalid args for bool op"
 
 (** Apply a binary operator *)
@@ -114,8 +135,14 @@ let apply_binary op v1 v2 =
   | Op_eq | Op_neq | Op_lt | Op_le | Op_gt | Op_ge ->
     (match v1, v2 with
      | Bool b1, Bool b2 -> Bool (apply_comp op b1 b2)
+     | Bool b1, Nil -> Bool (apply_comp op b1 false)
+     | Nil, Bool b2 -> Bool (apply_comp op false b2)
      | Int i1, Int i2 -> Bool (apply_comp op i1 i2)
+     | Int i1, Nil -> Bool (apply_comp op i1 0)
+     | Nil, Int i2 -> Bool (apply_comp op 0 i2)
      | Real f1, Real f2 -> Bool (apply_comp op f1 f2)
+     | Real f1, Nil -> Bool (apply_comp op f1 0.)
+     | Nil, Real f2 -> Bool (apply_comp op 0. f2)
      | _, _ -> failwith "Invalid operands for comparator")
   | _ -> failwith "Invalid binary operator"
 
@@ -123,12 +150,12 @@ let apply_binary op v1 v2 =
 let apply_if cond th el =
   match cond with
   | Bool true -> th
-  | Bool false -> el
+  | Bool false | Nil -> el
   | _ -> raise (InterpreterError "Condition of if should be a bool")
 
 (** Apply an operator *)
 let apply_op op vs =
-  if (List.mem Nil vs) then Nil
+  if (List.mem Bottom vs) then Bottom
   else
     match (List.length vs) with
     | 1 -> apply_unary op (List.nth vs 0)
@@ -260,7 +287,7 @@ let rec get_expr_trans nodes fbys (e : k_expr) : trans_expr =
           | Constr constr' -> constr = constr'
           | _ -> failwith "when expects either bool or constr")
       then t st tocalc
-      else Nil, (get_instances (match st with St (_, i) -> i) e)
+      else Bottom, (get_instances (match st with St (_, i) -> i) e)
   | KE_merge (clid, brs) ->
     fun st tocalc ->
       let St (strs, insts) = st in
@@ -280,24 +307,28 @@ let rec get_expr_trans nodes fbys (e : k_expr) : trans_expr =
                               (List.remove_assoc c brs)))
 
 (** Get the transitions for an equation *)
-and get_eq_trans nodes (e : k_equation) =
+and get_eq_trans nodes (e : k_equation) types =
   let trans = get_expr_trans nodes 0 e.keq_expr in
   let defs = defined_of_equation e in
+  let tys = List.map (fun d -> d, List.assoc d types) defs in
   fun st ->
     let St (strs, insts) = st in
     let (v, is) = trans st (List.length (List.assoc (List.hd defs) strs)-1) in
     St ((match e.keq_patt.kpatt_desc with
-        | KP_ident id -> fill_val strs id v
+        | KP_ident id -> fill_val tys strs id v
         | KP_tuple ids ->
           (match v with
-           | Tuple vs -> List.fold_left2 fill_val strs ids vs
+           | Tuple vs -> List.fold_left2 (fill_val tys) strs ids vs
            | _ -> [])), is@insts)
 
 (** Get transition functions for a node *)
 and get_node_trans nodes (n : k_node) : trans_node =
   (* Transition functions for all the equations *)
   let transfuns = List.map (fun eq ->
-      defined_of_equation eq, get_eq_trans nodes eq) n.kn_equs in
+      defined_of_equation eq,
+      get_eq_trans nodes eq
+        (List.map (fun (id, ty) -> id, base_ty_of_ty ty)
+           (n.kn_local@n.kn_output))) n.kn_equs in
   fun (inputs, St (strs, insts)) ->
   (* Add the new inputs to the relevant streams *)
   let strs = List.fold_left (fun strs (x, v) ->

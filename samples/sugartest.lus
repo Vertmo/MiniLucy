@@ -1,6 +1,6 @@
-node test_arrow(x : int) returns (z : int);
+node test_arrow(init : int) returns (z : int);
 let
-  z = x -> 2 * x;
+  z = init -> 2 * pre(z);
 tel;
   
 node test_arrow_clock(x : int; b : bool) returns (z : int when True(b));
@@ -10,5 +10,5 @@ tel;
   
 node test_pre() returns (x : real);
 let
-  x = pre(x+1.);
+  x = pre(x)+1.;
 tel;

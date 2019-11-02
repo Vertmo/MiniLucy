@@ -1,4 +1,5 @@
 open Lexing
+open PMinils
 
 let usage = "usage: " ^ Sys.argv.(0) ^
             " [-parse] [-desugar] [-check] [-norm] [-translate] [-generate]\
@@ -52,9 +53,19 @@ let lex_and_parse ic =
   let lexbuf = Lexing.from_channel ic in
   parse_with_error lexbuf
 
-let main filename step =
-  let ic = open_in filename in
-  let p_file = lex_and_parse ic in
+let filenames = ref []
+
+let _ =
+  Arg.parse_expand speclist (fun x -> filenames := !filenames@[x]) usage;
+  let step = !step and filenames = !filenames in
+
+  let p_file = List.fold_left (fun f filename ->
+      let ic = open_in filename in
+      let f' = lex_and_parse ic in
+      close_in ic;
+      { pf_clocks = f.pf_clocks@f'.pf_clocks;
+        pf_nodes = f.pf_nodes@f'.pf_nodes })
+      { pf_clocks = []; pf_nodes = [] } filenames in
 
   (* Parse *)
   if (step = Parse) then (
@@ -115,4 +126,3 @@ let main filename step =
     output_string outc (MicroC.string_of_file ccode);
     close_out outc
 
-let _ = Arg.parse speclist (fun x -> main x !step) usage

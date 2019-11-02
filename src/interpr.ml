@@ -222,17 +222,18 @@ let rec get_expr_trans nodes fbys (e : k_expr) : trans_expr =
       let vis = List.map (fun t -> t st tocalc) ts
       and (ve, ie)= te st tocalc in
       let vs = List.map fst vis and is = List.map snd vis in
-      let ins = List.map2 (fun (id, _) v -> id, v) n.kn_input vs in
+      let inputs = List.map2 (fun (id, _) v -> id, v) n.kn_input vs in
       let (st, outs) = (match ve with
           | Bool true ->
             let init = get_node_init nodes n in
-            get_node_trans nodes n (ins, init)
-        | _ ->
-          let st = List.assoc (fid, e.kexpr_loc)
-              (match st with St (_, ins) -> ins) in
-          get_node_trans nodes n (ins, st)) in
+            get_node_trans nodes n (inputs, init)
+          | _ ->
+            let st = List.assoc (fid, e.kexpr_loc)
+                (match st with St (_, ins) -> ins) in
+                    get_node_trans nodes n (inputs, st)) in
+      let St (strs, _) = st in
       (match outs with
-       | [(id, v)] -> v
+       | [(_, v)] -> v
        | vs -> (Tuple (List.map snd vs))),
       (((fid, e.kexpr_loc), st)::ie@(List.concat is))
   | KE_fby (c, e) ->
@@ -290,7 +291,7 @@ and get_eq_trans nodes (e : k_equation) =
         | KP_tuple ids ->
           (match v with
            | Tuple vs -> List.fold_left2 fill_val strs ids vs
-           | _ -> [])), insts@is)
+           | _ -> [])), is@insts)
 
 (** Get transition functions for a node *)
 and get_node_trans nodes (n : k_node) : trans_node =

@@ -1,0 +1,5 @@
+-- Use the Fibonacci serie
+node main() returns (f : int);
+let
+  f = fibo();
+tel;

@@ -9,3 +9,4 @@ causalitytest.c
 translationtest.c
 automatatest.c
 sugartest.c
+uselib.c

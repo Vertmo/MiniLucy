@@ -5,6 +5,10 @@ open Minils
 open PMinils
 open Interpr
 
+exception InterpreterError of string
+exception CausalityError of ident
+exception StreamError of ident * string
+
 (** Get the initial state for an instances in an expression *)
 let rec expr_init_instances nodes (e : p_expr) : instance list =
   match e.pexpr_desc with
@@ -78,7 +82,7 @@ let rec get_expr_trans nodes fbys (e : p_expr) : trans_expr =
   | PE_ident id ->
     (fun (St (strs, _)) _ ->
        let str = List.assoc id strs in
-       match try List.nth str fbys with _ -> List.nth str (fbys-1) with
+       match try List.nth str fbys with _ -> List.hd str with
        | Bottom -> raise (NotYetCalculated id)
        | v -> v, [])
   | PE_op (op, es) ->
@@ -135,20 +139,7 @@ let rec get_expr_trans nodes fbys (e : p_expr) : trans_expr =
       let vis = List.map (fun t -> t st tocalc) ts in
       let vs = List.map fst vis and is = List.map snd vis in
       Tuple vs, (List.flatten is)
-  | PE_when (e, constr, clid) ->
-    let t = get_expr_trans nodes fbys e in
-    fun st tocalc ->
-      let (St (strs, _)) = st in
-      let c = (match List.nth (List.assoc clid strs) fbys with
-        | Bottom -> raise (NotYetCalculated clid)
-        | c -> c) in
-      if (match c with
-          | Bool true -> constr = "True"
-          | Bool false -> constr = "False"
-          | Constr constr' -> constr = constr'
-          | _ -> failwith "when expects either bool or constr")
-      then t st tocalc
-      else Bottom, (get_instances (match st with St (_, i) -> i) e)
+  | PE_when (e, constr, clid) -> get_expr_trans nodes fbys e
   | PE_merge (clid, brs) ->
     fun st tocalc ->
       let St (strs, insts) = st in
@@ -174,13 +165,27 @@ and get_eq_trans nodes (e : p_equation) types =
   let tys = List.map (fun d -> d, List.assoc d types) defs in
   fun st ->
     let St (strs, insts) = st in
-    let (v, is) = trans st (List.length (List.assoc (List.hd defs) strs)-1) in
-    St ((match e.peq_patt.ppatt_desc with
-        | PP_ident id -> fill_val tys strs id v
-        | PP_tuple ids ->
-          (match v with
-           | Tuple vs -> List.fold_left2 (fill_val tys) strs ids vs
-           | _ -> [])), is@insts)
+    (match e.peq_patt.ppatt_desc with
+     | PP_ident id ->
+       let cl = clock_of_ty (List.assoc id types) in
+       if check_clock_value strs cl
+       then
+         let (v, is) =
+           trans st (List.length (List.assoc (List.hd defs) strs)-1) in
+         St (fill_val tys strs id v, is@insts)
+       else St (fill_val tys strs id Bottom, insts)
+     | PP_tuple ids ->
+       let cls = List.map (fun id ->
+           clock_of_ty (List.assoc id types)) ids in
+       if (List.exists (check_clock_value strs) cls) then
+         let (v, is) =
+           trans st (List.length (List.assoc (List.hd defs) strs)-1) in
+         (match v with
+          | Tuple vs ->
+            St(List.fold_left2 (fill_val tys) strs ids vs, is@insts)
+          | _ -> failwith "Should not happen")
+       else St (List.fold_left (fun strs id ->
+           fill_val tys strs id Bottom) strs ids, insts))
 
 (** Get the transitions for an instruction *)
 and get_instr_trans nodes (i : p_instr) types =
@@ -193,9 +198,7 @@ and get_node_trans nodes (n : p_node) : trans_node =
   (* Transition functions for all the equations *)
   let transfuns = List.map (fun i ->
       defined_of_instr i,
-      get_instr_trans nodes i
-        (List.map (fun (id, ty) -> id, base_ty_of_ty ty)
-           (n.pn_local@n.pn_output))) n.pn_instrs in
+      get_instr_trans nodes i (n.pn_local@n.pn_output)) n.pn_instrs in
   fun (inputs, St (strs, insts)) ->
   (* Add the new inputs to the relevant streams *)
   let strs = List.fold_left (fun strs (x, v) ->
@@ -273,7 +276,7 @@ let run_nodes (fp : p_file) (fk : k_file) (name : ident) k =
                              (String.concat ";"
                                 (List.map string_of_value (List.rev strk)))))
           sp;
-        exit 0;
+        exit 1;
       )) sp
 
 (** Run all the nodes in p_file and k_file *)

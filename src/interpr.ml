@@ -30,6 +30,20 @@ let add_val strs x v : assoc_str =
     with Not_found -> [] in
   (x, v::str)::(List.remove_assoc x strs)
 
+(** Check if all the values of a clock are true *)
+let rec check_clock_value strs = function
+  | Base -> true
+  | Cl (base, constr, clid) ->
+    let str = List.assoc clid strs in
+    (match List.hd str with
+     | Bottom -> raise (NotYetCalculated clid)
+     | Bool true -> constr = "True"
+     | Bool false -> constr = "False"
+     | Constr constr' -> constr = constr'
+     | _ -> raise (InterpreterError "Wrong clock type")) &&
+    (check_clock_value strs base)
+  | _ -> failwith "Should not happen"
+
 (** ``Fills`` the Bottom at the beginning of the stream.
     If the calculated value is nil, simply remove the head of the stream
     If the head of the stream is not bottom, exception *)
@@ -38,9 +52,11 @@ let fill_val tys strs x v : assoc_str =
     with Not_found -> raise (StreamError (x, "stream not found")) in
   match str with
   | Bottom::tl ->
-    let str = if (v = Bottom) then tl
-      else if (v = Nil) then
-        (match List.assoc x tys with
+    let str =
+      let cl = clock_of_ty (List.assoc x tys) in
+      if (check_clock_value strs cl) then
+        if (v = Nil) then
+        (match base_ty_of_ty (List.assoc x tys) with
          | Tint -> Int 0
          | Tbool -> Bool false
          | Treal -> Real 0.
@@ -49,7 +65,7 @@ let fill_val tys strs x v : assoc_str =
              (InterpreterError
                 (Printf.sprintf "Value nil could not be converted to type %s"
                    (string_of_base_ty ty))))::tl
-      else v::tl in
+      else v::tl else tl in
     (x, str)::(List.remove_assoc x strs)
   | _ -> raise (StreamError (x, "does not begin with bottom"))
 
@@ -232,7 +248,7 @@ let rec get_expr_trans nodes fbys (e : k_expr) : trans_expr =
   | KE_ident id ->
     (fun (St (strs, _)) _ ->
        let str = List.assoc id strs in
-       match try List.nth str fbys with _ -> List.nth str (fbys-1) with
+       match try List.nth str fbys with _ -> List.hd str with
        | Bottom -> raise (NotYetCalculated id)
        | v -> v, [])
   | KE_op (op, es) ->
@@ -277,20 +293,7 @@ let rec get_expr_trans nodes fbys (e : k_expr) : trans_expr =
       let vis = List.map (fun t -> t st tocalc) ts in
       let vs = List.map fst vis and is = List.map snd vis in
       Tuple vs, (List.flatten is)
-  | KE_when (e, constr, clid) ->
-    let t = get_expr_trans nodes fbys e in
-    fun st tocalc ->
-      let (St (strs, _)) = st in
-      let c = (match List.nth (List.assoc clid strs) fbys with
-        | Bottom -> raise (NotYetCalculated clid)
-        | c -> c) in
-      if (match c with
-          | Bool true -> constr = "True"
-          | Bool false -> constr = "False"
-          | Constr constr' -> constr = constr'
-          | _ -> failwith "when expects either bool or constr")
-      then t st tocalc
-      else Bottom, (get_instances (match st with St (_, i) -> i) e)
+  | KE_when (e, constr, clid) -> get_expr_trans nodes fbys e
   | KE_merge (clid, brs) ->
     fun st tocalc ->
       let St (strs, insts) = st in
@@ -316,22 +319,34 @@ and get_eq_trans nodes (e : k_equation) types =
   let tys = List.map (fun d -> d, List.assoc d types) defs in
   fun st ->
     let St (strs, insts) = st in
-    let (v, is) = trans st (List.length (List.assoc (List.hd defs) strs)-1) in
-    St ((match e.keq_patt.kpatt_desc with
-        | KP_ident id -> fill_val tys strs id v
-        | KP_tuple ids ->
-          (match v with
-           | Tuple vs -> List.fold_left2 (fill_val tys) strs ids vs
-           | _ -> [])), is@insts)
+    (match e.keq_patt.kpatt_desc with
+     | KP_ident id ->
+       let cl = clock_of_ty (List.assoc id types) in
+       if check_clock_value strs cl
+       then
+         let (v, is) =
+           trans st (List.length (List.assoc (List.hd defs) strs)-1) in
+         St (fill_val tys strs id v, is@insts)
+       else St (fill_val tys strs id Bottom, insts)
+     | KP_tuple ids ->
+       let cls = List.map (fun id ->
+           clock_of_ty (List.assoc id types)) ids in
+       if (List.exists (check_clock_value strs) cls) then
+         let (v, is) =
+           trans st (List.length (List.assoc (List.hd defs) strs)-1) in
+         (match v with
+          | Tuple vs ->
+            St(List.fold_left2 (fill_val tys) strs ids vs, is@insts)
+          | _ -> failwith "Should not happen")
+       else St (List.fold_left (fun strs id ->
+           fill_val tys strs id Bottom) strs ids, insts))
 
 (** Get transition functions for a node *)
 and get_node_trans nodes (n : k_node) : trans_node =
   (* Transition functions for all the equations *)
   let transfuns = List.map (fun eq ->
       defined_of_equation eq,
-      get_eq_trans nodes eq
-        (List.map (fun (id, ty) -> id, base_ty_of_ty ty)
-           (n.kn_local@n.kn_output))) n.kn_equs in
+      get_eq_trans nodes eq (n.kn_local@n.kn_output)) n.kn_equs in
   fun (inputs, St (strs, insts)) ->
   (* Add the new inputs to the relevant streams *)
   let strs = List.fold_left (fun strs (x, v) ->

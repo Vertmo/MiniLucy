@@ -2,8 +2,9 @@ MINILUCY := ../minilucy.byte
 
 TARGETS := \
 	fulladder.elf bananas.elf heat.elf abro.elf \
-	clocktest.elf typetest.elf automatatest.elf chrono.elf \
-	causalitytest.c translationtest.c sugartest.c uselib.elf
+	clocktest.elf typetest.elf \
+	causalitytest.c translationtest.c sugartest.c uselib.elf \
+ # automatatest.elf chrono.elf
 
 all: $(TARGETS)
 

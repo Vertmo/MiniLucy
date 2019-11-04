@@ -80,6 +80,9 @@ let _ =
     exit 0
   );
 
+  (* Run the nodes from both files, checking they give the same result *)
+  if !asserts then Pinterpr.run_files p_file file;
+
   (* Let's interpr this a bit ! *)
   match (!interpret_name) with
   | Some name ->

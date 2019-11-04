@@ -247,22 +247,25 @@ let rec get_expr_trans nodes fbys (e : k_expr) : trans_expr =
     let n = List.assoc fid nodes in
     fun st tocalc ->
       let vis = List.map (fun t -> t st tocalc) ts
-      and (ve, ie)= te st tocalc in
+      and (ve, ie) = te st tocalc in
       let vs = List.map fst vis and is = List.map snd vis in
       let inputs = List.map2 (fun (id, _) v -> id, v) n.kn_input vs in
-      let (st, outs) = (match ve with
-          | Bool true ->
-            let init = get_node_init nodes n in
-            get_node_trans nodes n (inputs, init)
-          | _ ->
-            let st = List.assoc (fid, e.kexpr_loc)
-                (match st with St (_, ins) -> ins) in
-                    get_node_trans nodes n (inputs, st)) in
-      let St (strs, _) = st in
-      (match outs with
-       | [(_, v)] -> v
-       | vs -> (Tuple (List.map snd vs))),
-      (((fid, e.kexpr_loc), st)::ie@(List.concat is))
+      (try
+        let (st, outs) = (match ve with
+            | Bool true ->
+              let init = get_node_init nodes n in
+              get_node_trans nodes n (inputs, init)
+            | _ ->
+              let st = List.assoc (fid, e.kexpr_loc)
+                  (match st with St (_, ins) -> ins) in
+              get_node_trans nodes n (inputs, st)) in
+        let St (strs, _) = st in
+        (match outs with
+         | [(_, v)] -> v
+         | vs -> (Tuple (List.map snd vs))),
+        (((fid, e.kexpr_loc), st)::ie@(List.concat is))
+       with _ -> (* Step when the node shouldn't have been called *)
+         Bottom, (match st with St (_, ins) -> ins))
   | KE_fby (c, e) ->
     let t = get_expr_trans nodes (fbys+1) e in
     fun st tocalc -> if tocalc <= fbys
@@ -372,7 +375,7 @@ let generate_rd_input (cls : Asttypes.clockdec list) (n : k_node) =
       | Ttuple _ -> invalid_arg "generate_rd_input"
     ) n.kn_input
 
-(** Run nodes of the file, for testing purposes *)
+(** Run a node, for testing purposes *)
 let run_node (f : k_file) (name : ident) k =
   Random.self_init ();
   let ns = List.map (fun n -> (n.kn_name, n)) f.kf_nodes in

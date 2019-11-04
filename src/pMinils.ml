@@ -71,6 +71,12 @@ let string_of_equation eq =
     (string_of_patt eq.peq_patt)
     (string_of_expr eq.peq_expr)
 
+(** Variables defined by an equation *)
+let defined_of_equation eq =
+  match eq.peq_patt.ppatt_desc with
+  | PP_ident id -> [id]
+  | PP_tuple ids -> ids
+
 type p_let = ident * ty * p_expr
 
 let string_of_let (id, ty, e) =
@@ -96,6 +102,11 @@ let rec string_of_instr = function
              (String.concat "\n" (List.map string_of_instr ins))
              (String.concat "\n" (List.map string_of_until untils)))
           branches))
+
+(** Variables defined by an instruction *)
+let defined_of_instr = function
+  | Eq eq -> defined_of_equation eq
+  | _ -> failwith "TODO"
 
 type p_node =
     { pn_name: ident;

@@ -104,9 +104,13 @@ let rec string_of_instr = function
           branches))
 
 (** Variables defined by an instruction *)
-let defined_of_instr = function
+let rec defined_of_instr = function
   | Eq eq -> defined_of_equation eq
-  | _ -> failwith "TODO"
+  | Automaton brs ->
+    (* If the program is well typed, all the branches
+       define the same equations left-hand-sides *)
+    let (_, _, is, _) = List.hd brs in
+    List.flatten (List.map defined_of_instr is)
 
 type p_node =
     { pn_name: ident;

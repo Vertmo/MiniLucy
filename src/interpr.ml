@@ -15,6 +15,16 @@ type value = Bottom
            | Constr of ident
            | Tuple of value list
 
+let rec string_of_value = function
+  | Bottom -> "bottom"
+  | Nil -> "nil"
+  | Int i -> string_of_int i
+  | Bool b -> if b then "true" else "false"
+  | Real f -> string_of_float f
+  | Constr id -> id
+  | Tuple vs -> Printf.sprintf "(%s)" (String.concat ","
+                                         (List.map string_of_value vs))
+
 (** Stream of values. Latest value is at head of the stream *)
 type stream = (ident * value list)
 
@@ -22,7 +32,7 @@ type stream = (ident * value list)
 type assoc = (ident * value) list
 
 (** Association from name to stream of values (states) *)
-type assoc_str = (ident * value list) list
+type assoc_str = stream list
 
 (** Add a value in front of the correct stream *)
 let add_val strs x v : assoc_str =
@@ -67,23 +77,13 @@ let fill_val tys strs x v : assoc_str =
                    (string_of_base_ty ty))))::tl
       else v::tl else tl in
     (x, str)::(List.remove_assoc x strs)
-  | _ -> raise (StreamError (x, "does not begin with bottom"))
+  | _ -> raise (StreamError (x, "has already been calculated"))
 
 (** Node state *)
 type state = St of assoc_str * instance list
 
 (** Instance of a node *)
 and instance = ((ident * location) * state)
-
-let rec string_of_value = function
-  | Bottom -> "bottom"
-  | Nil -> "nil"
-  | Int i -> string_of_int i
-  | Bool b -> if b then "true" else "false"
-  | Real f -> string_of_float f
-  | Constr id -> id
-  | Tuple vs -> Printf.sprintf "(%s)" (String.concat ","
-                                         (List.map string_of_value vs))
 
 let value_of_const = function
   | Cbool b -> Bool b
@@ -266,22 +266,19 @@ let rec get_expr_trans nodes fbys (e : k_expr) : trans_expr =
       and (ve, ie) = te st tocalc in
       let vs = List.map fst vis and is = List.map snd vis in
       let inputs = List.map2 (fun (id, _) v -> id, v) n.kn_input vs in
-      (try
-        let (st, outs) = (match ve with
-            | Bool true ->
-              let init = get_node_init nodes n in
-              get_node_trans nodes n (inputs, init)
-            | _ ->
-              let st = List.assoc (fid, e.kexpr_loc)
-                  (match st with St (_, ins) -> ins) in
-              get_node_trans nodes n (inputs, st)) in
-        let St (strs, _) = st in
-        (match outs with
-         | [(_, v)] -> v
-         | vs -> (Tuple (List.map snd vs))),
-        (((fid, e.kexpr_loc), st)::ie@(List.concat is))
-       with _ -> (* Step when the node shouldn't have been called *)
-         Bottom, (match st with St (_, ins) -> ins))
+      let (st, outs) = (match ve with
+          | Bool true ->
+            let init = get_node_init nodes n in
+            get_node_trans nodes n (inputs, init)
+          | _ ->
+            let st = List.assoc (fid, e.kexpr_loc)
+                (match st with St (_, ins) -> ins) in
+            get_node_trans nodes n (inputs, st)) in
+      let St (strs, _) = st in
+      (match outs with
+       | [(_, v)] -> v
+       | vs -> (Tuple (List.map snd vs))),
+      (((fid, e.kexpr_loc), st)::ie@(List.concat is))
   | KE_fby (c, e) ->
     let t = get_expr_trans nodes (fbys+1) e in
     fun st tocalc -> if tocalc <= fbys

@@ -2,7 +2,7 @@ node auto_simpl() returns (x : int);
 let
   automaton
   | INC ->
-    let u : int = 1 in
+    let u : int = (1 + pre u) in
     x = 0 fby x + u;
     until x > 5 then DEC;
   | DEC ->
@@ -51,4 +51,3 @@ let
     until x < -6 then APP1;
   end;
 tel;
-

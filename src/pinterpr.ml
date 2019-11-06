@@ -10,9 +10,9 @@ exception CausalityError of ident
 exception StreamError of ident * string
 
 (** Used to store the state of automatons
-    current state, (state id, local bindings, recursive trees) for every state *)
+    current state, should reset, (state id, local bindings, recursive trees) for every state *)
 type auto_state =
-  Node of (constr * ((constr * (assoc_str * auto_state)) list)) list
+  Node of (constr * (bool * ((constr * (assoc_str * auto_state)) list))) list
 
 (** Node state *)
 type state = St of assoc_str * instance list * auto_state
@@ -72,7 +72,7 @@ and get_instr_init nodes i : (assoc_str * instance list * auto_state) =
     let strs = List.flatten (List.map (fun (strs, _, _) -> strs) brs')
     and is = List.flatten (List.map (fun (_, is, _) -> is) brs')
     and auts = List.map (fun (_, _, aut) -> aut) brs' in
-    strs, is, Node [List.hd (List.map fst auts), auts]
+    strs, is, Node [List.hd (List.map fst auts), (true, auts)]
 
 (** Get the initial state for a node *)
 and get_node_init nodes n : state =
@@ -107,6 +107,9 @@ let rec get_instances insts (e : p_expr) =
 
 type trans_expr = state -> int -> (value * instance list)
 type trans_node = (assoc * state) -> (state * assoc)
+
+(** Replace a term with another one in an association list *)
+let replace_assoc k l r = (k, r)::(List.remove_assoc k l)
 
 (** Get the transition function for an expression *)
 let rec get_expr_trans nodes fbys (e : p_expr) : trans_expr =
@@ -224,15 +227,31 @@ and get_instr_trans nodes types (i : p_instr) =
   | Eq eq -> get_eq_trans nodes eq types
   | Automaton brs ->
     (fun (St (strs, is, (Node autos))) ->
-       let (current, stbrs) = List.find (fun (id, _) ->
-           List.exists (fun (id', _, _, _) -> id = id') brs) autos in
-       (* Current active branch (we'll evaluat it) *)
+       let (current, (should_be_reset, stbrs)) = List.find (fun (id, (_, _)) ->
+             List.exists (fun (id', _, _, _) -> id = id') brs) autos in
+
+       (* Reset if necessary *)
+       let (strs', is', stbrs) =
+         if (should_be_reset) then
+           let (strs', is', Node autos) = get_instr_init nodes i in
+           List.map (fun (id, _) -> id, Bottom::[]) strs',
+           is', snd (snd (List.hd autos))
+         else ([], [], stbrs) in
+       let prev_strs = (List.map (fun (id, l) -> id, List.tl l) strs) in
+       let strs = List.fold_left (fun strs (id, str) ->
+           replace_assoc id strs str) strs strs' in
+       let is = List.fold_left (fun is (id, i) ->
+           replace_assoc id is i) is is' in
+
+       (* Current active branch (we'll evaluate it) *)
        let (locals, stbr) = List.assoc current stbrs
        and (_, lets, instrs, untils) =
          List.find (fun (id', _, _, _) -> current = id') brs in
+
        (* Remove the state we're going to modify *)
        let autos = List.remove_assoc current autos
        and stbrs = List.remove_assoc current stbrs in
+
        (* Calculate local values, and save them *)
        let locals = List.map (fun (id, str) -> id, Bottom::str) locals in
        let strs = locals@strs in
@@ -246,22 +265,32 @@ and get_instr_trans nodes types (i : p_instr) =
            (St (strs, is, stbr)) let_equs in
        let locals = List.filter (fun (id, _) ->
            List.mem_assoc id locals) strs in
-       (* Calculate update state according to inner instructions *)
+
+       (* Update state according to inner instructions *)
        let funs = List.map (fun i ->
            defined_of_instr i,
            get_instr_trans nodes types i) instrs in
        let St (strs, is, stbr) = dynamic_schedule funs (St (strs, is, stbr)) in
+
        (* Handle state change *)
        let untils = List.map (fun (e, constr) ->
            let (v, _) = get_expr_trans nodes 0 e (St (strs, is, stbr)) 0 in
            v, constr) untils in
-       let newcurrent = match (List.assoc_opt (Bool (true)) untils) with
-         | Some c -> c | None -> current in
-       (* TODO reset *)
        let strs = List.fold_left (fun strs (id, _) -> List.remove_assoc id strs)
            strs locals in
+
+       (* After the reset, we need to put some of the streams back *)
+       let strs = if should_be_reset then
+           List.fold_left (fun strs (id, str) ->
+               match (List.assoc id strs) with
+               | [v] -> replace_assoc id strs (v::str)
+               | _ -> strs) strs prev_strs
+         else strs in
+       let newcurrent, should_be_reset =
+         match (List.assoc_opt (Bool (true)) untils) with
+         | Some c -> c, true | None -> current, false in
        let stbrs = (current, (locals, stbr))::stbrs in
-       St (strs, is, Node ((newcurrent, stbrs)::autos))) (* TODO *)
+       St (strs, is, Node ((newcurrent, (should_be_reset, stbrs))::autos)))
 
 (** Evaluation with dynamic scheduling of a set of instructions *)
 and dynamic_schedule instrs st : state =
@@ -357,4 +386,4 @@ let run_nodes (fp : p_file) (fk : k_file) (name : ident) k =
 
 (** Run all the nodes in p_file and k_file *)
 let run_files (fp : p_file) (fk : k_file) =
-  List.iter (fun n -> run_nodes fp fk n.pn_name 15) fp.pf_nodes
+  List.iter (fun n -> run_nodes fp fk n.pn_name 20) fp.pf_nodes

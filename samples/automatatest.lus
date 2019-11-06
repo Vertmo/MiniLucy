@@ -20,17 +20,17 @@ let
     automaton
     | A1 ->
       x = 0 fby x + l;
-      until x > 3 then A2;
+      until x > 1 then A2;
     | A2 ->
       x = 0 fby x + (2 * l);
       until x > 7 then A1;
     end;
     y = 0 fby y + 1;
-    until y > 10 then B;
+    until y > 4 then B;
   | B ->
     x = 0 fby x - 5;
     y = 0 fby y - 1;
-    until y < -3 then A;
+    until y < -1 then A;
   end;
 tel;
   

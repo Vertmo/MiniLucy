@@ -163,52 +163,65 @@ let rec whens_of_ty : ty -> (constr * ident) list = function
   | Clocked (ty, c, clid) -> (c, clid)::(whens_of_ty ty)
 
 (** Reset the term and add some whens where they are needed *)
-let rec reset_expr x whens nwhens e =
+let rec reset_expr whens nwhens e =
+  let loc = e.kexpr_loc in
   match e.kexpr_desc with
-    | KE_const c -> add_whens e whens
+    | KE_const c -> e
     | KE_ident id ->
       let nwhens = try List.assoc id nwhens with _ -> [] in
       add_whens e (List.filter (fun (_, clid) ->
           not (List.mem clid nwhens)) whens)
     | KE_op (op, es) ->
       { e with kexpr_desc =
-                 KE_op (op, List.map (reset_expr x whens nwhens) es) }
+                 KE_op (op, List.map (reset_expr whens nwhens) es) }
     | KE_app (fid, es, _) ->
-      let rexpr = { kexpr_desc = KE_ident x; kexpr_loc = dummy_loc } in
+      let rexpr = List.fold_left (fun e (constr, clid) ->
+          let x = clid^constr^"_reset" in
+          let rexpr = { kexpr_desc = KE_ident x; kexpr_loc = loc } in
+          let rexpr = { rexpr with kexpr_desc = KE_op (Op_or, [rexpr; e]) } in
+          { rexpr with kexpr_desc = KE_when (rexpr, constr, clid) })
+          { kexpr_desc = KE_const (Cbool false); kexpr_loc = loc }
+          (List.rev whens) in
+      let rexpr = match rexpr.kexpr_desc with
+        | KE_when (e, _, _) -> e | _ -> rexpr in
       let rexpr = { kexpr_desc = KE_fby (Cbool false, rexpr);
-                    kexpr_loc = dummy_loc } in
+                    kexpr_loc = loc } in
       let (constr, clid) = List.hd whens in
       let rexpr = { kexpr_desc = KE_when (rexpr, constr, clid);
-                   kexpr_loc = dummy_loc } in
+                    kexpr_loc = loc } in
       { e with kexpr_desc =
-                 KE_app (fid, List.map (fun e -> reset_expr x whens nwhens e) es,
+                 KE_app (fid, List.map (fun e -> reset_expr whens nwhens e) es,
                          rexpr) }
     | KE_fby (c, e) ->
-      let cond = { kexpr_desc = KE_ident x; kexpr_loc = dummy_loc } in
+      let cond = List.fold_left (fun e (constr, clid) ->
+          let x = clid^constr^"_reset" in
+          let rexpr = { kexpr_desc = KE_ident x; kexpr_loc = loc } in
+          let rexpr = { rexpr with kexpr_desc = KE_op (Op_or, [rexpr; e]) } in
+          { rexpr with kexpr_desc = KE_when (rexpr, constr, clid) })
+          { kexpr_desc = KE_const (Cbool false); kexpr_loc = loc }
+          (List.rev whens) in
+      let cond = match cond.kexpr_desc with
+        | KE_when (e, _, _) -> e | _ -> cond in
       let cond = { kexpr_desc = KE_fby (Cbool false, cond);
-                   kexpr_loc = dummy_loc } in
+                   kexpr_loc = loc } in
       let (constr, clid) = List.hd whens in
       let cond = { kexpr_desc = KE_when (cond, constr, clid);
-                   kexpr_loc = dummy_loc } in
+                   kexpr_loc = loc } in
       let the =
-        add_whens { kexpr_desc = KE_const c; kexpr_loc = dummy_loc } whens
-      and el = { kexpr_desc = KE_fby (c, reset_expr x whens nwhens e);
-                 kexpr_loc = dummy_loc } in
+        add_whens { kexpr_desc = KE_const c; kexpr_loc = loc } whens
+      and el = { kexpr_desc = KE_fby (c, reset_expr whens nwhens e);
+                 kexpr_loc = loc } in
       { e with kexpr_desc = KE_op (Op_if, [cond; the; el]) }
     | KE_tuple es ->
-      { e with kexpr_desc = KE_tuple (List.map (reset_expr x whens nwhens) es) }
-    | KE_when (e, constr, clid) ->
-      failwith "when construct not supported in automata"
-    | KE_merge (id, es) ->
-      failwith "merge construct not supported in automata"
+      { e with kexpr_desc = KE_tuple (List.map (reset_expr whens nwhens) es) }
+    | KE_when (e, constr, clid) -> e
+    | KE_merge (id, es) -> e
 
 (** Merge a tree of expressions according to clocks and constructors *)
 let generate_merged_exprs (tree : expr_tree) =
   let rec gen_mer_e whens nwhens = function
     | None -> invalid_arg "gen_mer_e"
-    | Leaf e ->
-      let reset = (snd (List.hd whens))^(fst (List.hd whens))^"_reset" in
-      reset_expr reset whens nwhens e
+    | Leaf e -> reset_expr whens nwhens e
     | Node (clid, branches) ->
       let eMerge =
         KE_merge (clid,
@@ -247,10 +260,9 @@ let generate_local_bindings (t : let_tree) :
     | None -> [], []
     | Leaf (id, nid, ty, e) ->
       let substs = (id, nid)::substs in
-      let reset = (snd (List.hd whens))^(fst (List.hd whens))^"_reset" in
       [(id, nid)],
       [{ keq_patt = { kpatt_desc = KP_ident nid; kpatt_loc = dummy_loc };
-         keq_expr = reset_expr reset whens
+         keq_expr = reset_expr whens
              (List.map (fun (_, nid) -> nid, List.map snd whens)
                 ((id, nid)::substs))
              (apply_substs substs e) },
@@ -296,6 +308,7 @@ let rec get_until_tree : automata_tree -> until_tree = function
 
 (** Generate a set of equations from an until tree *)
 let rec generate_merged_untils tree =
+  (* TODO we should reset that too *)
   let rec gen_mer_u whens = function
     | Node (clid, branches) ->
       (* Compute the base cases *)
@@ -312,6 +325,7 @@ let rec generate_merged_untils tree =
             KE_fby (Cconstr (constr1, "_ty"^clid),
                     { kexpr_desc = base ; kexpr_loc = dummy_loc });
               kexpr_loc = dummy_loc; } in
+      let base = (if whens <> [] then reset_expr whens [] base else base) in
       let base =
         { keq_patt = { kpatt_desc = KP_ident clid; kpatt_loc = dummy_loc };
           keq_expr = base } in

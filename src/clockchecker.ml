@@ -73,7 +73,7 @@ let rec clock_expr nodes streams expected_cl (e : t_expr) =
         (ClockError
            (Printf.sprintf
               "The stream %s doesn't have the expected clock %s (found %s)"
-              id (string_of_clock cl) (string_of_clock expected_cl),
+              id (string_of_clock expected_cl) (string_of_clock cl),
             loc));
     { cexpr_desc = CE_ident id; cexpr_ty = ty;
       cexpr_clock = cl; cexpr_loc = loc }

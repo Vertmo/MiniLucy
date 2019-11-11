@@ -32,3 +32,10 @@ _opam/
 parser.ml
 parser.mli
 lexer.ml
+
+# TeX stuff
+*.aux
+*.bbl
+*.blg
+*.log
+*.pdf

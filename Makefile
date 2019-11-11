@@ -9,6 +9,9 @@ minilucy.byte: $(addprefix src/,$(SRC))
 samples: minilucy.byte
 	make -C samples
 
+rapport.pdf: rapport.tex
+	pdflatex rapport.tex
+
 clean:
 	rm -f *.byte
 	make -C src clean

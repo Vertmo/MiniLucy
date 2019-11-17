@@ -55,12 +55,10 @@ let rec generate_instr instances tys outputs : Obc.instr -> MicroC.instr list =
   | StepAssign (ids, iid, es) ->
     let ges = List.map (generate_expr outputs) es in
     let (fid, oids) = List.assoc iid instances in
-    let tmp = Atom.fresh ("_out_"^fid) in
-    [VarDec (Tident (fid^"_out"), tmp);
-     (Call (fid^"_step", ges@[Ref (PField ("_self", iid));
-                              Ref (Ident tmp)]))]@
+    (Call (fid^"_step", ges@[Ref (PField ("_self", (iid)));
+                             Ref (PField ("_self", (iid^"_out")))]))::
     (List.map2 (fun id oid ->
-         let e = Field (Ident tmp, oid) in
+         let e = Field ((PField ("_self", (iid^"_out"))), oid) in
          if (List.mem_assoc id outputs)
          then Assign (PField ("_out", id), e)
          else Assign (Ident id, e)) ids oids)
@@ -97,6 +95,8 @@ let generate_machine (m : machine) : def list =
     struct_fields =
       (List.map (fun (id, ty) -> id, (ty_of_base_ty ty)) m.m_memory)@
       (List.map (fun (o, (f, _)) -> o, (Tident (f^"_mem")))
+         m.m_instances)@
+      (List.map (fun (o, (f, _)) -> (o^"_out"), (Tident (f^"_out")))
          m.m_instances)
   }
   and st_out = {

@@ -3,6 +3,9 @@
 \usepackage[utf8]{inputenc}
 \usepackage[french]{babel}
 
+\usepackage{graphicx}
+\usepackage{listings}
+
 \title{Parallélisme Synchrone\\ Réalisation d'un compilateur pour Minilucy}
 \author{Basile Pesin}
 \date{\today}
@@ -13,9 +16,34 @@
 
 \section{Choix techniques}
 
-\subsection{Structure du programme}
+\subsection{Choix de langage}
 
-\cite{Biernacki08}
+Pour des raisons de simplicité (et de familiarité), on a décidé d'implémenter le compilateur pour MiniLucy dans le langage OCaml. Ce langage fonctionnel est parfaitement adapté à la manipulation d'arbres de syntaxes abstraits. On l'a préféré au langage pur Haskell pour ce projet, afin de simplifier la gestion des exceptions (qui peuvent être gérées entièrement dynamiquement en OCaml). En dehors des exceptions, on a en revanche essayé d'écrire le compilateur dans le style le plus ``pur'' possible, en particulier en évitant les entrées-sorties, et autres effets de bord dans les fonctions internes, pour plutôt les réaliser dans la fonction ``main'' du compilateur.
+
+\subsection{Manuel d'utilisation}
+
+Le compilateur peut être facilement compilé grâce à la commande \textit{make}. Le fichier exécutable \texttt{minilucy.byte} est alors généré. Le logiciel ne présente pas de dépendance particulière, en dehors du compilateur \texttt{ocaml}, de \texttt{menhir} et d'\texttt{ocamllex}. Compiler le compilateur déclenche aussi la compilation des exemples (qui peut être déclenchée séparément avec \textit{make samples}), en mode ``assert'' du compilateur Minilucy (décrit plus bas).
+
+\paragraph{Options du compilateur}
+
+Les options suivantes peuvent être passées au compilateur \texttt{minilucy}:
+
+\begin{itemize}
+  \item \textit{-parse}, \textit{-desugar}, \textit{-check}, \textit{-norm}, \textit{-translate}, \textit{-generate} permettent respectivement d'arrêter la compilation après le parsing, l'élimination du sucre syntaxique, la vérification statique, la normalisation (et ordonnancement), la traduction vers \texttt{Obc}, et la génération de code \texttt{C}. Dans tous les cas, le compilateur affichera alors le programme compilé à cette étape.
+  \item \textit{-asserts} permet d'activer les vérifications de correctitude du compilateur. Celles-ci sont décrites plus en détail dans la section \ref{compilVerif}.
+  \item \textit{-interpet k node} permet d'utiliser l'interpréteur (voir \ref{interpreter}) pour exécuter \textit{k} itérations d'une \textit{node} spécifiée. Le programme affiche alors les flots de sorties de la \textit{node} après les \textit{k} itérations.
+\end{itemize}
+
+\subsection{Architecture du compilateur}
+
+Pour structurer les différentes passes du compilateur, on a suivi de manière assez proche l'article \cite{Biernacki08}. La figure \ref{fig:passesCompil} récapitule les langages intermédiaires utilisés, ainsi que les passes de compilations permettant de passer de l'une à l'autre.
+
+\begin{figure}[!ht]
+  \centering
+  \includegraphics[width=.7\paperwidth]{assets/chain.png}
+  \caption{Passes de compilation}
+  \label{fig:passesCompil}
+\end{figure}
 
 \section{Extensions}
 
@@ -23,9 +51,15 @@
 
 \subsection{Automates}
 
+\subsection{Interpreteur}
+\label{interpreter}
+
+\subsection{Vérification des phases de compilation}
+\label{compilVerif}
+
 \cite{Colaco05}
 
-\section{Difficultés}
+\section{Difficultés rencontrées}
 
 \bibliography{biblio}{}
 \bibliographystyle{unsrt}

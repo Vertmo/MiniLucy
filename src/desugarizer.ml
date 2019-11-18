@@ -308,7 +308,6 @@ let rec get_until_tree : automata_tree -> until_tree = function
 
 (** Generate a set of equations from an until tree *)
 let rec generate_merged_untils tree =
-  (* TODO we should reset that too *)
   let rec gen_mer_u whens = function
     | Node (clid, branches) ->
       (* Compute the base cases *)

@@ -400,12 +400,13 @@ let run_node (f : k_file) (name : ident) k =
     | n -> aux (n-1) (fst (trans (generate_rd_input f.kf_clocks node, st)))
   in
   let st = (aux k init) in
-  print_endline (Printf.sprintf "Streams after %d iterations:" k);
+  print_endline (Printf.sprintf "First %d iterations of outputs:" k);
   List.iter (fun (id, vs) ->
       print_endline (Printf.sprintf "(%s, [%s])"
                        id (String.concat ";"
                              (List.map string_of_value (List.rev vs)))))
-    (match st with St (st, _) -> st)
+    (match st with St (st, _) ->
+       List.filter (fun (id, _) -> List.mem_assoc id node.kn_output) st)
 
 let run_file (f : k_file) =
   List.iter (fun n -> run_node f n.kn_name 10) f.kf_nodes

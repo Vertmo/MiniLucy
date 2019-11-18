@@ -4,7 +4,11 @@
 \usepackage[french]{babel}
 
 \usepackage{graphicx}
+\usepackage{courier}
 \usepackage{listings}
+
+\input{lustrelang}
+\lstset{language=lustre}
 
 \title{Parallélisme Synchrone\\ Réalisation d'un compilateur pour Minilucy}
 \author{Basile Pesin}
@@ -48,6 +52,22 @@ Pour structurer les différentes passes du compilateur, on a suivi de manière a
 \section{Extensions}
 
 \subsection{Polymorphisme d'horloge}
+
+La première (légère) extension réalisée est un ajout par rapport aux règles de typages données dans~\cite{Biernacki08}. En effet, les règles de typages d'horloge données par l'article exigent que toutes les flux d'entrées (et de sortie) d'une application soient sur la même horloge. On décide dans cette extension de relaxer cette contrainte, en introduisant une notion de ``polymorphisme'' d'horloge lors de l'appel à une node.
+
+On va pour cela profiter de la syntaxe de l'appel de fonction dans notre langage, qui permet de préciser une expression de \texttt{every} pour tout appel de node. On infère l'horloge qui sera l'horloge de base de la node interne (celle sur laquelle celle-ci sera exécutée) en unifiant les horloges de retour attendues, avec les horloges de retour déclarées pour la node. On compose ensuite cette horloge de base avec les horloge des paramètres formels de la node, pour obtenir les horloges des paramètres passés, qu'on doit alors vérifier. Par exemple, le typage d'horloge des nodes suivantes est accepté.
+
+\begin{lstlisting}
+node test_op(b : bool) returns (z : int when True(b));
+let
+  z = 3 when True(b);
+tel;
+
+node test_app(b1 : bool; c1 : bool) returns (z : int when True(c1) when True(b1));
+let
+  z = test_op(b1 when True(c1));
+tel;
+\end{lstlisting}
 
 \subsection{Automates}
 

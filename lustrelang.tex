@@ -1,0 +1,30 @@
+\usepackage[svgnames]{xcolor}
+\xdefinecolor{darkgreen}{named}{DarkGreen}
+
+\lstdefinelanguage{lustre}{%
+   columns=fullflexible,%
+   basicstyle=\tt\footnotesize,
+   % keywordstyle=\bfseries,
+   commentstyle=\slshape,%
+   keywords={%
+     node,var,let,tel,returns,
+     when,merge
+   },%
+   keywordstyle={\color{darkgreen}\sffamily},%
+   morekeywords=[2]{%
+     int, real, bool,
+   },%
+   keywordstyle=[2]{\color{blue}\ttfamily},%
+   classoffset=2,%
+   morekeywords=[3]{%
+     storage, parameter, code %
+   },%
+   morekeywords=[3]{
+     True,False
+   },
+   keywordstyle=[3]{\color{purple}},%
+   sensitive,%
+   morestring=[d]",%"
+}[keywords,comments,strings]%
+
+\lstMakeShortInline[language=albert]?

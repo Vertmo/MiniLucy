@@ -71,15 +71,52 @@ tel;
 
 \subsection{Automates}
 
-\subsection{Interpreteur}
+Dans une extension plus importante, on ajoute les automates à état au langage, en s'inspirant de~\cite{Colaco05}. On donne ci-dessous un exemple d'automate.
+
+\begin{lstlisting}
+node auto_simpl() returns (x : int);
+let
+  automaton
+  | INC ->
+    let u : int = (1 + pre u) in
+    x = 0 fby x + u;
+    until x > 5 then DEC;
+  | DEC ->
+    let u : int = 2 in
+    x = 0 fby x - u;
+    until x < -10 then INC;
+  end;
+tel;
+\end{lstlisting}
+
+Toute équation doit être définie dans tous les états de l'automate. En revanche, on donne aussi au programmeur la possibilité de définir des variables locales à l'un des état (via le \lstinline[mathescape]{let $\ldots$ in}). Il est également possible de définir des automates imbriqués (plus d'exemples sont disponibles dans le fichier \texttt{samples/automatatest.lus}).
+
+Les automates sont compilés depuis le langage parsé vers le langage noyau (ils ne perturbent donc pas les étapes suivantes de compilation). La compilation des automates utilise très fortement le système d'horloge n-aire du langage : typiquement, une horloge est introduite par automate, avec un constructeur pour chacun de ses états. Les instructions \lstinline{until} permettent de faire varier la valeur de cette horloge (et donc opèrent les transitions de l'automate).
+
+Une autre caractéristique importante des automates est le \lstinline{reset} : lors du changement d'état d'un automate, toutes les équations déclarées par cet état sont réinitialisées, c'est à dire que dans le cas d'un \lstinline{fby}, on reprends à la valeur initiale (les nodes appelées en interne sont également réinitialisées). Ce trait est également implémenté comme dans l'article~\cite{Colaco05}, mais sans construction \lstinline{reset} explicite.
+
+\subsection{Interpréteur}
 \label{interpreter}
+
+Afin de pouvoir tester les nodes écrites sans avoir à compiler l'entièreté du programme, on a développé un interpréteur pour les programmes du langage noyau. Celui ci travaille sur des flots non-bornés (l'interpréteur garde en mémoire l'historique entier de chaque flot, ce qui n'est pas si grave puisqu'il est destiné à être en pratique utilisé pour tester un noeud sur un petit nombre d'itérations). L'interpréteur peut alors implémenter une sémantique relativement simple. Par ailleurs, l'interpréteur étant exécuté avant les phases de vérifications statiques (de type, d'horloge et de causalité), il permet éventuellement d'évaluer des programmes faux (mais peut aussi échouer sur de tels programmes). 
+
+On a également défini un interprète étendu, qui s'exécute sur le langage enrichi d'automates (et de quelques autres éléments de sucre syntaxique). Cet interpréteur implémente donc une sémantique d'automate (encore une fois, avec des flots non-bornés). On utilisera ce deuxième interpréteur dans la section \ref{compilVerif}.
 
 \subsection{Vérification des phases de compilation}
 \label{compilVerif}
 
-\cite{Colaco05}
+Afin de se donner une meilleure confiance dans le compilateur, on a développé plusieurs phases de vérifications, qui permettent de s'assurer (de manière dynamique) que les transformations réalisées sur un programme sont correctes. Ces vérifications peuvent être activées avec l'option \texttt{-asserts} du compilateur.
 
-\section{Difficultés rencontrées}
+\paragraph{Traduction des automates}
+Cette première vérification était la plus complexe à mettre en place. C'est en effet pour pouvoir l'effectuer qu'on a développé les interpréteur décrits dans la section \ref{interpreter}. Une fois ces deux interpréteurs développés (un pour le langage noyau, un pour le langage étendu), il suffit cela dit de les exécuter sur les programmes avant et après élimination du sucre syntaxique, et de comparer les résultats. On effectue pour le moment ces tests avec des entrées aléatoires choisies uniformément, mais développer une génération plus ``utile'' de ces entrées serait un problème intéressant.
+
+\paragraph{Normalisation}
+Etant donné que la normalisation consiste principalement en la séparation des équations utilisant des états en plusieurs équations, la vérification de l'équivalence des deux programmes peut se faire simplement en ré-inlinant les équations séparées, et en vérifiant que les ensembles d'équations obtenues sont équivalents.
+
+\paragraph{Ordonnancement}
+La vérification de la phase d'ordonnancement est la plus simple de toutes, puisqu'il suffit de vérifier que les équations sont bien ordonnancées, c'est à dire que tout flot utilisé par une équation est déclaré par l'une des équations précédentes.
+
+\paragraph{Traduction} Etant donné que la phase de traduction transforme le programme Lustre normalisé en un tout nouveau langage (Obc), il est difficile de réaliser une vérification qui soit significativement plus simple que la transformation elle-même. On se contente donc pour cette phase de vérifier que toutes les entrées et sorties sont bien similaires à celles du programme non-traduit, et que les sorties et variables locales sont bien toutes déclarées par les instructions de la machine. Cette vérification pourrait éventuellement être renforcée par un nouvel interpréteur, mais on n'a pas pu en réaliser un pour des raisons de temps.
 
 \bibliography{biblio}{}
 \bibliographystyle{unsrt}

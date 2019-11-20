@@ -135,12 +135,15 @@ let _ =
       close_out outc
   ) else (
     (* Generate for AVR *)
-    let ccode = AvrGenerator.generate_file mfile in
     match !output with
-    | None -> print_endline (MicroC.string_of_file ccode)
+    | None ->
+      Printf.eprintf "Generating for AVR should always specify an output file";
+      exit 1
     | Some hexfile ->
-      let cfile = (Filename.remove_extension hexfile)^".c" in
-      let avrfile = (Filename.remove_extension hexfile)^".avr" in
+      let prefix = Filename.remove_extension hexfile in
+      let ccode = AvrGenerator.generate_file prefix mfile in
+      let cfile = prefix^".c" in
+      let avrfile = prefix^".avr" in
 
       let outc = open_out cfile in
       output_string outc (MicroC.string_of_file ccode);
@@ -149,11 +152,11 @@ let _ =
       let libdir = "../src/" (* TODO*) in
       ignore (Sys.command
                 (Printf.sprintf
-                             "avr-g++ -g -fno-exceptions -Wall -std=c++11 \
-                              -O2 -Wnarrowing\ -Wl,-Os -fdata-sections \
-                              -ffunction-sections -Wl,-gc-sections \
-                              -mmcu=atmega328p -DF_CPU=16000000 \
-                              -I %s %s -o %s" libdir cfile avrfile));
+                   "avr-g++ -g -fno-exceptions -Wall -std=c++11 \
+                    -O2 -Wnarrowing\ -Wl,-Os -fdata-sections \
+                    -ffunction-sections -Wl,-gc-sections \
+                    -mmcu=atmega328p -DF_CPU=16000000 \
+                    -I %s %s -o %s" libdir cfile avrfile));
       ignore (Sys.command
                 (Printf.sprintf
                    "avr-objcopy -O ihex -R .eeprom %s %s"

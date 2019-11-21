@@ -1,6 +1,13 @@
 #include "avrlib.c"
 
-void io_init() { /* Nothing */ }
+void io_init() {
+  avr_pin_mode(PIN4, INPUT);
+  avr_pin_mode(PIN5, INPUT);
+  avr_pin_mode(PIN7, OUTPUT);
+
+  avr_pin_mode(PINA1, INPUT);
+  avr_pin_mode(PIN3, OUTPUT);
+}
 
 int io_read_b1() {
   return avr_digital_read(PIN4);

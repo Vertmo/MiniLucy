@@ -156,7 +156,7 @@ let _ =
                     -O2 -Wnarrowing\ -Wl,-Os -fdata-sections \
                     -ffunction-sections -Wl,-gc-sections \
                     -mmcu=atmega328p -DF_CPU=16000000 \
-                    -I %s %s -o %s" libdir cfile avrfile));
+                    -I %s %s/avrlib.o %s -o %s" libdir libdir cfile avrfile));
       ignore (Sys.command
                 (Printf.sprintf
                    "avr-objcopy -O ihex -R .eeprom %s %s"

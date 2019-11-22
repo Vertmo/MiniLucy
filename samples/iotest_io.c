@@ -1,4 +1,4 @@
-#include "avrlib.c"
+#include "avrlib.h"
 
 void io_init() {
   avr_pin_mode(PIN4, INPUT);

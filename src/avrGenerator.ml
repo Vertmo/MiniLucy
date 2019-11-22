@@ -51,4 +51,4 @@ let generate_file filename (f : Obc.file) : MicroC.file =
                  [Call ("avr_delay", [Const (Int 10)])])
         ]
     } in
-  (Include "avrlib.c")::(Include (filename^"_io.c"))::defs@mainDefs@[mainFun]
+  (Include "avrlib.h")::(Include (filename^"_io.c"))::defs@mainDefs@[mainFun]

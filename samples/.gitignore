@@ -13,3 +13,4 @@ automatatest.c
 sugartest.c
 uselib.c
 iotest.c
+disptest.c

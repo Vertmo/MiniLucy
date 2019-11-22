@@ -1,5 +1,7 @@
 #include "avrlib.h"
 
+#define CLOCK_PERIOD 10
+
 void io_init() {
   avr_pin_mode(PIN4, INPUT);
   avr_pin_mode(PIN5, INPUT);

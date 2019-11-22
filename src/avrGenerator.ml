@@ -48,7 +48,7 @@ let generate_file filename (f : Obc.file) : MicroC.file =
                         (List.map (fun (p, _) -> Ident p) ins)@
                         [Ref (Ident "mem"); (Ref (Ident "out"))])]@
                  (generate_output_writes outs)@
-                 [Call ("avr_delay", [Const (Int 10)])])
+                 [Call ("avr_delay", [Ident "CLOCK_PERIOD"])])
         ]
     } in
   (Include "avrlib.h")::(Include (filename^"_io.c"))::defs@mainDefs@[mainFun]

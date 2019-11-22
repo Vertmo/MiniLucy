@@ -5,7 +5,7 @@ TARGETS := \
 	clocktest.elf typetest.elf \
 	causalitytest.c translationtest.c sugartest.c uselib.elf \
   automatatest.elf chrono.elf \
-	iotest.hex
+	iotest.hex disptest.hex
 
 all: $(TARGETS)
 

@@ -152,11 +152,12 @@ let _ =
       let libdir = "../src/" (* TODO*) in
       ignore (Sys.command
                 (Printf.sprintf
-                   "avr-g++ -g -fno-exceptions -Wall -std=c++11 \
+                   "avr-gcc -g -fno-exceptions -Wall \
                     -O2 -Wnarrowing\ -Wl,-Os -fdata-sections \
                     -ffunction-sections -Wl,-gc-sections \
                     -mmcu=atmega328p -DF_CPU=16000000 \
-                    -I %s %s/avrlib.o %s -o %s" libdir libdir cfile avrfile));
+                    -I %s %s/avrlib.o %s/liquidCrystal.o %s -o %s"
+                   libdir libdir libdir cfile avrfile));
       ignore (Sys.command
                 (Printf.sprintf
                    "avr-objcopy -O ihex -R .eeprom %s %s"

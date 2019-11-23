@@ -4,8 +4,8 @@ TARGETS := \
 	fulladder.elf bananas.elf heat.elf abro.elf \
 	clocktest.elf typetest.elf \
 	causalitytest.c translationtest.c sugartest.c uselib.elf \
-  automatatest.elf chrono.elf \
-	iotest.hex disptest.hex
+  automatatest.elf \
+	iotest.hex disptest.hex chrono.hex
 
 all: $(TARGETS)
 

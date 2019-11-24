@@ -1,0 +1,6 @@
+node main(b1 : bool; b2 : bool; x : int) 
+returns (b : bool; y : int);
+let
+  b = b1 or b2;
+  y = 2 * x;
+tel;

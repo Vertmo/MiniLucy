@@ -118,6 +118,14 @@ La vérification de la phase d'ordonnancement est la plus simple de toutes, puis
 
 \paragraph{Traduction} Etant donné que la phase de traduction transforme le programme Lustre normalisé en un tout nouveau langage (Obc), il est difficile de réaliser une vérification qui soit significativement plus simple que la transformation elle-même. On se contente donc pour cette phase de vérifier que toutes les entrées et sorties sont bien similaires à celles du programme non-traduit, et que les sorties et variables locales sont bien toutes déclarées par les instructions de la machine. Cette vérification pourrait éventuellement être renforcée par un nouvel interpréteur, mais on n'a pas pu en réaliser un pour des raisons de temps.
 
+\subsection{AVR-Lustre}
+
+Comme le compilateur réalisé génère du code C, pourquoi ne pas en profiter pour cibler des microcontrôleurs pouvant être programmés en C ? En effet, les microcontrôleurs étant au coeur des systèmes embarqués pour lesquelles la programmation synchrone est souvent utilisée, ce portage semble particulièrement adapté.
+
+On a choisi pour ce Proof of Concept de cibler l'architecture AVR, en particulier utilisée sur les microcontrôleurs de la gamme Arduino. On a spécifiquement paramétré une petite bibliothèque d'exécution (tirée de celle de la machine virtuelle OMicroB~\cite{VVC18}) pour utiliser les ports de la carte Arduino Uno (la plus commune de la gamme Arduino). De plus, on a écrit une petite bibliothèque supplémentaire, inspirée de celle fournit par Arduino, pour pouvoir piloter un écran LCD externe.
+
+Grâce à cet ensemble de fonctionnalité, on a pu implémenter l'exemple du chronomètre présenté dans l'article~\cite{Colaco05} en tant que système physique.
+
 \bibliography{biblio}{}
 \bibliographystyle{unsrt}
 

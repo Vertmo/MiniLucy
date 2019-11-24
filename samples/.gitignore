@@ -1,4 +1,6 @@
 *.elf
+*.avr
+*.hex
 fulladder.c
 bananas.c
 heat.c
@@ -10,3 +12,5 @@ translationtest.c
 automatatest.c
 sugartest.c
 uselib.c
+iotest.c
+disptest.c

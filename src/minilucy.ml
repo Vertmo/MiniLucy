@@ -3,12 +3,13 @@ open PMinils
 
 let usage = "usage: " ^ Sys.argv.(0) ^
             " [-parse] [-desugar] [-check] [-norm] [-translate] [-generate]\
-             [-asserts] [-o <output_file>]\
+             [-asserts] [-avr] [-o <output_file>]\
              [-interpret <name> <k>]\
              <input_file>"
 
 type step = Parse | Desugar | Check | Norm | Translate | Generate
 let asserts = ref false
+let targetAvr = ref false
 
 let step = ref Generate
 let output = ref None
@@ -30,6 +31,8 @@ let speclist = [
    ": print the program translated to the Obc language");
   ("-generate", Arg.Unit (fun () -> step := Generate),
    ": print the generated C code");
+  ("-avr", Arg.Unit (fun () -> targetAvr := true),
+   ": generate avr-compatible C and compile it");
   ("-asserts", Arg.Unit (fun () -> asserts := true),
    ": turns on assertions");
   ("-interpret",
@@ -121,12 +124,43 @@ let _ =
     exit 0
   );
 
-  (* Generate *)
-  let ccode = Generator.generate_file mfile in
-  match !output with
-  | None -> print_endline (MicroC.string_of_file ccode);
-  | Some s ->
-    let outc = open_out s in
-    output_string outc (MicroC.string_of_file ccode);
-    close_out outc
+  if(not !targetAvr) then (
+    (* Generate for GCC *)
+    let ccode = Generator.generate_file mfile in
+    match !output with
+    | None -> print_endline (MicroC.string_of_file ccode);
+    | Some s ->
+      let outc = open_out s in
+      output_string outc (MicroC.string_of_file ccode);
+      close_out outc
+  ) else (
+    (* Generate for AVR *)
+    match !output with
+    | None ->
+      Printf.eprintf "Generating for AVR should always specify an output file";
+      exit 1
+    | Some hexfile ->
+      let prefix = Filename.remove_extension hexfile in
+      let ccode = AvrGenerator.generate_file prefix mfile in
+      let cfile = prefix^".c" in
+      let avrfile = prefix^".avr" in
+
+      let outc = open_out cfile in
+      output_string outc (MicroC.string_of_file ccode);
+      close_out outc;
+
+      let libdir = "../src/" in
+      ignore (Sys.command
+                (Printf.sprintf
+                   "avr-gcc -g -fno-exceptions \
+                    -O2 -Wnarrowing\ -Wl,-Os -fdata-sections \
+                    -ffunction-sections -Wl,-gc-sections \
+                    -mmcu=atmega328p -DF_CPU=16000000 \
+                    -I %s %s/avrlib.o %s/liquidCrystal.o %s -o %s"
+                   libdir libdir libdir cfile avrfile));
+      ignore (Sys.command
+                (Printf.sprintf
+                   "avr-objcopy -O ihex -R .eeprom %s %s"
+                   avrfile hexfile))
+  )
 

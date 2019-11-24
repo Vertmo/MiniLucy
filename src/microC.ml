@@ -56,6 +56,7 @@ type expr =
   | BinOp of (expr * op * expr)
   | UnOp of (op * expr)
   | If of (expr * expr * expr)
+  | Call of (ident * expr list)
 
 let string_of_cop = function
   | Op_eq -> "==" | Op_neq -> "!=" | Op_lt -> "<" | Op_le -> "<="
@@ -79,6 +80,8 @@ let rec string_of_expr = function
   | If (c, t, e) ->
     Printf.sprintf "(%s ? %s : %s)"
       (string_of_expr c) (string_of_expr t) (string_of_expr e)
+  | Call (fid, es) ->
+    Printf.sprintf "%s(%s)" fid (String.concat "," (List.map string_of_expr es))
 
 type instr =
   | Assign of lhs * expr
@@ -86,6 +89,8 @@ type instr =
   | Call of ident * expr list
   | VarDec of ty * ident
   | SwitchCase of (ident * (ident * instr list) list)
+  (* Only used for AVR main loop, dont worry ! *)
+  | While of (expr * instr list)
 
 let rec string_of_instr (indent_level : int) (i : instr) =
   let indent = String.make indent_level '\t' in
@@ -116,6 +121,11 @@ let rec string_of_instr (indent_level : int) (i : instr) =
              (String.concat "\n"
                 (List.map (string_of_instr (indent_level + 2)) instr))
              indent) cases))
+  | While (e, instrs) ->
+    Printf.sprintf "%swhile(%s) {\n%s\n%s}" indent
+      (string_of_expr e)
+      (String.concat "\n"
+         (List.map (string_of_instr (indent_level + 1)) instrs)) indent
 
 type fundef = {
   fun_name : ident;
@@ -135,6 +145,7 @@ type def =
   | Enum of ident * ident list
   | Struct of structdef
   | Fun of fundef
+  | Include of ident
 
 let string_of_def = function
   | Enum (id, constrs) ->
@@ -142,6 +153,7 @@ let string_of_def = function
       id (String.concat "," constrs)
   | Struct std -> string_of_structdef std
   | Fun fd -> string_of_fundef fd
+  | Include s -> Printf.sprintf "#include \"%s\"\n" s
 
 type file = def list
 

@@ -4,7 +4,8 @@ TARGETS := \
 	fulladder.elf bananas.elf heat.elf abro.elf \
 	clocktest.elf typetest.elf \
 	causalitytest.c translationtest.c sugartest.c uselib.elf \
-  automatatest.elf chrono.elf
+  automatatest.elf \
+	iotest.hex disptest.hex chrono.hex
 
 all: $(TARGETS)
 
@@ -17,5 +18,9 @@ uselib.c : lib.lus uselib.lus
 %.c: %.lus
 	$(MINILUCY) -asserts -o $@ $^
 
+%.hex: %.lus
+	$(MINILUCY) -asserts -avr -o $@ $^
+
 clean:
 	rm -f $(TARGETS)
+	rm -f *.elf *.o *.avr *.hex

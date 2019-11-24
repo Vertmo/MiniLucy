@@ -1,0 +1,4 @@
+node main() returns (x : int);
+let
+  x = (pre x) + 1;
+tel;

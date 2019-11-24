@@ -15,7 +15,7 @@ let ty_of_base_ty : base_ty -> MicroC.ty = function
 (** Translate a Lustre const to a C const *)
 let generate_const : Asttypes.const -> MicroC.const = function
   | Cint i -> Int i
-  | Cbool b -> if b then Int 1 else Int 0
+  | Cbool b -> if b then Int (lnot 0) else Int 0
   | Creal f -> Float f
   | Cconstr (c, clty) ->
     EnumField (Printf.sprintf "_clock_%s_%s" clty c)

@@ -1,10 +1,24 @@
 include Makefile.conf
 
-all: minilucy.byte samples
+all: minilucy.byte src/avrlib.o src/liquidCrystal.o samples
 
 minilucy.byte: $(addprefix src/,$(SRC))
 	make -C src minilucy.byte
 	cp src/minilucy.byte .
+
+src/avrlib.o: src/avrlib.c src/avrlib.h
+	avr-gcc -g -fno-exceptions -Wall \
+		      -O2 -Wnarrowing -Wl,-Os -fdata-sections \
+          -ffunction-sections -Wl,-gc-sections \
+          -mmcu=atmega328p -DF_CPU=16000000 \
+	        -c $< -o $@
+
+src/liquidCrystal.o: src/liquidCrystal.c src/liquidCrystal.h
+	avr-gcc -g -fno-exceptions -Wall \
+		      -O2 -Wnarrowing -Wl,-Os -fdata-sections \
+          -ffunction-sections -Wl,-gc-sections \
+          -mmcu=atmega328p -DF_CPU=16000000 \
+	        -c $< -o $@
 
 samples: minilucy.byte
 	make -C samples

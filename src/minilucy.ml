@@ -149,10 +149,10 @@ let _ =
       output_string outc (MicroC.string_of_file ccode);
       close_out outc;
 
-      let libdir = "../src/" (* TODO*) in
+      let libdir = "../src/" in
       ignore (Sys.command
                 (Printf.sprintf
-                   "avr-gcc -g -fno-exceptions -Wall \
+                   "avr-gcc -g -fno-exceptions \
                     -O2 -Wnarrowing\ -Wl,-Os -fdata-sections \
                     -ffunction-sections -Wl,-gc-sections \
                     -mmcu=atmega328p -DF_CPU=16000000 \

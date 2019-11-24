@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include "liquidCrystal.h"
 
 #define CLOCK_PERIOD 10

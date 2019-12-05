@@ -39,3 +39,4 @@ lexer.ml
 *.blg
 *.log
 *.pdf
+*.out

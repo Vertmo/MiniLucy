@@ -40,3 +40,8 @@ lexer.ml
 *.log
 *.pdf
 *.out
+*.nav
+*.snm
+*.toc
+*.bcf
+*.run.xml

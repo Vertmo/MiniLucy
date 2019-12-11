@@ -45,3 +45,4 @@ lexer.ml
 *.toc
 *.bcf
 *.run.xml
+*.vrb

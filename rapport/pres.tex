@@ -76,7 +76,7 @@ let
   // Ou z = 3; (sous-echantillonage implicite)
 tel;
 
-node test_app(c1 : bool; b1 : bool when True(b1))
+node test_app(c1 : bool; b1 : bool when True(c1))
 returns (z : int when True(c1) when True(b1));
 let
   z = test_op(b1);
@@ -188,6 +188,8 @@ auto_state3INC_reset = merge auto_state3
     \item Les microcontrôleurs peuvent être programmés en C
     \item Notre compilateur compile vers C !
   \end{itemize}
+
+  On a juste besoin d'un runtime pour les IOs (on utilise celle d'OMicroB~\citep{VVC18})
 \end{frame}
 
 \begin{frame}{Cible choisie}

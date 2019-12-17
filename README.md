@@ -2,6 +2,13 @@
 
 Realized for the course Synchronous Systems at MPRI (see https://www.di.ens.fr/~pouzet/cours/mpri/projet/minilucy.pdf)
 
+## Usage
+
+* `./configure.sh` to configure the project (set the path)
+* `make` to compile the project
+* `make samples` to compile the test samples
+* `./minilucy.byte` to use the compiler (`-help'` to see options)
+
 ## Notes
 
 ### Clock-checking of function application

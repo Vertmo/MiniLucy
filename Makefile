@@ -2,6 +2,9 @@ include Makefile.conf
 
 all: minilucy.byte src/avrlib.o src/liquidCrystal.o samples
 
+src/config.ml:
+	make -C src config.ml
+
 minilucy.byte: $(addprefix src/,$(SRC))
 	make -C src minilucy.byte
 	cp src/minilucy.byte .

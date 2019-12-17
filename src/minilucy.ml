@@ -92,7 +92,7 @@ let _ =
   | Some name ->
     (* Interpr.run_file file; *)
     Interpr.run_node file name !interpret_k;
-    exit 0; (* TEMP *)
+    exit 0;
   | None -> ();
 
   (* Check *)
@@ -141,7 +141,9 @@ let _ =
       exit 1
     | Some hexfile ->
       let prefix = Filename.remove_extension hexfile in
-      let ccode = AvrGenerator.generate_file prefix mfile in
+      let filename = Filename.basename prefix
+      and filedir = Filename.dirname prefix in
+      let ccode = AvrGenerator.generate_file filename mfile in
       let cfile = prefix^".c" in
       let avrfile = prefix^".avr" in
 
@@ -149,15 +151,15 @@ let _ =
       output_string outc (MicroC.string_of_file ccode);
       close_out outc;
 
-      let libdir = "../src/" in
+      let libdir = Config.libdir in
       ignore (Sys.command
                 (Printf.sprintf
                    "avr-gcc -g -fno-exceptions \
                     -O2 -Wnarrowing\ -Wl,-Os -fdata-sections \
                     -ffunction-sections -Wl,-gc-sections \
                     -mmcu=atmega328p -DF_CPU=16000000 \
-                    -I %s %s/avrlib.o %s/liquidCrystal.o %s -o %s"
-                   libdir libdir libdir cfile avrfile));
+                    -I %s %s/avrlib.o %s/liquidCrystal.o -I %s %s -o %s"
+                   libdir libdir libdir filedir cfile avrfile));
       ignore (Sys.command
                 (Printf.sprintf
                    "avr-objcopy -O ihex -R .eeprom %s %s"

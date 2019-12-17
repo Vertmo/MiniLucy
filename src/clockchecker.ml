@@ -1,21 +1,32 @@
 (** Clock checking *)
 
 open Asttypes
-open TMinils
+open Minils
+
+module TypeClockAnnot : (Annotations with type t = base_ty * clock) = struct
+  type t = base_ty * clock
+  let string_of_t (ty, cl) =
+    Printf.sprintf "%s;%s" (string_of_base_ty ty) (string_of_clock cl)
+end
+
+module CMinils = MINILS(TypeClockAnnot)
+
 open CMinils
+open Typechecker.TMinils
 
 exception ClockError of (string * location)
 
 (** Get the clocks(s) expected for a pattern [pat],
     as well as the translated pattern *)
-let get_pattern_clock (streams : (ident * clock) list) (pat : t_patt) =
+let get_pattern_clock (streams : (ident * clock) list) (pat : k_patt) :
+  clock * CMinils.k_patt =
   match pat.kpatt_desc with
   | KP_ident id ->
     (List.assoc id streams),
-    { cpatt_desc = CP_ident id; cpatt_loc = pat.kpatt_loc }
+    { kpatt_desc = KP_ident id; kpatt_loc = pat.kpatt_loc }
   | KP_tuple ids ->
     (Ctuple (List.map (fun id -> (List.assoc id streams)) ids)),
-     { cpatt_desc = CP_tuple ids; cpatt_loc = pat.kpatt_loc }
+     { kpatt_desc = KP_tuple ids; kpatt_loc = pat.kpatt_loc }
 
 (** Composes clocks [cl1] and [cl2] to give (returns [cl1] o [cl2]) *)
 let rec compose_clock cl1 cl2 =
@@ -54,19 +65,20 @@ let rec apply_substs substs = function
 
 (** Remove the whens in front of an expression *)
 let rec strip_whens e =
-  match e.texpr_desc with
-  | TE_when (e, _, _) -> strip_whens e
+  match e.kexpr_desc with
+  | KE_when (e, _, _) -> strip_whens e
   | _ -> e
 
 (** Check and get the clocked version of expression [e] *)
-let rec clock_expr nodes streams expected_cl (e : t_expr) =
-  let loc = e.texpr_loc and ty = e.texpr_ty in
-  match e.texpr_desc with
-  | TE_const c ->
+let rec clock_expr (nodes : (ident * CMinils.k_node) list)
+    streams expected_cl (e : k_expr) : CMinils.k_expr =
+  let loc = e.kexpr_loc and ty = e.kexpr_annot in
+  match e.kexpr_desc with
+  | KE_const c ->
     (* A constant can be subsampled to any clock ! *)
-    { cexpr_desc = CE_const c; cexpr_ty = ty;
-      cexpr_clock = expected_cl; cexpr_loc = loc }
-  | TE_ident id ->
+    { kexpr_desc = KE_const c; kexpr_annot = (ty, expected_cl);
+      kexpr_loc = loc }
+  | KE_ident id ->
     let cl = (List.assoc id streams) in
     if (cl <> expected_cl)
     then raise
@@ -75,27 +87,27 @@ let rec clock_expr nodes streams expected_cl (e : t_expr) =
               "The stream %s doesn't have the expected clock %s (found %s)"
               id (string_of_clock expected_cl) (string_of_clock cl),
             loc));
-    { cexpr_desc = CE_ident id; cexpr_ty = ty;
-      cexpr_clock = cl; cexpr_loc = loc }
-  | TE_op (op, es) ->
+    { kexpr_desc = KE_ident id; kexpr_annot = (ty, cl);
+      kexpr_loc = loc }
+  | KE_op (op, es) ->
     let ces = List.map (clock_expr nodes streams expected_cl) es in
-    { cexpr_desc = CE_op (op, ces); cexpr_ty = ty;
-      cexpr_clock = expected_cl; cexpr_loc = loc}
-  | TE_fby (c, e) ->
+    { kexpr_desc = KE_op (op, ces); kexpr_annot = (ty, expected_cl);
+      kexpr_loc = loc}
+  | KE_fby (c, e) ->
     let ce = clock_expr nodes streams expected_cl e in
-    { cexpr_desc = CE_fby (c, ce) ; cexpr_ty = ty;
-      cexpr_clock = ce.cexpr_clock; cexpr_loc = loc }
-  | TE_tuple es ->
+    { kexpr_desc = KE_fby (c, ce) ; kexpr_annot = (ty, snd ce.kexpr_annot);
+      kexpr_loc = loc }
+  | KE_tuple es ->
     (match expected_cl with
      | Ctuple cls ->
        let ces = List.map2 (clock_expr nodes streams) cls es in
-       { cexpr_desc = CE_tuple ces; cexpr_ty = ty;
-         cexpr_clock = expected_cl; cexpr_loc = loc}
+       { kexpr_desc = KE_tuple ces; kexpr_annot = (ty, expected_cl);
+         kexpr_loc = loc}
      | _ -> raise
               (ClockError
                  (Printf.sprintf "Incorrect clock for tuple : %s"
                     (string_of_clock expected_cl), loc)))
-  | TE_when (ew, constr, clid) ->
+  | KE_when (ew, constr, clid) ->
     (match expected_cl with
      | Cl (expected_cl, constr', clid') ->
        let cew = clock_expr nodes streams expected_cl ew in
@@ -106,21 +118,22 @@ let rec clock_expr nodes streams expected_cl (e : t_expr) =
                  "Wrong clock parameters for when expression:\
                   expected %s, found %s(%s)"
                  (string_of_clock expected_cl) constr' clid, loc));
-       { cexpr_desc = CE_when (cew, constr, clid); cexpr_ty = ty;
-         cexpr_clock = Cl (cew.cexpr_clock, constr, clid); cexpr_loc = loc }
+       { kexpr_desc = KE_when (cew, constr, clid);
+         kexpr_annot = (ty, Cl (snd cew.kexpr_annot, constr, clid));
+         kexpr_loc = loc }
      | _ -> raise
               (ClockError
                  (Printf.sprintf
                     "Incorrect clock for when expression: %s"
                     (string_of_clock expected_cl), loc)))
-  | TE_merge (clid, es) ->
+  | KE_merge (clid, es) ->
     (* Get the type of the clock *)
     let ces = List.map (fun (c, e) ->
         c, clock_expr nodes streams (Cl (expected_cl, c, clid)) e) es in
 
-    { cexpr_desc = CE_merge (clid, ces); cexpr_ty = ty;
-      cexpr_clock = expected_cl; cexpr_loc = loc }
-  | TE_app (fid, es, ever) ->
+    { kexpr_desc = KE_merge (clid, ces); kexpr_annot = (ty, expected_cl);
+      kexpr_loc = loc }
+  | KE_app (fid, es, ever) ->
     (* Output clocks of the application should be the expected clock *)
     let output_cls = (match expected_cl with
       | Ctuple cls -> cls
@@ -131,7 +144,7 @@ let rec clock_expr nodes streams expected_cl (e : t_expr) =
        allow us to get the "base" clock for the called node *)
     let unifiers =
       List.map2 (fun (_, ty) actual -> unify_clock (clock_of_ty ty) actual
-                ) node.cn_output output_cls in
+                ) node.kn_output output_cls in
     let (_, _, base) = List.hd unifiers in
     let substs = List.flatten (List.map (fun (s, _, _) -> s) unifiers) in
 
@@ -156,99 +169,46 @@ let rec clock_expr nodes streams expected_cl (e : t_expr) =
         (* Verify that the correct clock is passed *)
         if (List.mem_assoc id substs) then (
           let id' = List.assoc id substs in
-          if ((strip_whens e).texpr_desc <> TE_ident id') then
+          if ((strip_whens e).kexpr_desc <> KE_ident id') then
             raise
               (ClockError
                  (Printf.sprintf
                     "Clock %s should be passed to function, %s found instead"
-                    id' (TMinils.string_of_expr e), loc))
+                    id' (string_of_expr e), loc))
         );
         let cl = apply_substs substs (clock_of_ty ty) in
         clock_expr nodes streams (compose_clock cl base) e)
-        es node.cn_input in
+        es node.kn_input in
 
-    { cexpr_desc = CE_app (fid, ces, cever); cexpr_ty = ty;
-      cexpr_clock = expected_cl; cexpr_loc = loc }
+    { kexpr_desc = KE_app (fid, ces, cever); kexpr_annot = (ty, expected_cl);
+      kexpr_loc = loc }
 
 (** Check the clocks for the equation [eq] *)
-let clock_equation nodes streams (eq : t_equation) =
-  let (expected, pat) = get_pattern_clock streams eq.teq_patt in
-  let ce = clock_expr nodes streams expected eq.teq_expr in
-  { ceq_patt = pat ; ceq_expr = ce }
+let clock_equation nodes streams (eq : k_equation) : CMinils.k_equation =
+  let (expected, pat) = get_pattern_clock streams eq.keq_patt in
+  let ce = clock_expr nodes streams expected eq.keq_expr in
+  { keq_patt = pat ; keq_expr = ce }
 
 (** Check the clocks for the node [f] *)
-let clock_node (nodes : (ident * c_node) list) (n : t_node) : c_node =
+let clock_node (nodes : (ident * CMinils.k_node) list) (n : k_node) : CMinils.k_node =
   let streams = List.map (fun (id, ty) -> (id, clock_of_ty ty))
-      (n.tn_input@n.tn_local@n.tn_output) in
-  { cn_name = n.tn_name;
-    cn_input = n.tn_input;
-    cn_output = n.tn_output;
-    cn_local = n.tn_local;
-    cn_equs = List.map (clock_equation nodes streams) n.tn_equs;
-    cn_loc = n.tn_loc }
+      (n.kn_input@n.kn_local@n.kn_output) in
+  { kn_name = n.kn_name;
+    kn_input = n.kn_input;
+    kn_output = n.kn_output;
+    kn_local = n.kn_local;
+    kn_equs = List.map (clock_equation nodes streams) n.kn_equs;
+    kn_loc = n.kn_loc }
 
 (** Check the clocks for the file [f] *)
-let clock_file (f : t_file) : c_file =
+let clock_file (f : k_file) : CMinils.k_file =
   let nodes =
     try List.rev
           (List.map snd
-             (List.fold_left (fun env n ->
-                  (n.tn_name, (clock_node env n))::env) [] f.tf_nodes))
+             (List.fold_left (fun (env : (ident * CMinils.k_node) list) n ->
+                  (n.kn_name, (clock_node env n))::env) [] f.kf_nodes))
     with
     | ClockError (msg, loc) ->
       Printf.printf "Clock checking error : %s at %s\n"
         msg (string_of_loc loc); exit 1 in
-  { cf_nodes = nodes; cf_clocks = f.tf_clocks }
-
-(*                           Check equivalence between ASTs                    *)
-
-(** Check that a typed pattern [t] and clocked pattern [c] are equivalent *)
-let equiv_clock_patt (t : t_patt) (c : c_patt) =
-    match t.kpatt_desc, c.cpatt_desc with
-    | KP_ident id1, CP_ident id2 when id1 = id2 -> true
-    | KP_tuple ids1, CP_tuple ids2 ->
-      List.for_all2 (fun id1 id2 -> id1 = id2) ids1 ids2
-    | _, _ -> false
-
-(** Check that a typed expr [t] and clocked expr [c] are equivalent *)
-let rec equiv_clock_expr (t : t_expr) (c : c_expr) =
-  t.texpr_ty = c.cexpr_ty &&
-  match t.texpr_desc, c.cexpr_desc with
-  | TE_const c1, CE_const c2 -> c1 = c2
-  | TE_ident c1, CE_ident c2 -> c1 = c2
-  | TE_op (op1, es1), CE_op (op2, es2) ->
-    op1 = op2 && List.for_all2 equiv_clock_expr es1 es2
-  | TE_app (id1, es1, ev1), CE_app (id2, es2, ev2) ->
-    id1 = id2 && List.for_all2 equiv_clock_expr es1 es2 &&
-    equiv_clock_expr ev1 ev2
-  | TE_fby (c1, e1), CE_fby (c2, e2) ->
-    c1 = c2 && equiv_clock_expr e1 e2
-  | TE_tuple es1, CE_tuple es2 ->
-    List.for_all2 equiv_clock_expr es1 es2
-  | TE_when (e1, c1, id1), CE_when (e2, c2, id2) ->
-    equiv_clock_expr e1 e2 && c1 = c2 && id1 = id2
-  | TE_merge (id1, es1), CE_merge (id2, es2) ->
-    id1 = id2 &&
-    List.for_all2 (fun (c1, e1) (c2, e2) ->
-        c1 = c2 && equiv_clock_expr e1 e2) es1 es2
-  | _, _ -> false
-
-(** Check that a typed equation [t] and clocked equation [c] are equivalent *)
-let equiv_clock_eq (t : t_equation) (c : c_equation) =
-  equiv_clock_patt t.teq_patt c.ceq_patt &&
-  equiv_clock_expr t.teq_expr c.ceq_expr
-
-(** Check that a typed node [t] and clocked node [c] are equivalent *)
-let equiv_clock_node (t : t_node) (c : c_node) =
-  t.tn_name = c.cn_name &&
-  t.tn_input = c.cn_input &&
-  t.tn_output = c.cn_output &&
-  t.tn_local = c.cn_local &&
-  List.for_all2 equiv_clock_eq t.tn_equs c.cn_equs
-
-(** Check that a typed file [t] and clocked file [c] are equivalent *)
-let equiv_clock_file (t : t_file) (c : c_file) =
-  t.tf_clocks = c.cf_clocks &&
-  try
-    List.for_all2 equiv_clock_node t.tf_nodes c.cf_nodes
-  with _ -> false
+  { kf_nodes = nodes; kf_clocks = f.kf_clocks }

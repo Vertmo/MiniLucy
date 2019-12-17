@@ -1,7 +1,7 @@
 (*             Stream based interpreter for automata language                *)
 
 open Asttypes
-open Minils
+open Minils.KMinils
 open PMinils
 open Interpr
 
@@ -275,7 +275,6 @@ and get_instr_trans nodes types (i : p_instr) =
        (* Handle state change *)
        let (untils, is) =
          List.fold_left (fun (us, is) (e, constr) ->
-           (* FIXME I should save this state ! *)
            let (v, is') = get_expr_trans nodes 0 e (St (strs, is, stbr)) 0 in
            (v, constr)::us, is'@is) ([], is) untils in
        let strs = List.fold_left (fun strs (id, _) -> List.remove_assoc id strs)

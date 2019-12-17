@@ -1,7 +1,7 @@
 (*                  Denotational semantics based interpreter                  *)
 
 open Asttypes
-open Minils
+open Minils.KMinils
 
 exception InterpreterError of string
 exception NotYetCalculated of ident

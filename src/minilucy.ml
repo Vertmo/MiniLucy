@@ -83,7 +83,7 @@ let _ =
   if !asserts then Pinterpr.run_files p_file file;
 
   if (step = Desugar) then (
-    print_endline (Minils.string_of_file file);
+    print_endline (Minils.KMinils.string_of_file file);
     exit 0
   );
 
@@ -97,12 +97,10 @@ let _ =
 
   (* Check *)
   let tfile = Typechecker.check_file file in
-  if !asserts then assert (Typechecker.equiv_typed_file file tfile);
   let cfile = Clockchecker.clock_file tfile in
-  if !asserts then assert (Clockchecker.equiv_clock_file tfile cfile);
   Causalitychecker.check_file cfile;
   if (step = Check) then (
-    print_endline (CMinils.string_of_file cfile);
+    print_endline (Clockchecker.CMinils.string_of_file cfile);
     exit 0
   );
 

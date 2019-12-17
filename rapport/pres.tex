@@ -1,4 +1,4 @@
-\documentclass[xcolor={svgnames}]{beamer}
+\documentclass[xcolor={svgnames},aspectratio=169]{beamer}
 \usetheme[progressbar=frametitle]{metropolis}
 
 \usepackage[utf8]{inputenc}
@@ -51,7 +51,7 @@
 \begin{frame}{Horloges implicites}
   Dans l'article, pas de sous-typage (sous-échantillonage implicite) : on doit mettre des \lstinline{when} partout. Dans les faits on peut pour plus de clarté sous-échantillonner les constantes (au moins) implicitement:
 
-$$\inferrule* [left=TCHole1]
+$$\inferrule*
     { }
     { H \vdash v : ck }
 $$
@@ -61,7 +61,7 @@ Des règles de sous-échantillonage implicites plus large seraient plus difficil
 
 \begin{frame}{Polymorphisme d'horloge}
   Dans l'article, l'appel à un noeud interne doit se faire avec des paramètres sur la même horloge:
-$$\inferrule* [left=TCHole1]
+$$\inferrule*
     { H \vdash a_1 : ck \ldots H \vdash a_n : ck & H \vdash a : ck }
     { H \vdash v : f(a_1, \ldots, a_n)\:every\:a : ck \times \ldots \times ck }
 $$

@@ -13,7 +13,7 @@ let
       s = pre s;
       m = pre m;
       run = false;
-      until rising_edge(StSt) then START;
+      until rising_edge(StSt) then START and reset;
     | START ->
       let d : int = (pre d + 1) mod 100 in
       s = if (d < (pre d)) 
@@ -23,17 +23,17 @@ let
           then (((pre m) + 1) mod 60)
           else pre m;
       run = true;
-      until rising_edge(StSt) then STOP;
+      until rising_edge(StSt) then STOP and reset;
     end;
   end;
   automaton
   | TIME ->
     disp_1 = s;
     disp_2 = m;
-    until rising_edge(Rst) and run then LAP;
+    until rising_edge(Rst) and run then LAP and reset;
   | LAP ->
     disp_1 = s -> (pre disp_1);
     disp_2 = m -> (pre disp_2);
-    until rising_edge(Rst) then TIME;
+    until rising_edge(Rst) then TIME and reset;
   end;
 tel;

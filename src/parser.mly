@@ -43,6 +43,7 @@
 %token PLUS
 %token PRE
 %token RETURNS
+%token RESET
 %token RPAREN
 %token SEMICOL
 %token SLASH
@@ -184,7 +185,8 @@ let_list:
 
 until_list:
 | /* empty */ { [] }
-| UNTIL expr THEN IDENT SEMICOL until_list { ($2, $4)::$6 }
+| UNTIL expr THEN IDENT SEMICOL until_list { ($2, $4, false)::$6 }
+| UNTIL expr THEN IDENT AND RESET SEMICOL until_list { ($2, $4, true)::$8 }
 ;
 
 eq:

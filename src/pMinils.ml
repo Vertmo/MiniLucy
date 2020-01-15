@@ -83,10 +83,11 @@ let string_of_let (id, ty, e) =
   Printf.sprintf "let %s : %s = %s in"
     id (string_of_ty ty) (string_of_expr e)
 
-type p_until = p_expr * constr
+type p_until = p_expr * constr * bool
 
-let string_of_until (e, c) =
-  Printf.sprintf "until %s then %s;" (string_of_expr e) c
+let string_of_until (e, c, r) =
+  if r then Printf.sprintf "until %s then %s and reset;" (string_of_expr e) c
+  else Printf.sprintf "until %s then %s;" (string_of_expr e) c
 
 type p_instr =
   | Eq of p_equation

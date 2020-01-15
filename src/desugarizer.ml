@@ -291,7 +291,7 @@ let desugar_untils clid auto_constr untils =
   let untils = List.rev untils in
   let startE = { kexpr_desc = KE_const (Cconstr (auto_constr, "_ty"^clid));
                  kexpr_annot = (); kexpr_loc = dummy_loc; } in
-  List.fold_left (fun e (cond, constr) ->
+  List.fold_left (fun e (cond, constr, _) ->
       let e' = KE_op (Op_if,
                       [desugar_expr cond;
                        { kexpr_desc = KE_const (Cconstr (constr, "_ty"^clid));
@@ -314,9 +314,11 @@ let rec get_until_tree : automata_tree -> until_tree = function
 let desugar_resets untils =
   let fexpr = { kexpr_desc = KE_const (Cbool false);
                 kexpr_annot = (); kexpr_loc = dummy_loc; } in
-  List.fold_left (fun e (cond, _) ->
-      { kexpr_desc = KE_op (Op_or, [desugar_expr cond; e]);
-        kexpr_annot = (); kexpr_loc = dummy_loc; }) fexpr untils
+  List.fold_left (fun e (cond, _, reset) ->
+      if reset
+      then { kexpr_desc = KE_op (Op_or, [desugar_expr cond; e]);
+             kexpr_annot = (); kexpr_loc = dummy_loc; }
+      else e) fexpr untils
 
 (** Get the until tree in an automata tree *)
 let rec get_reset_tree : automata_tree -> until_tree = function

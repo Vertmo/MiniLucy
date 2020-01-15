@@ -64,7 +64,7 @@ and get_instr_init nodes i : (assoc_str * instance list * auto_state) =
         and ils = List.flatten
             (List.map (fun (_, _, e) -> expr_init_instances nodes e) lets)
         and ius = List.flatten
-            (List.map (fun (e, _) -> expr_init_instances nodes e) untils)
+            (List.map (fun (e, _, _) -> expr_init_instances nodes e) untils)
         and sts = Node (List.flatten
                          (List.map (fun (_, _, Node brs) -> brs) vis)) in
         vs, is@ils@ius, (id, (List.map (fun (id, _, _) -> (id, [])) lets, sts))
@@ -274,9 +274,9 @@ and get_instr_trans nodes types (i : p_instr) =
 
        (* Handle state change *)
        let (untils, is) =
-         List.fold_left (fun (us, is) (e, constr) ->
+         List.fold_left (fun (us, is) (e, constr, reset) ->
            let (v, is') = get_expr_trans nodes 0 e (St (strs, is, stbr)) 0 in
-           (v, constr)::us, is'@is) ([], is) untils in
+           (v, constr, reset)::us, is'@is) ([], is) untils in
        let strs = List.fold_left (fun strs (id, _) -> List.remove_assoc id strs)
            strs locals in
 
@@ -288,8 +288,8 @@ and get_instr_trans nodes types (i : p_instr) =
                | _ -> strs) strs prev_strs
          else strs in
        let newcurrent, should_be_reset =
-         match (List.assoc_opt (Bool (true)) untils) with
-         | Some c -> c, true | None -> current, false in
+         match (List.find_opt (fun (c, _, _) -> c = Bool true) untils) with
+         | Some (_, c, reset) -> c, reset | None -> current, false in
        let stbrs = (current, (locals, stbr))::stbrs in
        St (strs, is, Node ((newcurrent, (should_be_reset, stbrs))::autos)))
 

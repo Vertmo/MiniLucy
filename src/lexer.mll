@@ -30,6 +30,7 @@
   "pre", PRE;
 	"real", REAL;
 	"returns", RETURNS;
+  "reset", RESET;
 	"tel", TEL;
 	"then", THEN;
   "type", TYPE;

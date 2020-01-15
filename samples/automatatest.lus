@@ -4,11 +4,11 @@ let
   | INC ->
     let u : int = (1 + pre u) in
     x = 0 fby x + u;
-    until x > 5 then DEC;
+    until x > 5 then DEC and reset;
   | DEC ->
     let u : int = 2 in
     x = 0 fby x - u;
-    until x < -10 then INC;
+    until x < -10 then INC and reset;
   end;
 tel;
   
@@ -20,17 +20,17 @@ let
     automaton
     | A1 ->
       x = 0 fby x + l;
-      until x > 1 then A2;
+      until x > 1 then A2 and reset;
     | A2 ->
       x = 0 fby x + (2 * l);
-      until x > 7 then A1;
+      until x > 7 then A1 and reset;
     end;
     y = 0 fby y + 1;
-    until y > 4 then B;
+    until y > 4 then B and reset;
   | B ->
     x = 0 fby x - 5;
     y = 0 fby y - 1;
-    until y < -1 then A;
+    until y < -1 then A and reset;
   end;
 tel;
   
@@ -45,9 +45,9 @@ let
   | APP1 ->
     let v : int = cumulative_sum(1) in
     x = 0 fby v;
-    until x > 4 then APP2;
+    until x > 4 then APP2 and reset;
   | APP2 ->
     x = cumulative_sum(-2);
-    until x < -6 then APP1;
+    until x < -6 then APP1 and reset;
   end;
 tel;

@@ -189,8 +189,6 @@ let rec reset_expr whens nwhens e =
           (List.rev whens) in
       let rexpr = match rexpr.kexpr_desc with
         | KE_when (e, _, _) -> e | _ -> rexpr in
-      let rexpr = { kexpr_desc = KE_fby (Cbool false, rexpr);
-                    kexpr_annot = (); kexpr_loc = loc } in
       let (constr, clid) = List.hd whens in
       let rexpr = { kexpr_desc = KE_when (rexpr, constr, clid);
                     kexpr_annot = (); kexpr_loc = loc } in
@@ -209,8 +207,6 @@ let rec reset_expr whens nwhens e =
           (List.rev whens) in
       let cond = match cond.kexpr_desc with
         | KE_when (e, _, _) -> e | _ -> cond in
-      let cond = { kexpr_desc = KE_fby (Cbool false, cond);
-                   kexpr_annot = (); kexpr_loc = loc } in
       let (constr, clid) = List.hd whens in
       let cond = { kexpr_desc = KE_when (cond, constr, clid);
                    kexpr_annot = (); kexpr_loc = loc } in
@@ -314,6 +310,25 @@ let rec get_until_tree : automata_tree -> until_tree = function
              with _ -> trs) [] instrs)) branches in
     Node (clid, untils)
 
+(** Desugar a list of reset statements in an automaton *)
+let desugar_resets untils =
+  let fexpr = { kexpr_desc = KE_const (Cbool false);
+                kexpr_annot = (); kexpr_loc = dummy_loc; } in
+  List.fold_left (fun e (cond, _) ->
+      { kexpr_desc = KE_op (Op_or, [desugar_expr cond; e]);
+        kexpr_annot = (); kexpr_loc = dummy_loc; }) fexpr untils
+
+(** Get the until tree in an automata tree *)
+let rec get_reset_tree : automata_tree -> until_tree = function
+  | Leaf eq -> invalid_arg "get_until_tree"
+  | Node (clid, branches) ->
+    let resets = List.map (fun (c, _, instrs, unt) ->
+        c, desugar_resets unt,
+        (List.fold_left (fun trs i ->
+             try (get_reset_tree i)::trs
+             with _ -> trs) [] instrs)) branches in
+    Node (clid, resets)
+
 (** Generate a set of equations from an until tree *)
 let rec generate_merged_untils tree =
   let rec gen_mer_u whens = function
@@ -346,6 +361,38 @@ let rec generate_merged_untils tree =
       base::recu in
   gen_mer_u [] tree
 
+(** Generate a set of reset equations from an until tree *)
+let rec generate_merged_resets tree =
+  let rec gen_mer_u whens = function
+    | Node (clid, branches) ->
+      (* Compute the base cases *)
+      let base =
+        KE_merge (clid,
+                  List.sort (fun (s1,_) (s2,_) -> String.compare s1 s2)
+                    (List.map (fun (c, e, _) ->
+                         let e' = add_whens e whens in
+                         c, { kexpr_desc = KE_when (e', c, clid);
+                              kexpr_annot = ();
+                              kexpr_loc = dummy_loc; }) branches)) in
+      let base =
+        { kexpr_desc =
+            KE_fby (Cbool true,
+                    { kexpr_desc = base;
+                      kexpr_annot = (); kexpr_loc = dummy_loc });
+          kexpr_annot = (); kexpr_loc = dummy_loc; } in
+      let base = (if whens <> [] then reset_expr whens [] base else base) in
+      let bases = List.map (fun (constr, _, _) ->
+          { keq_patt = { kpatt_desc = KP_ident (clid^constr^"_reset");
+                         kpatt_loc = dummy_loc };
+            keq_expr = base }) branches in
+
+      (* Compute the recursive cases *)
+      let recu = List.flatten (List.map (fun (c, _, trs) ->
+          List.flatten
+            (List.map (gen_mer_u ((c, clid)::whens)) trs)) branches) in
+      bases@recu in
+  gen_mer_u [] tree
+
 let desugar_instr instr =
   match instr with
   | Eq eq -> [desugar_equation eq], [], []
@@ -371,9 +418,13 @@ let desugar_instr instr =
     let untilTree = get_until_tree automataTree in
     let untils = generate_merged_untils untilTree in
 
+    (* Get the resets *)
+    let resetTree = get_reset_tree automataTree in
+    let resets = generate_merged_resets resetTree in
+
     (* Create the necessary clock types and clocks *)
     let clocks = get_automata_clocks automataTree in
-    ((List.map fst leqs)@eqs@untils, clocks, (List.map snd leqs))
+    ((List.map fst leqs)@eqs@untils@resets, clocks, (List.map snd leqs))
 
 let desugar_node (n : p_node) =
   let (eqs, clocks, locals) =
@@ -382,8 +433,6 @@ let desugar_node (n : p_node) =
         (eqs@eqs', cl@cl', vars@vars')) ([], [], []) n.pn_instrs in
   let clockdecs = List.map clockdec_of_automata_clock clocks
   and clockvars = List.map clockvar_of_automata_clock clocks in
-
-  (* Reset clocks and equations *)
 
   (* Change the base of a clocked type *)
   let rec change_base ba : ty -> ty = function
@@ -401,25 +450,11 @@ let desugar_node (n : p_node) =
         clockvars clockdecs) in
 
   (* Reset equations *)
-  let reset_equs = List.map (fun ((id, ty), (clid, c, otherconstrs)) ->
-      let texpr = { kexpr_desc = KE_const (Cbool false);
-                    kexpr_annot = (); kexpr_loc = dummy_loc }
-      and fexpr = { kexpr_desc = KE_const (Cbool true);
-                    kexpr_annot = (); kexpr_loc = dummy_loc } in
-      let texpr = add_whens texpr ((c, clid)::(whens_of_ty ty)) in
-      let fexprs = List.map (fun c ->
-          c, add_whens fexpr ((c, clid)::(whens_of_ty ty))) otherconstrs in
-      { keq_patt = { kpatt_desc = KP_ident id; kpatt_loc = dummy_loc };
-        keq_expr = { kexpr_desc = KE_merge (clid,
-                         List.sort (fun (s1,_) (s2,_) -> String.compare s1 s2)
-                         ((c, texpr)::fexprs));
-                     kexpr_annot = (); kexpr_loc = dummy_loc }}) resetclocks in
-
   { kn_name = n.pn_name;
     kn_input = n.pn_input;
     kn_output = n.pn_output;
     kn_local = n.pn_local@clockvars@locals@(List.map fst resetclocks);
-    kn_equs = eqs@reset_equs;
+    kn_equs = eqs;
     kn_loc = n.pn_loc },
   clockdecs
 

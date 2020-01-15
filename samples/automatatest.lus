@@ -2,13 +2,13 @@ node auto_simpl() returns (x : int);
 let
   automaton
   | INC ->
-    let u : int = (1 + pre u) in
-    x = 0 fby x + u;
+    let u1 : int = (1 + pre u1) in
+    x = 0 fby x + u1;
     until x > 5 then DEC and reset;
   | DEC ->
-    let u : int = 2 in
-    x = 0 fby x - u;
-    until x < -10 then INC and reset;
+    let u2 : int = 2 in
+    x = 0 fby x - u2;
+    until x < -10 then INC;
   end;
 tel;
   

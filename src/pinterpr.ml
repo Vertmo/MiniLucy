@@ -232,10 +232,12 @@ and get_instr_trans nodes types (i : p_instr) =
 
        (* Reset if necessary *)
        let (strs', is', stbrs) =
-         if (should_be_reset) then
+         if should_be_reset then (
            let (strs', is', Node autos) = get_instr_init nodes i in
            List.map (fun (id, _) -> id, Bottom::[]) strs',
-           is', snd (snd (List.hd autos))
+           is',
+           replace_assoc current stbrs
+             (List.assoc current (snd (snd (List.hd autos)))))
          else ([], [], stbrs) in
        let prev_strs = (List.map (fun (id, l) -> id, List.tl l) strs) in
        let strs = List.fold_left (fun strs (id, str) ->
@@ -277,6 +279,8 @@ and get_instr_trans nodes types (i : p_instr) =
          List.fold_left (fun (us, is) (e, constr, reset) ->
            let (v, is') = get_expr_trans nodes 0 e (St (strs, is, stbr)) 0 in
            (v, constr, reset)::us, is'@is) ([], is) untils in
+
+       (* Remove the local streams from storage *)
        let strs = List.fold_left (fun strs (id, _) -> List.remove_assoc id strs)
            strs locals in
 
@@ -287,9 +291,12 @@ and get_instr_trans nodes types (i : p_instr) =
                | [v] -> replace_assoc id strs (v::str)
                | _ -> strs) strs prev_strs
          else strs in
+
+       (* Prepare for the next step *)
        let newcurrent, should_be_reset =
          match (List.find_opt (fun (c, _, _) -> c = Bool true) untils) with
-         | Some (_, c, reset) -> c, reset | None -> current, false in
+         | Some (_, c, reset) -> c, reset
+         | None -> current, false in
        let stbrs = (current, (locals, stbr))::stbrs in
        St (strs, is, Node ((newcurrent, (should_be_reset, stbrs))::autos)))
 

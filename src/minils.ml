@@ -23,8 +23,10 @@ module MINILS(A : Annotations) = struct
     | KE_ident of ident
     | KE_op of op * k_expr list
     | KE_app of ident * k_expr list * k_expr
-    | KE_fby of const * k_expr
+    | KE_fby of k_expr * k_expr
+    | KE_arrow of k_expr * k_expr
     | KE_tuple of k_expr list
+    | KE_switch of k_expr * (constr * k_expr) list
     | KE_when of k_expr * constr * ident
     | KE_merge of ident * (constr * k_expr) list
 
@@ -42,10 +44,18 @@ module MINILS(A : Annotations) = struct
     | KE_app (id, es, ever) -> Printf.sprintf "(%s [%s] every %s)" id
                                  (String.concat "; " (List.map string_of_expr es))
                                  (string_of_expr ever)
-    | KE_fby (c, e) -> Printf.sprintf "(%s fby %s)"
-                         (string_of_const c) (string_of_expr e)
+    | KE_fby (e0, e) -> Printf.sprintf "(%s fby %s)"
+                         (string_of_expr e) (string_of_expr e)
+    | KE_arrow (e0, e) -> Printf.sprintf "(%s fby %s)"
+                           (string_of_expr e0) (string_of_expr e)
     | KE_tuple es -> Printf.sprintf "(%s)"
                        (String.concat ", " (List.map string_of_expr es))
+    | KE_switch (e, es) ->
+      Printf.sprintf "switch %s %s"
+        (string_of_expr e) (String.concat " "
+                              (List.map
+                                 (fun (constr, e) -> Printf.sprintf "(%s -> %s)"
+                                     constr (string_of_expr e)) es))
     | KE_when (e, constr, clid) ->
       Printf.sprintf "%s when %s(%s)"
         (string_of_expr e) constr clid

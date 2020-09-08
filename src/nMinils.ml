@@ -34,6 +34,7 @@ type n_cexpr =
     ncexpr_clock: clock; }
 
 and n_cexpr_desc =
+  | NCE_switch of n_expr * (constr * n_cexpr) list
   | NCE_merge of ident * (constr * n_cexpr) list
   | NCE_expr of n_expr_desc
 
@@ -43,6 +44,13 @@ let rec string_of_cexpr e =
     (string_of_clock e.ncexpr_clock)
 
 and string_of_cexpr_desc = function
+  | NCE_switch (e, es) ->
+    Printf.sprintf "switch %s %s"
+      (string_of_expr e)
+      (String.concat " "
+         (List.map
+            (fun (constr, e) -> Printf.sprintf "(%s -> %s)"
+                constr (string_of_cexpr e)) es))
   | NCE_merge (id, es) ->
     Printf.sprintf "merge %s %s"
       id (String.concat " "

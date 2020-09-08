@@ -93,9 +93,15 @@ let rec clock_expr (nodes : (ident * CMinils.k_node) list)
     let ces = List.map (clock_expr nodes streams expected_cl) es in
     { kexpr_desc = KE_op (op, ces); kexpr_annot = (ty, expected_cl);
       kexpr_loc = loc}
-  | KE_fby (c, e) ->
+  | KE_fby (e0, e) ->
+    let ce0 = clock_expr nodes streams expected_cl e0 in
     let ce = clock_expr nodes streams expected_cl e in
-    { kexpr_desc = KE_fby (c, ce) ; kexpr_annot = (ty, snd ce.kexpr_annot);
+    { kexpr_desc = KE_fby (ce0, ce) ; kexpr_annot = (ty, snd ce.kexpr_annot);
+      kexpr_loc = loc }
+  | KE_arrow (e0, e) ->
+    let ce0 = clock_expr nodes streams expected_cl e0 in
+    let ce = clock_expr nodes streams expected_cl e in
+    { kexpr_desc = KE_arrow (ce0, ce) ; kexpr_annot = (ty, snd ce.kexpr_annot);
       kexpr_loc = loc }
   | KE_tuple es ->
     (match expected_cl with
@@ -107,6 +113,14 @@ let rec clock_expr (nodes : (ident * CMinils.k_node) list)
               (ClockError
                  (Printf.sprintf "Incorrect clock for tuple : %s"
                     (string_of_clock expected_cl), loc)))
+  | KE_switch (e, es) ->
+    (* Get the type of the clock *)
+    let ce = clock_expr nodes streams expected_cl e in
+    let ces = List.map (fun (c, e) ->
+        c, clock_expr nodes streams expected_cl e) es in
+
+    { kexpr_desc = KE_switch (ce, ces); kexpr_annot = (ty, expected_cl);
+      kexpr_loc = loc }
   | KE_when (ew, constr, clid) ->
     (match expected_cl with
      | Cl (expected_cl, constr', clid') ->

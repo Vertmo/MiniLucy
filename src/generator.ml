@@ -62,29 +62,30 @@ let rec generate_instr instances tys outputs : Obc.instr -> MicroC.instr list =
          if (List.mem_assoc id outputs)
          then Assign (PField ("_out", id), e)
          else Assign (Ident id, e)) ids oids)
-  | Case (id, is) ->
+  | Case (e, is) ->
     let constrs = List.map fst is in
     if constrs = ["False";"True"]
-    then [If (Ident id,
+    then [If (generate_expr outputs e,
               List.flatten (List.map (generate_instr instances tys outputs)
                               (snd (List.nth is 1))),
               List.flatten (List.map (generate_instr instances tys outputs)
                               (snd (List.nth is 0))))]
     else if constrs = ["True"]
-    then [If (Ident id,
+    then [If (generate_expr outputs e,
               List.flatten (List.map (generate_instr instances tys outputs)
                               (snd (List.hd is))), [])]
     else if constrs = ["False"]
-    then [If (Ident id, [],
+    then [If (generate_expr outputs e, [],
               List.flatten (List.map (generate_instr instances tys outputs)
                               (snd (List.hd is))))]
     else
-      let clid = (match (List.assoc id tys) with
-          | Tclock id -> id
-          | _ -> failwith "Should not happen") in
-      [SwitchCase (id, List.map (fun (c, i) ->
-           Printf.sprintf "_clock_%s_%s" clid c,
-           List.flatten (List.map (generate_instr instances tys outputs) i)) is)]
+      (* let clid = (match (List.assoc id tys) with
+       *     | Tclock id -> id
+       *     | _ -> failwith "Should not happen") in
+       * [SwitchCase (id, List.map (fun (c, i) ->
+       *      Printf.sprintf "_clock_%s_%s" clid c,
+       *      List.flatten (List.map (generate_instr instances tys outputs) i)) is)] *)
+      failwith "TODO : switch generation"
 
 (** Generate code for a machine *)
 let generate_machine (m : machine) : def list =

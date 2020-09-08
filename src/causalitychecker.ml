@@ -13,11 +13,14 @@ let rec expr_vars (e : k_expr) =
    | KE_op (_, es) -> List.concat (List.map expr_vars es)
    | KE_app (_, es, ev) ->
      List.concat ((expr_vars ev)::(List.map expr_vars es))
-   | KE_fby (_, _) -> []
+   | KE_fby (e0, _) -> (expr_vars e0)
+   | KE_arrow (e0, e) -> (expr_vars e0)@(expr_vars e)
    | KE_tuple es -> List.concat (List.map expr_vars es)
+   | KE_switch (e, es) ->
+     List.concat ((expr_vars e)::(List.map (fun (_, e) -> expr_vars e) es))
    | KE_when (e, _, id) -> id::(expr_vars e)
    | KE_merge (id, es) ->
-     id::(List.flatten (List.map (fun (_, e) -> expr_vars e) es))
+     id::(List.concat (List.map (fun (_, e) -> expr_vars e) es))
   )@(clock_vars (snd e.kexpr_annot))
 
 (** Get the variables bound by the pattern [p] *)

@@ -80,7 +80,7 @@ let _ =
   let file = Desugarizer.desugar_file p_file in
 
   (* Run the nodes from both files, checking they give the same result *)
-  if !asserts then Pinterpr.run_files p_file file;
+  (* if !asserts then Pinterpr.run_files p_file file; *)
 
   if (step = Desugar) then (
     print_endline (Minils.KMinils.string_of_file file);
@@ -88,12 +88,12 @@ let _ =
   );
 
   (* Let's interpr this a bit ! *)
-  match (!interpret_name) with
-  | Some name ->
-    (* Interpr.run_file file; *)
-    Interpr.run_node file name !interpret_k;
-    exit 0;
-  | None -> ();
+  (* match (!interpret_name) with
+   * | Some name ->
+   *   (\* Interpr.run_file file; *\)
+   *   Interpr.run_node file name !interpret_k;
+   *   exit 0;
+   * | None -> (); *)
 
   (* Check *)
   let tfile = Typechecker.check_file file in
@@ -106,7 +106,7 @@ let _ =
 
   (* Normalize *)
   let nfile = Normalizer.norm_file cfile in
-  if !asserts then assert (Normalizer.equiv_norm_file cfile nfile);
+  (* if !asserts then assert (Normalizer.equiv_norm_file cfile nfile); *)
   let nfile = Scheduler.schedule_file nfile in
   if !asserts then assert (Scheduler.schedule_is_correct_file nfile);
   if (step = Norm) then (
@@ -116,7 +116,7 @@ let _ =
 
   (* Translate *)
   let mfile = Translator.translate_file nfile in
-  if !asserts then assert (Translator.equiv_translate_file nfile mfile);
+  (* if !asserts then assert (Translator.equiv_translate_file nfile mfile); *)
   if (step = Translate) then (
     print_endline (Obc.string_of_file mfile);
     exit 0

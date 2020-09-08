@@ -242,14 +242,14 @@ expr:
     { mk_expr (PE_op (Op_xor, [$1; $3])) $startpos $endpos }
 | expr ARROW expr
     { mk_expr (PE_arrow ($1, $3)) $startpos $endpos }
-| const FBY expr
+| expr FBY expr
     { mk_expr (PE_fby ($1, $3)) $startpos $endpos }
 | MINUS expr
     { mk_expr (PE_op (Op_sub, [$2])) $startpos $endpos }
 | NOT expr
     { mk_expr (PE_op (Op_not, [$2])) $startpos $endpos }
-| PRE expr
-    { mk_expr (PE_pre ($2)) $startpos $endpos }
+(* | PRE expr
+ *     { mk_expr (PE_pre ($2)) $startpos $endpos } *)
 | LPAREN expr COMMA expr_comma_list RPAREN
     { mk_expr (PE_tuple ($2::$4)) $startpos $endpos }
 | expr WHEN IDENT LPAREN IDENT RPAREN

@@ -176,22 +176,62 @@ let rec type_expr ?hint (nodes : (ident * TMinils.k_node) list)
                          node.kn_output)) in
     { kexpr_desc = KE_app (id, tes, tever);
       kexpr_annot = outy; kexpr_loc = loc }
-  | KE_fby (c, e) ->
-    let te = type_expr ?hint nodes streams clocks e in
-    let tc = type_const ~hint:te.kexpr_annot loc c in
-    if (tc <> te.kexpr_annot)
+  | KE_fby (e0, e) ->
+    let te0 = type_expr ?hint nodes streams clocks e0 in
+    let te = type_expr ~hint:te0.kexpr_annot nodes streams clocks e in
+    if (te0.kexpr_annot <> te.kexpr_annot)
     then raise
         (TypeError
            (Printf.sprintf
               "Both sides of fby should have the same type, found %s and %s"
-              (string_of_base_ty tc) (string_of_base_ty te.kexpr_annot),
+              (string_of_base_ty te0.kexpr_annot) (string_of_base_ty te.kexpr_annot),
             e.kexpr_loc));
-    { kexpr_desc = KE_fby(c, te); kexpr_annot = tc; kexpr_loc = loc }
+    { kexpr_desc = KE_fby(te0, te); kexpr_annot = te0.kexpr_annot; kexpr_loc = loc }
+  | KE_arrow (e0, e) ->
+    let te0 = type_expr ?hint nodes streams clocks e0 in
+    let te = type_expr ~hint:te0.kexpr_annot nodes streams clocks e in
+    if (te0.kexpr_annot <> te.kexpr_annot)
+    then raise
+        (TypeError
+           (Printf.sprintf
+              "Both sides of fby should have the same type, found %s and %s"
+              (string_of_base_ty te0.kexpr_annot) (string_of_base_ty te.kexpr_annot),
+            e.kexpr_loc));
+    { kexpr_desc = KE_arrow(te0, te); kexpr_annot = te0.kexpr_annot; kexpr_loc = loc }
   | KE_tuple es ->
     let tes = (List.map (type_expr nodes streams clocks) es) in
     let tys = List.map (fun (te : TMinils.k_expr) -> te.kexpr_annot) tes in
     { kexpr_desc = KE_tuple tes;
       kexpr_annot = Ttuple tys; kexpr_loc = loc }
+  | KE_switch (e, es) ->
+    let te = type_expr nodes streams clocks e in
+    let clt = te.kexpr_annot in
+    (* Check the constructors *)
+    let constrs = constrs_of_clock clocks loc clt in
+    if (constrs <> List.map fst es)
+    then raise
+        (TypeError
+           (Printf.sprintf
+              "Constructors in merge are incorrect for type %s :\
+               expected %s, found %s"
+              (string_of_base_ty clt)
+              (String.concat "," constrs)
+              (String.concat "," (List.map fst es)), loc));
+
+    (* Check the expression types *)
+    let tes = List.map
+        (fun (c, te) -> c, type_expr ?hint nodes streams clocks te) es in
+    let ty = (snd (List.hd tes)).kexpr_annot in
+    List.iter (fun ((_, te) : (constr * TMinils.k_expr)) ->
+        if (te.kexpr_annot <> ty)
+        then raise
+            (TypeError
+               (Printf.sprintf
+                  "Both args of merge should have the same type, found %s and %s"
+                  (string_of_base_ty ty)
+                  (string_of_base_ty te.kexpr_annot), e.kexpr_loc))) tes;
+    { kexpr_desc = KE_switch (te, tes);
+      kexpr_annot = ty; kexpr_loc = loc }
   | KE_when (e, constr, cl) ->
     let clt = (try base_ty_of_ty (List.assoc cl streams)
                with _ -> raise (TypeError

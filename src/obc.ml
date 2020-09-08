@@ -21,7 +21,7 @@ type instr =
   | StAssign of (ident * expr)
   | Reset of ident
   | StepAssign of (ident list * ident * expr list)
-  | Case of ident * (constr * instr list) list
+  | Case of expr * (constr * instr list) list
 
 let rec string_of_instr = function
   | Assign (id, e) ->
@@ -36,9 +36,9 @@ let rec string_of_instr = function
     Printf.sprintf "(%s) := %s.step(%s)"
       (String.concat ", " ids) fid
       (String.concat ", " (List.map string_of_expr es))
-  | Case (id, instrs) ->
+  | Case (e, instrs) ->
     Printf.sprintf "case(%s) {%s}\n"
-      id
+      (string_of_expr e)
       (String.concat "\n" (List.map (fun (c, ins) ->
            Printf.sprintf "%s: %s;" c (string_of_instrs ins)) instrs))
 

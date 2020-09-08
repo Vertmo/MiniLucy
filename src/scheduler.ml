@@ -20,6 +20,8 @@ let rec expr_vars (e : n_expr) =
 
 let rec cexpr_vars (e : n_cexpr) =
   (match e.ncexpr_desc with
+   | NCE_switch (e, es) ->
+     (expr_vars e)@(List.flatten (List.map (fun (_, e) -> cexpr_vars e) es))
    | NCE_merge (id, es) ->
      id::(List.flatten (List.map (fun (_, e) -> cexpr_vars e) es))
    | NCE_expr e' ->

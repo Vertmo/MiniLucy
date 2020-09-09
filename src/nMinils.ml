@@ -16,7 +16,6 @@ and n_expr_desc =
 let rec string_of_expr e =
   Printf.sprintf "%s"
     (string_of_expr_desc e.nexpr_desc)
-    (* (string_of_clock e.nexpr_clock) *)
 
 and string_of_expr_desc = function
   | NE_const c -> string_of_const c
@@ -39,9 +38,8 @@ and n_cexpr_desc =
   | NCE_expr of n_expr_desc
 
 let rec string_of_cexpr e =
-  Printf.sprintf "(%s)"
+  Printf.sprintf "%s"
     (string_of_cexpr_desc e.ncexpr_desc)
-    (* (string_of_clock e.ncexpr_clock) *)
 
 and string_of_cexpr_desc = function
   | NCE_switch (e, es) ->
@@ -68,13 +66,13 @@ let string_of_equation = function
   | NQ_ident (id, e) ->
     Printf.sprintf "%s = %s" id (string_of_cexpr e)
   | NQ_fby (id, c, e) ->
-    Printf.sprintf "%s = (%s fby %s)"
+    Printf.sprintf "%s = %s fby %s"
       id (string_of_const c) (string_of_expr e)
   | NQ_app (ids, f, es, ever, cl) ->
-    Printf.sprintf "(%s) = (%s(%s) every %s)"
+    Printf.sprintf "(%s) = %s(%s) every %s"
       (String.concat ", " ids) f
       (String.concat ", " (List.map string_of_expr es))
-      ever (* (string_of_clock cl) *)
+      ever
 
 type n_node =
   { nn_name: ident;

@@ -31,6 +31,7 @@
 	"real", REAL;
 	"returns", RETURNS;
   "reset", RESET;
+  "switch", SWITCH;
 	"tel", TEL;
 	"then", THEN;
   "type", TYPE;

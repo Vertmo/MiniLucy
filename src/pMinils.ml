@@ -1,96 +1,24 @@
 (** Parsed AST *)
 
 open Asttypes
-
-type p_expr =
-  { pexpr_desc: p_expr_desc;
-    pexpr_loc: location; }
-
-and p_expr_desc =
-  | PE_const of const
-  | PE_ident of ident
-  | PE_op of op * p_expr list
-  | PE_app of ident * p_expr list * p_expr
-  | PE_fby of p_expr * p_expr
-  | PE_arrow of p_expr * p_expr
-  (* | PE_pre of p_expr *)
-  | PE_tuple of p_expr list
-  | PE_when of p_expr * constr * ident
-  | PE_merge of ident * (constr * p_expr) list
-
-let rec string_of_expr e =
-  string_of_expr_desc e.pexpr_desc
-
-and string_of_expr_desc = function
-  | PE_const c -> string_of_const c
-  | PE_ident i -> i
-  | PE_op (op, es) -> Printf.sprintf "(%s [%s])"
-                        (string_of_op op)
-                        (String.concat "; " (List.map string_of_expr es))
-  | PE_app (id, es, ever) -> Printf.sprintf "(%s [%s] every %s)" id
-                         (String.concat "; " (List.map string_of_expr es))
-                         (string_of_expr ever)
-  | PE_fby (e0, e) -> Printf.sprintf "(%s fby %s)"
-                        (string_of_expr e0) (string_of_expr e)
-  | PE_arrow (e0, e) -> Printf.sprintf "(%s -> %s)"
-                           (string_of_expr e0) (string_of_expr e)
-  (* | PE_pre e -> Printf.sprintf "(pre %s)" (string_of_expr e) *)
-  | PE_tuple es -> Printf.sprintf "(%s)"
-                     (String.concat ", " (List.map string_of_expr es))
-  | PE_when (e, constr, clid) ->
-    Printf.sprintf "%s when %s(%s)"
-      (string_of_expr e) constr clid
-  | PE_merge (id, es) ->
-    Printf.sprintf "merge %s %s"
-      id (String.concat " "
-            (List.map
-               (fun (constr, e) -> Printf.sprintf "(%s -> %s)"
-                   constr (string_of_expr e)) es))
-
-type p_patt =
-  { ppatt_desc: p_patt_desc;
-    ppatt_loc: location; }
-
-and p_patt_desc =
-  | PP_ident of ident
-  | PP_tuple of ident list
-
-let rec string_of_patt p =
-  string_of_pat_desc p.ppatt_desc
-
-and string_of_pat_desc = function
-  | PP_ident id -> id
-  | PP_tuple ids -> Printf.sprintf "(%s)" (String.concat ", " ids)
-
-type p_equation =
-    { peq_patt: p_patt;
-      peq_expr: p_expr; }
-
-let string_of_equation eq =
-  Printf.sprintf "%s = %s"
-    (string_of_patt eq.peq_patt)
-    (string_of_expr eq.peq_expr)
+open Minils.KMinils
 
 (** Variables defined by an equation *)
-let defined_of_equation eq =
-  match eq.peq_patt.ppatt_desc with
-  | PP_ident id -> [id]
-  | PP_tuple ids -> ids
 
-type p_let = ident * ty * p_expr
+type p_let = ident * ty * k_expr
 
 let string_of_let (id, ty, e) =
   Printf.sprintf "let %s : %s = %s in"
     id (string_of_ty ty) (string_of_expr e)
 
-type p_until = p_expr * constr * bool
+type p_until = k_expr * constr * bool
 
 let string_of_until (e, c, r) =
   if r then Printf.sprintf "until %s then %s and reset;" (string_of_expr e) c
   else Printf.sprintf "until %s then %s;" (string_of_expr e) c
 
 type p_instr =
-  | Eq of p_equation
+  | Eq of k_equation
   | Automaton of (constr * p_let list * p_instr list * p_until list) list
 
 let rec string_of_instr = function

@@ -7,7 +7,7 @@ let usage = "usage: " ^ Sys.argv.(0) ^
              [-interpret <name> <k>]\
              <input_file>"
 
-type step = Parse | Desugar | Check | Norm | Translate | Generate
+type step = Parse | Kernelize | Check | Norm | Translate | Generate
 let asserts = ref false
 let targetAvr = ref false
 
@@ -21,8 +21,8 @@ let speclist = [
   ": set output file for c code");
   ("-parse", Arg.Unit (fun () -> step := Parse),
    ": parse and print the program");
-  ("-desugar", Arg.Unit (fun () -> step := Desugar),
-   ": parse, desugar and print the program");
+  ("-kernelize", Arg.Unit (fun () -> step := Kernelize),
+   ": parse, kernelize and print the program");
   ("-check", Arg.Unit (fun () -> step := Check),
    ":check the program, and print it with annotated clocks");
   ("-norm", Arg.Unit (fun () -> step := Norm),
@@ -76,13 +76,13 @@ let _ =
     exit 0
   );
 
-  (* Desugar *)
-  let file = Desugarizer.desugar_file p_file in
+  (* Kernelize *)
+  let file = Kernelizer.kernelize_file p_file in
 
   (* Run the nodes from both files, checking they give the same result *)
   (* if !asserts then Pinterpr.run_files p_file file; *)
 
-  if (step = Desugar) then (
+  if (step = Kernelize) then (
     print_endline (Minils.KMinils.string_of_file file);
     exit 0
   );
@@ -100,7 +100,7 @@ let _ =
   let cfile = Clockchecker.clock_file tfile in
   Causalitychecker.check_file cfile;
   if (step = Check) then (
-    print_endline (Clockchecker.CMinils.string_of_file cfile);
+    print_endline (Clockchecker.CMinils.string_of_file ~print_anns:true cfile);
     exit 0
   );
 

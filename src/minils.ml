@@ -30,12 +30,17 @@ module MINILS(A : Annotations) = struct
     | KE_when of k_expr * constr * ident
     | KE_merge of ident * (constr * k_expr) list
 
-  let rec string_of_expr e =
-    Printf.sprintf "%s (%s)"
-      (string_of_expr_desc e.kexpr_desc)
-      (A.string_of_t e.kexpr_annot)
+  let rec string_of_expr ?(print_anns=false) e =
+    let desc = string_of_expr_desc ~print_anns e.kexpr_desc in
+    if print_anns then
+      Printf.sprintf "%s %s"
+        desc
+        (A.string_of_t e.kexpr_annot)
+    else desc
 
-  and string_of_expr_desc = function
+  and string_of_expr_desc ?(print_anns=false) (e : k_expr_desc) =
+    let string_of_expr = string_of_expr ~print_anns in
+    match e with
     | KE_const c -> string_of_const c
     | KE_ident i -> i
     | KE_op (op, es) -> Printf.sprintf "(%s [%s])"
@@ -85,10 +90,10 @@ module MINILS(A : Annotations) = struct
     { keq_patt: k_patt;
       keq_expr: k_expr; }
 
-  let string_of_equation eq =
+  let string_of_equation ?(print_anns=false) eq =
     Printf.sprintf "%s = %s"
       (string_of_patt eq.keq_patt)
-      (string_of_expr eq.keq_expr)
+      (string_of_expr ~print_anns eq.keq_expr)
 
   (** Variables defined by an equation *)
   let defined_of_equation eq =
@@ -104,7 +109,7 @@ module MINILS(A : Annotations) = struct
       kn_equs: k_equation list;
       kn_loc: location; }
 
-  let string_of_node n =
+  let string_of_node ?(print_anns=false) n =
     Printf.sprintf "node %s(%s) returns (%s);\n\
                     var %s;\n\
                     let\n\
@@ -115,16 +120,16 @@ module MINILS(A : Annotations) = struct
       (string_of_ident_ann_list n.kn_output)
       (string_of_ident_ann_list n.kn_local)
       (String.concat "" (List.map (fun eq ->
-           Printf.sprintf "  %s;\n" (string_of_equation eq)) n.kn_equs))
+           Printf.sprintf "  %s;\n" (string_of_equation ~print_anns eq)) n.kn_equs))
 
   type k_file =
     { kf_clocks: clockdec list;
       kf_nodes: k_node list; }
 
-  let string_of_file f =
+  let string_of_file ?(print_anns=false) f =
     Printf.sprintf "%s\n%s"
       (String.concat "\n" (List.map string_of_clockdec f.kf_clocks))
-      (String.concat "\n" (List.map string_of_node f.kf_nodes))
+      (String.concat "\n" (List.map (string_of_node ~print_anns) f.kf_nodes))
 end
 
 module KMinils = MINILS(NoAnnot)

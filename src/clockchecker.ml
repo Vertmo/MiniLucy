@@ -3,10 +3,9 @@
 open Asttypes
 open Minils
 
-module TypeClockAnnot : (Annotations with type t = base_ty * clock) = struct
-  type t = base_ty * clock
-  let string_of_t (ty, cl) =
-    Printf.sprintf "%s;%s" (string_of_base_ty ty) (string_of_clock cl)
+module TypeClockAnnot : (Annotations with type t = ann) = struct
+  type t = ann
+  let string_of_t = string_of_ann
 end
 
 module CMinils = MINILS(TypeClockAnnot)
@@ -28,26 +27,26 @@ let get_pattern_clock (streams : (ident * clock) list) (pat : k_patt) :
     (Ctuple (List.map (fun id -> (List.assoc id streams)) ids)),
      { kpatt_desc = KP_tuple ids; kpatt_loc = pat.kpatt_loc }
 
-(** Composes clocks [cl1] and [cl2] to give (returns [cl1] o [cl2]) *)
-let rec compose_clock cl1 cl2 =
-  match cl1 with
-  | Base -> cl2
-  | Cl (base, constr, clid) -> Cl (compose_clock base cl2, constr, clid)
-  | Ctuple cls -> Ctuple (List.map (fun cl -> compose_clock cl cl2) cls)
+(** Composes clocks [ck1] and [ck2] to give (returns [ck1] o [ck2]) *)
+let rec compose_clock ck1 ck2 =
+  match ck1 with
+  | Cbase -> ck2
+  | Con (constr, ckid, base) -> Con (constr, ckid, compose_clock base ck2)
+  | Ctuple cks -> Ctuple (List.map (fun cl -> compose_clock cl ck2) cks)
 
 (** Unify two clocks [cl1] and [cl2] *)
 let rec unify_clock cl1 cl2 =
   match cl1, cl2 with
-  | Base, Base -> ([], Base, Base)
-  | c, Base -> ([], c, Base)
-  | Base, c -> ([], Base, c)
-  | Cl (b1, c1, clid1), Cl (b2, c2, clid2) ->
+  | Cbase, Cbase -> ([], Cbase, Cbase)
+  | c, Cbase -> ([], c, Cbase)
+  | Cbase, c -> ([], Cbase, c)
+  | Con (c1, ckid1, b1), Con (c2, ckid2, b2) ->
     if c1 <> c2
     then raise (ClockError
                   (Printf.sprintf "Could not unify clocks %s and %s"
                      (string_of_clock cl1) (string_of_clock cl2), dummy_loc));
     let (assocs, b1, b2) = unify_clock b1 b2 in
-    ((clid1, clid2)::assocs, b1, b2)
+    ((ckid1, ckid2)::assocs, b1, b2)
   | _, _ ->
     raise (ClockError
              (Printf.sprintf "Clock tuple not supported in unification",
@@ -55,11 +54,11 @@ let rec unify_clock cl1 cl2 =
 
 (** Apply a set of substitutions to a clock *)
 let rec apply_substs substs = function
-  | Base -> Base
-  | Cl (base, constr, clid) ->
-    (match (List.assoc_opt clid substs) with
-     | Some clid -> Cl (apply_substs substs base, constr, clid)
-     | None -> Cl (apply_substs substs base, constr, clid))
+  | Cbase -> Cbase
+  | Con (constr, ckid, base) ->
+    (match (List.assoc_opt ckid substs) with
+     | Some ckid -> Con (constr, ckid, apply_substs substs base)
+     | None -> Con (constr, ckid, apply_substs substs base))
   | Ctuple cls ->
     Ctuple (List.map (apply_substs substs) cls)
 
@@ -123,7 +122,7 @@ let rec clock_expr (nodes : (ident * CMinils.k_node) list)
       kexpr_loc = loc }
   | KE_when (ew, constr, clid) ->
     (match expected_cl with
-     | Cl (expected_cl, constr', clid') ->
+     | Con (constr', clid', expected_cl) ->
        let cew = clock_expr nodes streams expected_cl ew in
        if(clid <> clid' || constr <> constr')
        then raise
@@ -133,7 +132,7 @@ let rec clock_expr (nodes : (ident * CMinils.k_node) list)
                   expected %s, found %s(%s)"
                  (string_of_clock expected_cl) constr' clid, loc));
        { kexpr_desc = KE_when (cew, constr, clid);
-         kexpr_annot = (ty, Cl (snd cew.kexpr_annot, constr, clid));
+         kexpr_annot = (ty, Con (constr, clid, snd cew.kexpr_annot));
          kexpr_loc = loc }
      | _ -> raise
               (ClockError
@@ -143,7 +142,7 @@ let rec clock_expr (nodes : (ident * CMinils.k_node) list)
   | KE_merge (clid, es) ->
     (* Get the type of the clock *)
     let ces = List.map (fun (c, e) ->
-        c, clock_expr nodes streams (Cl (expected_cl, c, clid)) e) es in
+        c, clock_expr nodes streams (Con (c, clid, expected_cl)) e) es in
 
     { kexpr_desc = KE_merge (clid, ces); kexpr_annot = (ty, expected_cl);
       kexpr_loc = loc }
@@ -157,13 +156,13 @@ let rec clock_expr (nodes : (ident * CMinils.k_node) list)
     (* Checking the relation between formal and expected output clocks
        allow us to get the "base" clock for the called node *)
     let unifiers =
-      List.map2 (fun (_, ty) actual -> unify_clock (clock_of_ty ty) actual
+      List.map2 (fun (_, (ty, ck)) actual -> unify_clock ck actual
                 ) node.kn_output output_cls in
     let (_, _, base) = List.hd unifiers in
     let substs = List.flatten (List.map (fun (s, _, _) -> s) unifiers) in
 
     (* Verify that the unifiers are compatible *)
-    if not ((List.for_all (fun (_, b1, b2) -> b1 = Base && b2 = base) unifiers))
+    if not ((List.for_all (fun (_, b1, b2) -> b1 = Cbase && b2 = base) unifiers))
     then raise (ClockError ("Unifiers are not compatible", loc));
 
     (* Verify that substitutions are compatible *)
@@ -179,7 +178,7 @@ let rec clock_expr (nodes : (ident * CMinils.k_node) list)
     let cever = clock_expr nodes streams base ever in
 
     (* And should be used to clock the actual parameters of the function *)
-    let ces = List.map2 (fun e (id, ty) ->
+    let ces = List.map2 (fun e (id, (ty, ck)) ->
         (* Verify that the correct clock is passed *)
         if (List.mem_assoc id substs) then (
           let id' = List.assoc id substs in
@@ -190,7 +189,7 @@ let rec clock_expr (nodes : (ident * CMinils.k_node) list)
                     "Clock %s should be passed to function, %s found instead"
                     id' (string_of_expr e), loc))
         );
-        let cl = apply_substs substs (clock_of_ty ty) in
+        let cl = apply_substs substs ck in
         clock_expr nodes streams (compose_clock cl base) e)
         es node.kn_input in
 
@@ -205,7 +204,7 @@ let clock_equation nodes streams (eq : k_equation) : CMinils.k_equation =
 
 (** Check the clocks for the node [f] *)
 let clock_node (nodes : (ident * CMinils.k_node) list) (n : k_node) : CMinils.k_node =
-  let streams = List.map (fun (id, ty) -> (id, clock_of_ty ty))
+  let streams = List.map (fun (id, (ty, ck)) -> (id, ck))
       (n.kn_input@n.kn_local@n.kn_output) in
   { kn_name = n.kn_name;
     kn_input = n.kn_input;

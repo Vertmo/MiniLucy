@@ -3,64 +3,51 @@ let dummy_loc = Lexing.dummy_pos, Lexing.dummy_pos
 
 type ident = string
 type constr = string
+let ctrue = "True" and cfalse = "False"
 
 let string_of_loc ((ls, le):location) =
   Printf.sprintf "[(%d,%d);(%d,%d)]"
     ls.pos_lnum (ls.pos_cnum - ls.pos_bol)
     le.pos_lnum (le.pos_cnum - le.pos_bol)
 
-type base_ty =
+type ty =
   | Tbool
   | Tint
   | Treal
   | Tclock of ident
-  | Ttuple of base_ty list
+  | Ttuple of ty list
 
-let rec string_of_base_ty = function
+let rec string_of_ty = function
   | Tbool -> "bool"
   | Tint -> "int"
   | Treal -> "real"
   | Tclock id -> id
   | Ttuple tys -> Printf.sprintf "(%s)"
-                    (String.concat "," (List.map string_of_base_ty tys))
-
-type ty =
-  | Base of base_ty
-  | Clocked of ty * constr * ident
-
-let rec string_of_ty = function
-  | Base bty -> string_of_base_ty bty
-  | Clocked (bty, constr, id) ->
-    Printf.sprintf "%s when %s(%s)"
-      (string_of_ty bty) constr id
-
-let rec base_ty_of_ty : ty -> base_ty = function
-  | Base t -> t
-  | Clocked (t, _, _) -> base_ty_of_ty t
+                    (String.concat "," (List.map string_of_ty tys))
 
 type clock =
-  | Base
-  | Cl of clock * constr * ident
+  | Cbase
+  | Con of constr * ident * clock
   | Ctuple of clock list
 
-let rec clock_of_ty : ty -> clock = function
-  | Base _ -> Base
-  | Clocked (ty, constr, id) ->
-    Cl (clock_of_ty ty, constr, id)
-
 let rec string_of_clock = function
-  | Base -> "base"
-  | Cl (base, constr, id) ->
-    Printf.sprintf "(%s on %s(%s))" (string_of_clock base) constr id
-  | Ctuple cls ->
-    Printf.sprintf "(%s)" (String.concat "," (List.map string_of_clock cls))
+  | Cbase -> "."
+  | Con (constr, id, ck) ->
+    Printf.sprintf "(%s on %s(%s))" (string_of_clock ck) constr id
+  | Ctuple cks ->
+    Printf.sprintf "(%s)" (String.concat "," (List.map string_of_clock cks))
 
 (** Get the "variables" of a clock *)
 let rec clock_vars = function
-  | Base -> []
-  | Cl (cl, _, id) -> id::(clock_vars cl)
-  | Ctuple cls ->
-    List.concat (List.map clock_vars cls)
+  | Cbase -> []
+  | Con (_, id, ck) -> id::(clock_vars ck)
+  | Ctuple cks ->
+    List.concat (List.map clock_vars cks)
+
+type ann = (ty * clock)
+
+let string_of_ann (ty, ck) =
+  Printf.sprintf "(%s when %s)" (string_of_ty ty) (string_of_clock ck)
 
 type const =
   | Cbool of bool
@@ -93,9 +80,9 @@ let string_of_op = function
   | Op_or -> "or" | Op_xor -> "xor"
   | Op_if -> "if"
 
-let string_of_ident_type_list l =
-  String.concat "; " (List.map (fun (id, t) ->
-      Printf.sprintf "%s:%s" id (string_of_ty t)) l)
+let string_of_ident_ann_list l =
+  String.concat "; " (List.map (fun (id, ann) ->
+      Printf.sprintf "%s:%s" id (string_of_ann ann)) l)
 
 (** Clock declaration *)
 type clockdec = ident * constr list

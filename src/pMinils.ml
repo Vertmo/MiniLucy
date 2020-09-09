@@ -115,9 +115,9 @@ let rec defined_of_instr = function
 
 type p_node =
     { pn_name: ident;
-      pn_input: (ident * ty) list;
-      pn_output: (ident * ty) list;
-      pn_local: (ident * ty) list;
+      pn_input: (ident * ann) list;
+      pn_output: (ident * ann) list;
+      pn_local: (ident * ann) list;
       pn_instrs: p_instr list;
       pn_loc: location; }
 
@@ -128,9 +128,9 @@ let string_of_node n =
                  %s\
                  tel\n"
     n.pn_name
-    (string_of_ident_type_list n.pn_input)
-    (string_of_ident_type_list n.pn_output)
-    (string_of_ident_type_list n.pn_local)
+    (string_of_ident_ann_list n.pn_input)
+    (string_of_ident_ann_list n.pn_output)
+    (string_of_ident_ann_list n.pn_local)
     (String.concat "" (List.map (fun i ->
          Printf.sprintf "  %s\n" (string_of_instr i)) n.pn_instrs))
 

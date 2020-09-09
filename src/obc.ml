@@ -21,7 +21,7 @@ type instr =
   | StAssign of (ident * expr)
   | Reset of ident
   | StepAssign of (ident list * ident * expr list)
-  | Case of expr * (constr * instr list) list
+  | Case of expr * ty * (constr * instr list) list
 
 let rec string_of_instr = function
   | Assign (id, e) ->
@@ -36,7 +36,7 @@ let rec string_of_instr = function
     Printf.sprintf "(%s) := %s.step(%s)"
       (String.concat ", " ids) fid
       (String.concat ", " (List.map string_of_expr es))
-  | Case (e, instrs) ->
+  | Case (e, _, instrs) ->
     Printf.sprintf "case(%s) {%s}\n"
       (string_of_expr e)
       (String.concat "\n" (List.map (fun (c, ins) ->
@@ -45,7 +45,7 @@ let rec string_of_instr = function
 and string_of_instrs instrs =
   String.concat "\n" (List.map string_of_instr instrs)
 
-type p = (ident * base_ty) list
+type p = (ident * ty) list
 
 (** Check if the instruction assigns the state *)
 let rec assign_state = function
@@ -53,12 +53,12 @@ let rec assign_state = function
   | StAssign _ -> true
   | Reset _ -> false
   | StepAssign _ -> false
-  | Case (_, instrs) ->
+  | Case (_, _, instrs) ->
     List.exists (fun (_, ins) -> List.exists assign_state ins) instrs
 
 let string_of_p p =
   String.concat "; " (List.map (fun (id, t) ->
-      Printf.sprintf "%s:%s" id (string_of_base_ty t)) p)
+      Printf.sprintf "%s:%s" id (string_of_ty t)) p)
 
 type machine = {
   m_name: ident;

@@ -24,7 +24,7 @@ let rec translate_expr env (e : n_expr) : expr =
   | NE_when (e, _, _) -> translate_expr env e
 
 (** Translate a c-expression *)
-let rec translate_cexpr env (x : ident) (e : n_cexpr) : instr =
+let rec translate_cexpr tys env (x : ident) (e : n_cexpr) : instr =
   match e.ncexpr_desc with
   | NCE_expr e' ->
     let e'' =
@@ -33,20 +33,25 @@ let rec translate_cexpr env (x : ident) (e : n_cexpr) : instr =
           nexpr_ty = e.ncexpr_ty; nexpr_clock = e.ncexpr_clock } in
     Assign (x, e'')
   | NCE_switch (e, es) ->
-    Case (translate_expr env e, List.map (fun (c, e) -> c, [translate_cexpr env x e]) es)
+    Case (translate_expr env e, e.nexpr_ty,
+          List.map (fun (c, e) -> c, [translate_cexpr tys env x e]) es)
   | NCE_merge (id, es) ->
-    Case (translate_ident env id, List.map (fun (c, e) -> c, [translate_cexpr env x e]) es)
+    Case (translate_ident env id,
+          List.assoc id tys,
+          List.map (fun (c, e) -> c, [translate_cexpr tys env x e]) es)
 
 (** Protects the execution of an instruction with a clock *)
-let control env (cl : clock) (ins : instr) : instr =
-  let rec aux cl ins = match cl with
-    | Base -> ins
-    | Cl (cl', constr, clid) ->
-      Case (translate_ident env clid, [constr, [aux cl' ins]])
+let control tys env (ck : clock) (ins : instr) : instr =
+  let rec aux ck ins = match ck with
+    | Cbase -> ins
+    | Con (constr, ckid, ck') ->
+      Case (translate_ident env ckid,
+            List.assoc ckid tys,
+            [constr, [aux ck' ins]])
     | Ctuple _ -> invalid_arg "control" in
   match ins with
   | StAssign _ -> ins
-  | _ -> aux cl ins
+  | _ -> aux ck ins
 
 (* Fusion of control structures *)
 let rec fusion i1 i2 =
@@ -63,9 +68,9 @@ let rec fusion i1 i2 =
       else let (l1, l2) = align_lists ((c1, i1)::tl1) tl2 in
         (c2, [])::l1, (c2, i2)::l2 in
   match i1, i2 with
-  | Case (x1, is1), Case (x2, is2) when x1 = x2 ->
+  | Case (x1, ty, is1), Case (x2, _, is2) when x1 = x2 ->
     let is1, is2 = align_lists is1 is2 in
-    [Case (x1, List.map2 (fun (c1, i1) (_, i2) ->
+    [Case (x1, ty, List.map2 (fun (c1, i1) (_, i2) ->
          (c1, fusion_list i1@i2)) is1 is2)]
   | _, _ -> [i1;i2]
 and fusion_list instrs =
@@ -77,20 +82,24 @@ and fusion_list instrs =
      | i2::is -> (fusion i1 i2)@is)
 
 (** Translate an equation *)
-let translate_eq env = function
+let translate_eq tys env = function
   | NQ_ident (id, e) ->
-    { env with s = (control env e.ncexpr_clock (translate_cexpr env id e))::env.s; }
+    { env with s = (control tys env e.ncexpr_clock (translate_cexpr tys env id e))::env.s; }
   | NQ_fby (x, c, e) ->
     let e' = translate_expr env e in
     { env with si = (StAssign (x, Const c))::env.si;
-               s = (control env e.nexpr_clock (StAssign (x, e')))::env.s}
+               s = (control tys env e.nexpr_clock (StAssign (x, e')))::env.s}
   | NQ_app (ids, fid, es, everid, cl) ->
     let es' = List.map (translate_expr env) es in
     let o = Atom.fresh ("_"^fid) in
     { env with si = (Reset o)::env.si;
                j = (o, fid)::env.j;
-               s = (control env cl (StepAssign (ids, o, es')))::
-                   (control env cl (Case (translate_ident env everid, [("True", [Reset o])])))::env.s }
+               s = (control tys env cl (StepAssign (ids, o, es')))::
+                   (control tys env cl
+                      (Case
+                         (translate_ident env everid,
+                          List.assoc everid tys,
+                          [("True", [Reset o])])))::env.s }
 
 (** Collect the list of variables that need to be stored into memory
     They are the one declared using fby equations *)
@@ -103,12 +112,12 @@ let collect_mem env = function
 
 (** Translate a node *)
 let translate_node outputs (n : n_node) : machine =
-  let input = List.map (fun (id, ty) -> id, base_ty_of_ty ty) n.nn_input
-  and local = List.map (fun (id, ty) -> id, base_ty_of_ty ty) n.nn_local
-  and output = List.map (fun (id, ty) -> id, base_ty_of_ty ty) n.nn_output in
+  let input = List.map (fun (id, (ty, _)) -> (id, ty)) n.nn_input
+  and local = List.map (fun (id, (ty, _)) -> (id, ty)) n.nn_local
+  and output = List.map (fun (id, (ty, _)) -> (id, ty)) n.nn_output in
   let env = { m = []; si = []; j = []; d = local; s = [] } in
   let env = List.fold_left collect_mem env n.nn_equs in
-  let env = List.fold_left translate_eq env n.nn_equs in
+  let env = List.fold_left (translate_eq (input@local@output)) env n.nn_equs in
   { m_name = n.nn_name;
     m_memory = env.m;
     m_instances = List.map

@@ -4,7 +4,7 @@ open Asttypes
 
 type n_expr =
   { nexpr_desc: n_expr_desc;
-    nexpr_ty: base_ty;
+    nexpr_ty: ty;
     nexpr_clock: clock; }
 
 and n_expr_desc =
@@ -14,9 +14,9 @@ and n_expr_desc =
   | NE_when of n_expr * constr * ident
 
 let rec string_of_expr e =
-  Printf.sprintf "(%s {%s})"
+  Printf.sprintf "%s"
     (string_of_expr_desc e.nexpr_desc)
-    (string_of_clock e.nexpr_clock)
+    (* (string_of_clock e.nexpr_clock) *)
 
 and string_of_expr_desc = function
   | NE_const c -> string_of_const c
@@ -30,7 +30,7 @@ and string_of_expr_desc = function
 
 type n_cexpr =
   { ncexpr_desc: n_cexpr_desc;
-    ncexpr_ty: base_ty;
+    ncexpr_ty: ty;
     ncexpr_clock: clock; }
 
 and n_cexpr_desc =
@@ -39,9 +39,9 @@ and n_cexpr_desc =
   | NCE_expr of n_expr_desc
 
 let rec string_of_cexpr e =
-  Printf.sprintf "(%s {%s})"
+  Printf.sprintf "(%s)"
     (string_of_cexpr_desc e.ncexpr_desc)
-    (string_of_clock e.ncexpr_clock)
+    (* (string_of_clock e.ncexpr_clock) *)
 
 and string_of_cexpr_desc = function
   | NCE_switch (e, es) ->
@@ -71,16 +71,16 @@ let string_of_equation = function
     Printf.sprintf "%s = (%s fby %s)"
       id (string_of_const c) (string_of_expr e)
   | NQ_app (ids, f, es, ever, cl) ->
-    Printf.sprintf "(%s) = (%s(%s) every %s {%s})"
+    Printf.sprintf "(%s) = (%s(%s) every %s)"
       (String.concat ", " ids) f
       (String.concat ", " (List.map string_of_expr es))
-      ever (string_of_clock cl)
+      ever (* (string_of_clock cl) *)
 
 type n_node =
   { nn_name: ident;
-    nn_input: (ident * ty) list;
-    nn_output: (ident * ty) list;
-    nn_local: (ident * ty) list;
+    nn_input: (ident * ann) list;
+    nn_output: (ident * ann) list;
+    nn_local: (ident * ann) list;
     nn_equs: n_equation list; }
 
 let string_of_node n =
@@ -90,9 +90,9 @@ let string_of_node n =
                   %s\
                   tel\n"
     n.nn_name
-    (string_of_ident_type_list n.nn_input)
-    (string_of_ident_type_list n.nn_output)
-    (string_of_ident_type_list n.nn_local)
+    (string_of_ident_ann_list n.nn_input)
+    (string_of_ident_ann_list n.nn_output)
+    (string_of_ident_ann_list n.nn_local)
     (String.concat "" (List.map (fun eq ->
          Printf.sprintf "  %s;\n" (string_of_equation eq)) n.nn_equs))
 

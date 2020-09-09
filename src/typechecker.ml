@@ -3,9 +3,9 @@
 open Asttypes
 open Minils
 
-module TypeAnnot : (Annotations with type t = base_ty) = struct
-  type t = base_ty
-  let string_of_t ty = string_of_base_ty ty
+module TypeAnnot : (Annotations with type t = ty) = struct
+  type t = ty
+  let string_of_t = string_of_ty
 end
 
 module TMinils = MINILS(TypeAnnot)
@@ -23,13 +23,13 @@ exception UnexpectedEquationError of (ident * location)
 let get_pattern_type (streams : (ident * ty) list) pat =
   match pat.kpatt_desc with
   | KP_ident id ->
-    (try base_ty_of_ty (List.assoc id streams)
+    (try (List.assoc id streams)
      with _ -> raise (UnexpectedEquationError (id, pat.kpatt_loc))),
     List.remove_assoc id streams
   | KP_tuple ids ->
     let (tys, streams) = List.fold_left (fun (ty, streams) id ->
         try
-          (base_ty_of_ty (List.assoc id streams))::ty,
+          (List.assoc id streams)::ty,
           List.remove_assoc id streams
         with _ -> raise (UnexpectedEquationError (id, pat.kpatt_loc)))
        ([], streams) ids in
@@ -47,13 +47,13 @@ let type_const ?hint loc = function
        if t = Tbool || t = Tint || t = Treal then t
        else raise (TypeError
                      (Printf.sprintf "Type %s incompatible with constant nil"
-                        (string_of_base_ty t), loc))
+                        (string_of_ty t), loc))
      | None ->
        raise (MissingHintError loc))
 
 (** Get the constructions associated with a clock type *)
 let constrs_of_clock clocks loc = function
-  | Tbool -> ["False";"True"]
+  | Tbool -> [cfalse;ctrue]
   | Tclock clid ->
     (try List.assoc clid clocks
      with _ -> raise (TypeError
@@ -61,10 +61,10 @@ let constrs_of_clock clocks loc = function
   | ty -> raise (TypeError
                    (Printf.sprintf
                       "Type %s is not supported as a clock"
-                      (string_of_base_ty ty), loc))
+                      (string_of_ty ty), loc))
 
 (** Gives operator output type relating to input types *)
-let type_op (inputs : base_ty list) loc op =
+let type_op (inputs : ty list) loc op =
   match op with
   | Op_eq | Op_neq
     when inputs = [Tbool;Tbool] -> Tbool
@@ -84,7 +84,7 @@ let type_op (inputs : base_ty list) loc op =
                List.nth inputs 1 = List.nth inputs 2 -> List.nth inputs 1
   | _ -> raise (TypeError
                   (Printf.sprintf "Wrong input types (%s) for operator %s"
-                     (String.concat "," (List.map string_of_base_ty inputs))
+                     (String.concat "," (List.map string_of_ty inputs))
                      (string_of_op op), loc))
 
 (** Provides hints for input of an operator *)
@@ -105,7 +105,7 @@ let rec type_expr ?hint (nodes : (ident * TMinils.k_node) list)
       kexpr_loc = e.kexpr_loc }
   | KE_ident id ->
     let bty =
-      (try base_ty_of_ty (List.assoc id streams)
+      (try (List.assoc id streams)
        with _ -> raise (TypeError
                           (Printf.sprintf "Stream %s not found in node"
                              id, e.kexpr_loc))) in
@@ -144,7 +144,7 @@ let rec type_expr ?hint (nodes : (ident * TMinils.k_node) list)
     then raise (TypeError
                   (Printf.sprintf
                      "The reset stream should be of type bool, found %s"
-                     (string_of_base_ty tever.kexpr_annot), ever.kexpr_loc));
+                     (string_of_ty tever.kexpr_annot), ever.kexpr_loc));
     (* Find the node *)
     let node = try List.assoc id nodes
       with _ -> raise (TypeError
@@ -157,9 +157,9 @@ let rec type_expr ?hint (nodes : (ident * TMinils.k_node) list)
              (TypeError
                 (Printf.sprintf
                    "Wrong argument type for node %s, expected %s, found %s"
-                   id (string_of_base_ty exp) (string_of_base_ty act),
+                   id (string_of_ty exp) (string_of_ty act),
                  e.kexpr_loc)))
-         (List.map (fun (_, t) -> base_ty_of_ty t) node.kn_input)
+         (List.map (fun (_, (ty, _)) -> ty) node.kn_input)
          (List.map (fun (te : TMinils.k_expr) -> te.kexpr_annot) tes)
      with Invalid_argument _ ->
        raise (TypeError
@@ -171,8 +171,8 @@ let rec type_expr ?hint (nodes : (ident * TMinils.k_node) list)
     (* Output type *)
     let outy = (match node.kn_output with
         | [] -> failwith "Should not happen (syntax)"
-        | [(_, ty)] -> base_ty_of_ty ty
-        | _ -> Ttuple (List.map (fun (_, t) -> base_ty_of_ty t)
+        | [(_, (ty, _))] -> ty
+        | _ -> Ttuple (List.map (fun (_, (ty, _)) -> ty)
                          node.kn_output)) in
     { kexpr_desc = KE_app (id, tes, tever);
       kexpr_annot = outy; kexpr_loc = loc }
@@ -184,7 +184,7 @@ let rec type_expr ?hint (nodes : (ident * TMinils.k_node) list)
         (TypeError
            (Printf.sprintf
               "Both sides of fby should have the same type, found %s and %s"
-              (string_of_base_ty te0.kexpr_annot) (string_of_base_ty te.kexpr_annot),
+              (string_of_ty te0.kexpr_annot) (string_of_ty te.kexpr_annot),
             e.kexpr_loc));
     { kexpr_desc = KE_fby(te0, te); kexpr_annot = te0.kexpr_annot; kexpr_loc = loc }
   | KE_arrow (e0, e) ->
@@ -195,7 +195,7 @@ let rec type_expr ?hint (nodes : (ident * TMinils.k_node) list)
         (TypeError
            (Printf.sprintf
               "Both sides of fby should have the same type, found %s and %s"
-              (string_of_base_ty te0.kexpr_annot) (string_of_base_ty te.kexpr_annot),
+              (string_of_ty te0.kexpr_annot) (string_of_ty te.kexpr_annot),
             e.kexpr_loc));
     { kexpr_desc = KE_arrow(te0, te); kexpr_annot = te0.kexpr_annot; kexpr_loc = loc }
   | KE_tuple es ->
@@ -214,7 +214,7 @@ let rec type_expr ?hint (nodes : (ident * TMinils.k_node) list)
            (Printf.sprintf
               "Constructors in merge are incorrect for type %s :\
                expected %s, found %s"
-              (string_of_base_ty clt)
+              (string_of_ty clt)
               (String.concat "," constrs)
               (String.concat "," (List.map fst es)), loc));
 
@@ -228,12 +228,12 @@ let rec type_expr ?hint (nodes : (ident * TMinils.k_node) list)
             (TypeError
                (Printf.sprintf
                   "Both args of merge should have the same type, found %s and %s"
-                  (string_of_base_ty ty)
-                  (string_of_base_ty te.kexpr_annot), e.kexpr_loc))) tes;
+                  (string_of_ty ty)
+                  (string_of_ty te.kexpr_annot), e.kexpr_loc))) tes;
     { kexpr_desc = KE_switch (te, tes);
       kexpr_annot = ty; kexpr_loc = loc }
   | KE_when (e, constr, cl) ->
-    let clt = (try base_ty_of_ty (List.assoc cl streams)
+    let clt = (try (List.assoc cl streams)
                with _ -> raise (TypeError
                                   (Printf.sprintf "Clock %s not found in node"
                                      cl, e.kexpr_loc))) in
@@ -242,12 +242,12 @@ let rec type_expr ?hint (nodes : (ident * TMinils.k_node) list)
       raise (TypeError
                (Printf.sprintf
                   "Constructor %s does not belong to clock type %s"
-                  constr (string_of_base_ty clt), loc));
+                  constr (string_of_ty clt), loc));
     let te = type_expr ?hint nodes streams clocks e in
     { kexpr_desc = KE_when (te, constr, cl);
       kexpr_annot = te.kexpr_annot; kexpr_loc = loc }
   | KE_merge (cl, es) ->
-    let clt = (try base_ty_of_ty (List.assoc cl streams)
+    let clt = (try (List.assoc cl streams)
                with _ -> raise (TypeError
                                   (Printf.sprintf "Clock %s not found in node"
                                      cl, e.kexpr_loc))) in
@@ -260,7 +260,7 @@ let rec type_expr ?hint (nodes : (ident * TMinils.k_node) list)
            (Printf.sprintf
               "Constructors in merge are incorrect for type %s :\
                expected %s, found %s"
-              (string_of_base_ty clt)
+              (string_of_ty clt)
               (String.concat "," constrs)
               (String.concat "," (List.map fst es)), loc));
 
@@ -274,8 +274,8 @@ let rec type_expr ?hint (nodes : (ident * TMinils.k_node) list)
             (TypeError
                (Printf.sprintf
                   "Both args of merge should have the same type, found %s and %s"
-                  (string_of_base_ty ty)
-                  (string_of_base_ty te.kexpr_annot), e.kexpr_loc))) tes;
+                  (string_of_ty ty)
+                  (string_of_ty te.kexpr_annot), e.kexpr_loc))) tes;
     { kexpr_desc = KE_merge (cl, tes);
       kexpr_annot = ty; kexpr_loc = loc }
 
@@ -297,8 +297,8 @@ let check_equation nodes streams out_streams clocks (eq : k_equation) :
                 (Printf.sprintf
                    "Wrong type for equation %s; expected %s, found %s"
                    (KMinils.string_of_equation eq)
-                   (string_of_base_ty expected)
-                   (string_of_base_ty te.kexpr_annot), eq.keq_expr.kexpr_loc));
+                   (string_of_ty expected)
+                   (string_of_ty te.kexpr_annot), eq.keq_expr.kexpr_loc));
   { keq_patt = convert_patt eq.keq_patt; keq_expr = te }, os
 
 (** Check that the node [n] is correctly typed *)
@@ -324,26 +324,28 @@ let check_node (nodes: (ident * TMinils.k_node) list) clocks (n : k_node) :
                                "Stream name %s was defined twice in node %s"
                                id n.kn_name, n.kn_loc)));
 
-  (* Check that all declared types are using correct clocks *)
-  ignore (List.fold_left (fun streams (id, (ty:ty)) -> match ty with
-      | Base _ -> (id, ty)::streams
-      | Clocked (_, _, cl) ->
-        let clt =
-          (try base_ty_of_ty (List.assoc cl streams)
+  (* Check that all declared types are using correct clocks ? *)
+  ignore (List.fold_left (fun streams (id, (ty, ck)) ->
+      match ck with
+      | Cbase -> (id, ty)::streams
+      | Con (_, idck, _) ->
+        let ckt =
+          (try (List.assoc idck streams)
            with _ -> raise (TypeError
                               (Printf.sprintf "Clock %s not found in node %s"
-                                 cl n.kn_name, n.kn_loc))) in
-        ignore (constrs_of_clock clocks n.kn_loc clt);
+                                 idck n.kn_name, n.kn_loc))) in
+        ignore (constrs_of_clock clocks n.kn_loc ckt);
         (id, ty)::streams
+      | Ctuple _ -> failwith "Should not happen"
     ) [] all_streams);
 
   (* Check the equations of the node *)
   let teqs, rem_streams = List.fold_left
       (fun (teqs, streams) eq ->
          let teq, streams =
-           check_equation nodes all_streams streams clocks eq in
+           check_equation nodes (List.map (fun (id, (ty, _)) -> (id, ty)) all_streams) streams clocks eq in
          teq::teqs, streams)
-      ([], out_streams) n.kn_equs in
+      ([], (List.map (fun (id, (ty, _)) -> (id, ty)) out_streams)) n.kn_equs in
   (match rem_streams with
    | [] -> ()
    | (hd, _)::_ -> raise (MissingEquationError (hd, n.kn_loc)));

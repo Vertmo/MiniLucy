@@ -39,7 +39,7 @@ let generate_file filename (f : Obc.file) : MicroC.file =
         VarDec (Tident "main_mem", "mem"); VarDec (Tident "main_out", "out");
         Call ("main_reset", [Ref (Ident "mem")])]@
         (List.map (fun (p, ty) ->
-             VarDec (ty_of_base_ty ty, p)) ins)@
+             VarDec (ty_of_ty ty, p)) ins)@
 
         (* Main loop *)
         [ While (Const (Int 1),

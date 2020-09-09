@@ -88,7 +88,7 @@ type instr =
   | If of expr * instr list * instr list
   | Call of ident * expr list
   | VarDec of ty * ident
-  | SwitchCase of (ident * (ident * instr list) list)
+  | SwitchCase of (expr * (ident * instr list) list)
   (* Only used for AVR main loop, dont worry ! *)
   | While of (expr * instr list)
 
@@ -113,8 +113,8 @@ let rec string_of_instr (indent_level : int) (i : instr) =
       (String.concat "," (List.map string_of_expr es))
   | VarDec (ty, id) ->
     Printf.sprintf "%s%s %s;" indent (string_of_ty ty) id
-  | SwitchCase (id, cases) ->
-    Printf.sprintf "%sswitch(%s) {\n%s\n%s}\n" indent id indent
+  | SwitchCase (e, cases) ->
+    Printf.sprintf "%sswitch(%s) {\n%s\n%s}\n" indent (string_of_expr e) indent
       (String.concat "\n" (List.map (fun (c, instr) ->
            Printf.sprintf "%s\tcase %s:\n%s\n%s\t\tbreak;"
              indent c

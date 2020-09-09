@@ -6,10 +6,10 @@ open MicroC
 
 (** Translate a Lustre type to a C type.
     Doesn't work on tuples (they shouldn't be encountered anyway) *)
-let ty_of_base_ty : base_ty -> MicroC.ty = function
+let ty_of_ty : Asttypes.ty -> MicroC.ty = function
   | Tint | Tbool -> Tint
   | Treal -> Tfloat
-  | Ttuple _ -> invalid_arg "ty_of_base_ty"
+  | Ttuple _ -> invalid_arg "ty_of_ty"
   | Tclock id -> Tenum ("_clock_"^id)
 
 (** Translate a Lustre const to a C const *)
@@ -62,30 +62,30 @@ let rec generate_instr instances tys outputs : Obc.instr -> MicroC.instr list =
          if (List.mem_assoc id outputs)
          then Assign (PField ("_out", id), e)
          else Assign (Ident id, e)) ids oids)
-  | Case (e, is) ->
+  | Case (e, ty, is) ->
     let constrs = List.map fst is in
-    if constrs = ["False";"True"]
+    if constrs = [cfalse;ctrue]
     then [If (generate_expr outputs e,
               List.flatten (List.map (generate_instr instances tys outputs)
                               (snd (List.nth is 1))),
               List.flatten (List.map (generate_instr instances tys outputs)
                               (snd (List.nth is 0))))]
-    else if constrs = ["True"]
+    else if constrs = [ctrue]
     then [If (generate_expr outputs e,
               List.flatten (List.map (generate_instr instances tys outputs)
                               (snd (List.hd is))), [])]
-    else if constrs = ["False"]
+    else if constrs = [cfalse]
     then [If (generate_expr outputs e, [],
               List.flatten (List.map (generate_instr instances tys outputs)
                               (snd (List.hd is))))]
     else
-      (* let clid = (match (List.assoc id tys) with
-       *     | Tclock id -> id
-       *     | _ -> failwith "Should not happen") in
-       * [SwitchCase (id, List.map (fun (c, i) ->
-       *      Printf.sprintf "_clock_%s_%s" clid c,
-       *      List.flatten (List.map (generate_instr instances tys outputs) i)) is)] *)
-      failwith "TODO : switch generation"
+      let clid = (match ty with
+          | Tclock id -> id
+          | _ -> failwith (Printf.sprintf "Should not happen %s" (Asttypes.string_of_ty ty))) in
+      [SwitchCase (generate_expr outputs e,
+                   List.map (fun (c, i) ->
+                       Printf.sprintf "_clock_%s_%s" clid c,
+                       List.flatten (List.map (generate_instr instances tys outputs) i)) is)]
 
 (** Generate code for a machine *)
 let generate_machine (m : machine) : def list =
@@ -94,7 +94,7 @@ let generate_machine (m : machine) : def list =
   let st_mem = {
     struct_name = m.m_name^"_mem";
     struct_fields =
-      (List.map (fun (id, ty) -> id, (ty_of_base_ty ty)) m.m_memory)@
+      (List.map (fun (id, ty) -> id, (ty_of_ty ty)) m.m_memory)@
       (List.map (fun (o, (f, _)) -> o, (Tident (f^"_mem")))
          m.m_instances)@
       (List.map (fun (o, (f, _)) -> (o^"_out"), (Tident (f^"_out")))
@@ -103,7 +103,7 @@ let generate_machine (m : machine) : def list =
   and st_out = {
     struct_name = m.m_name^"_out";
     struct_fields =
-      (List.map (fun (id, ty) -> id, (ty_of_base_ty ty)) outputs)
+      (List.map (fun (id, ty) -> id, (ty_of_ty ty)) outputs)
   }
   and fun_reset = {
     fun_name = m.m_name^"_reset";
@@ -116,11 +116,11 @@ let generate_machine (m : machine) : def list =
     fun_name = m.m_name^"_step";
     fun_ret = Tvoid;
     fun_args =
-      (List.map (fun (id, ty) -> (id, ty_of_base_ty ty)) inputs)@
+      (List.map (fun (id, ty) -> (id, ty_of_ty ty)) inputs)@
       [("_self", Tpointer (Tident (m.m_name^"_mem")));
        ("_out", Tpointer (Tident (m.m_name^"_out")))];
     fun_body =
-      (List.map (fun (id, ty) -> VarDec (ty_of_base_ty ty, id)) locals)@
+      (List.map (fun (id, ty) -> VarDec (ty_of_ty ty, id)) locals)@
       (List.flatten
          (List.map (generate_instr m.m_instances tys outputs) step_body))
   } in

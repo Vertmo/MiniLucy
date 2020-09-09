@@ -2,3 +2,8 @@ node test_arrow_clock(x : int; b : bool) returns (z : int when True(b));
 let
   z = (x when True(b)) -> (2 * (x when True(b)));
 tel;
+
+node test_fby_clock(x : int; b : bool) returns (z : int when True(b));
+let
+  z = (0 when True(b)) fby (2 * z);
+tel;

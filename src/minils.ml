@@ -98,9 +98,9 @@ module MINILS(A : Annotations) = struct
 
   type k_node =
     { kn_name: ident;
-      kn_input: (ident * ty) list;
-      kn_output: (ident * ty) list;
-      kn_local: (ident * ty) list;
+      kn_input: (ident * ann) list;
+      kn_output: (ident * ann) list;
+      kn_local: (ident * ann) list;
       kn_equs: k_equation list;
       kn_loc: location; }
 
@@ -111,9 +111,9 @@ module MINILS(A : Annotations) = struct
                     %s\
                     tel\n"
       n.kn_name
-      (string_of_ident_type_list n.kn_input)
-      (string_of_ident_type_list n.kn_output)
-      (string_of_ident_type_list n.kn_local)
+      (string_of_ident_ann_list n.kn_input)
+      (string_of_ident_ann_list n.kn_output)
+      (string_of_ident_ann_list n.kn_local)
       (String.concat "" (List.map (fun eq ->
            Printf.sprintf "  %s;\n" (string_of_equation eq)) n.kn_equs))
 

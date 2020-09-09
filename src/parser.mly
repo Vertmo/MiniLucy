@@ -80,10 +80,10 @@ file: clock_decs node_decs EOF
 
 clock_decs:
 | /* empty */ { [] }
-| clock clock_decs { $1 :: $2 }
+| clock_dec clock_decs { $1 :: $2 }
 ;
 
-clock:
+clock_dec:
 | TYPE IDENT EQUAL constr_list SEMICOL
   { ($2, $4) }
 ;
@@ -150,7 +150,7 @@ param_list_semicol:
 
 
 param:
-  | ident_comma_list COLON typ
+  | ident_comma_list COLON annot
       { let typ = $3 in
         List.map (fun id -> (id, typ)) $1 }
 ;
@@ -293,16 +293,22 @@ branch:
 | LPAREN IDENT ARROW expr RPAREN { ($2, $4) }
 ;
 
-btyp:
+typ:
 | BOOL   { Tbool }
 | INT    { Tint }
 | REAL   { Treal }
-| IDENT { Tclock ($1) }
+| IDENT  { Tclock ($1) }
 ;
 
-typ:
-  | btyp { Base $1 }
-  | typ WHEN IDENT LPAREN IDENT RPAREN { Clocked ($1, $3, $5) }
+clock:
+| IDENT LPAREN IDENT RPAREN { Con ($1, $3, Cbase) }
+| clock WHEN IDENT LPAREN IDENT RPAREN { Con ($3, $5, $1) }
+;
+
+
+annot:
+| typ { ($1, Cbase) }
+| typ WHEN clock { ($1, $3) }
 ;
 
 semi_opt:

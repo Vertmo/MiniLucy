@@ -1,0 +1,20 @@
+node test1(r : bool) returns (y : int);
+let
+  reset
+    y = 0 fby (y + 1);
+  every r;
+tel;
+  
+node test2() returns (y : int);
+let
+  reset
+    y = 0 fby (y + 1);
+  every false;
+tel;
+  
+node test3() returns (y : int);
+let
+  reset
+    y = test2();
+  every true;
+tel;

@@ -2,7 +2,7 @@ node auto_simpl() returns (x : int);
 let
   automaton
   | INC ->
-    let u1 : int = (1 + pre u1) in
+    let u1 : int = (1 + (0 fby u1)) in
     x = 0 fby x + u1;
     until x > 5 then DEC and reset;
   | DEC ->

@@ -166,6 +166,8 @@ instr_list:
 instr:
 | eq
     { Eq $1 }
+| RESET instr_list EVERY expr SEMICOL
+    { Reset ($2, $4) }
 | AUTOMATON auto_branch_list END SEMICOL
     { Automaton $2 }
 ;

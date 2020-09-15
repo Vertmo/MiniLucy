@@ -2,7 +2,11 @@
 
 open Asttypes
 open PMinils
-open Minils.KMinils
+open Minils
+open Clockchecker
+open Clockchecker.CPMinils
+
+module CMinils = MINILS(TypeClockAnnot)
 
 (* Sort fields                                                                 *)
 
@@ -64,19 +68,22 @@ let rec reset_expr (x : ident) (e : k_expr) =
                 List.map (fun (c, e) -> (c, reset_expr x e)) es)
     | KE_fby (e0, e1) ->
       KE_switch ({ kexpr_desc = KE_ident x; (* TODO *)
-                   kexpr_annot = (); kexpr_loc = dummy_loc },
+                   kexpr_annot = e.kexpr_annot;
+                   kexpr_loc = dummy_loc },
                  [("True", e0); ("False", e)])
     | KE_arrow (e0, e1) ->
       KE_switch ({ kexpr_desc = KE_ident x; (* TODO *)
-                   kexpr_annot = (); kexpr_loc = dummy_loc },
+                   kexpr_annot = e.kexpr_annot;
+                   kexpr_loc = dummy_loc },
                  [("True", e0); ("False", e)])
     | KE_app (f, es, er) ->
       KE_app (f, es, { kexpr_desc =
                          KE_op (Op_or, [er;
                                         { kexpr_desc = KE_ident x;
-                                          kexpr_annot = ();
+                                          kexpr_annot = er.kexpr_annot;
                                           kexpr_loc = dummy_loc }]);
-                       kexpr_annot = (); kexpr_loc = dummy_loc })
+                       kexpr_annot = e.kexpr_annot;
+                       kexpr_loc = dummy_loc })
   in { e with kexpr_desc = desc }
 
 let reset_eq (x : ident) (eq : k_equation) : k_equation =

@@ -1,7 +1,7 @@
 (** Causality checking *)
 
 open Asttypes
-open Clockchecker.CMinils
+open Kernelizer.CMinils
 
 exception CausalityError of (string * ident * location)
 

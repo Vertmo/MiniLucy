@@ -1,5 +1,5 @@
 open Lexing
-open PMinils
+open PMinils.PMinils
 
 let usage = "usage: " ^ Sys.argv.(0) ^
             " [-parse] [-desugar] [-check] [-norm] [-translate] [-generate]\
@@ -62,7 +62,7 @@ let _ =
   Arg.parse_expand speclist (fun x -> filenames := !filenames@[x]) usage;
   let step = !step and filenames = !filenames in
 
-  let p_file = List.fold_left (fun f filename ->
+  let pfile = List.fold_left (fun f filename ->
       let ic = open_in filename in
       let f' = lex_and_parse ic in
       close_in ic;
@@ -72,18 +72,27 @@ let _ =
 
   (* Parse *)
   if (step = Parse) then (
-    print_endline (PMinils.string_of_file p_file);
+    print_endline (string_of_file pfile);
+    exit 0
+  );
+
+  (* Type and clock check *)
+  let tfile = Typechecker.elab_file pfile in
+  let cfile = Clockchecker.elab_file tfile in
+
+  if (step = Check) then (
+    print_endline (Clockchecker.CPMinils.string_of_file ~print_anns:true cfile);
     exit 0
   );
 
   (* Kernelize *)
-  let file = Kernelizer.kernelize_file p_file in
+  let file = Kernelizer.kernelize_file cfile in
 
   (* Run the nodes from both files, checking they give the same result *)
   (* if !asserts then Pinterpr.run_files p_file file; *)
 
   if (step = Kernelize) then (
-    print_endline (Minils.KMinils.string_of_file file);
+    print_endline (Kernelizer.CMinils.string_of_file file);
     exit 0
   );
 
@@ -95,17 +104,10 @@ let _ =
    *   exit 0;
    * | None -> (); *)
 
-  (* Check *)
-  let tfile = Typechecker.check_file file in
-  let cfile = Clockchecker.clock_file tfile in
-  Causalitychecker.check_file cfile;
-  if (step = Check) then (
-    print_endline (Clockchecker.CMinils.string_of_file ~print_anns:true cfile);
-    exit 0
-  );
+  Causalitychecker.check_file file;
 
   (* Normalize *)
-  let nfile = Normalizer.norm_file cfile in
+  let nfile = Normalizer.norm_file file in
   (* if !asserts then assert (Normalizer.equiv_norm_file cfile nfile); *)
   let nfile = Scheduler.schedule_file nfile in
   if !asserts then assert (Scheduler.schedule_is_correct_file nfile);

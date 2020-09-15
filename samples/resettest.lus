@@ -12,9 +12,9 @@ let
   every false;
 tel;
   
-node test3() returns (y : int);
+node test3(b : bool) returns (y : int);
 let
   reset
     y = test2();
-  every true;
+  every (true when True(b));
 tel;

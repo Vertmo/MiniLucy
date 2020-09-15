@@ -1,8 +1,7 @@
 %{
 
   open Asttypes
-  open PMinils
-  open Minils.KMinils
+  open PMinils.PMinils
 
   let mk_expr e startp endp = { kexpr_desc = e; kexpr_loc = (startp, endp); kexpr_annot = () }
   let mk_patt p startp endp = { kpatt_desc = p; kpatt_loc = (startp, endp) }
@@ -72,7 +71,7 @@
 /* Point d'entrée */
 
 %start file
-%type <PMinils.p_file> file
+%type <PMinils.PMinils.p_file> file
 
 %%
 

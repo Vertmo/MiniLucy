@@ -1,7 +1,7 @@
 (** Normalize the equations *)
 
 open Asttypes
-open Clockchecker.CMinils
+open Kernelizer.CMinils
 open NMinils
 
 let rec is_constant e =

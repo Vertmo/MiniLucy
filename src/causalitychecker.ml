@@ -5,29 +5,28 @@ open Kernelizer.CMinils
 
 exception CausalityError of (string * ident * location)
 
+
+let clocks_of (es : k_expr list) =
+  List.concat (List.map (fun e -> List.map snd e.kexpr_annot) es)
+
 (** Get the "free variables" of the expression [e] *)
 let rec expr_vars (e : k_expr) =
   (match e.kexpr_desc with
    | KE_const _ -> []
    | KE_ident id -> [id]
-   | KE_op (_, es) -> List.concat (List.map expr_vars es)
+   | KE_unop (_, e1) -> expr_vars e1
+   | KE_binop (_, e1, e2) -> (expr_vars e1)@(expr_vars e2)
    | KE_app (_, es, ev) ->
-     List.concat ((expr_vars ev)::(List.map expr_vars es))
-   | KE_fby (e0, _) -> (expr_vars e0)
-   | KE_arrow (e0, e) -> (expr_vars e0)@(expr_vars e)
-   | KE_tuple es -> List.concat (List.map expr_vars es)
+     (expr_vars ev)@(exprs_vars es)
+   | KE_fby (e0, _) -> (exprs_vars e0)
+   | KE_arrow (e0, e) -> (exprs_vars e0)@(exprs_vars e)
    | KE_switch (e, es) ->
-     List.concat ((expr_vars e)::(List.map (fun (_, e) -> expr_vars e) es))
-   | KE_when (e, _, id) -> id::(expr_vars e)
+     List.concat ((expr_vars e)::(List.map (fun (_, e) -> exprs_vars e) es))
+   | KE_when (e, _, id) -> id::(exprs_vars e)
    | KE_merge (id, es) ->
-     id::(List.concat (List.map (fun (_, e) -> expr_vars e) es))
-  )@(clock_vars (snd e.kexpr_annot))
-
-(** Get the variables bound by the pattern [p] *)
-let pat_vars (p : k_patt) =
-  match p.kpatt_desc with
-  | KP_ident id -> [id]
-  | KP_tuple ids -> ids
+     id::(List.concat (List.map (fun (_, e) -> exprs_vars e) es))
+  )@(List.concat (List.map (fun (_, (ck, _)) -> clock_vars ck) e.kexpr_annot))
+and exprs_vars es = List.concat (List.map expr_vars es)
 
 module IdentMap = Map.Make(String)
 
@@ -36,7 +35,7 @@ type dep_graph = (ident list) IdentMap.t
 
 (** Compute the dependencies introduced by the equation [eq] *)
 let eq_dependencies (eq : k_equation) : dep_graph =
-  let defined = pat_vars eq.keq_patt and used = expr_vars eq.keq_expr in
+  let defined = eq.keq_patt and used = exprs_vars eq.keq_expr in
   IdentMap.of_seq (List.to_seq (List.map (fun l -> (l, used)) defined))
 
 (** Get all the streams [x] depends on *)

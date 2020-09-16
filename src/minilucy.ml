@@ -77,7 +77,7 @@ let _ =
   );
 
   (* Type and clock check *)
-  let tfile = Typechecker.elab_file pfile in
+  let tfile = Typechecker.type_file pfile in
   let cfile = Clockchecker.elab_file tfile in
 
   if (step = Check) then (

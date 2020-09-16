@@ -14,26 +14,64 @@ module TPMinils = PMINILS(TypeAnnot)
 open TPMinils
 open PMinils
 
+(** Sort fields                                                                *)
+
+let rec sort_expr (e : k_expr) : k_expr =
+  let desc = match e.kexpr_desc with
+    | KE_const c -> KE_const c
+    | KE_ident id -> KE_ident id
+    | KE_unop (op, e1) -> KE_unop (op, sort_expr e1)
+    | KE_binop (op, e1, e2) -> KE_binop (op, sort_expr e1, sort_expr e2)
+    | KE_fby (e0, e) -> KE_fby (sort_exprs e0, sort_exprs e)
+    | KE_arrow (e0, e) -> KE_arrow (sort_exprs e0, sort_exprs e)
+    (* | KE_pre e -> KE_fby (Cnil, sort_expr e) *)
+    | KE_when (e, constr, clid) -> KE_when (sort_exprs e, constr, clid)
+    | KE_switch (e, es) ->
+      KE_switch (sort_expr e,
+                 List.sort (fun (c1, e1) (c2, e2) -> String.compare c1 c2)
+                   (List.map (fun (c, e) -> (c, sort_exprs e)) es))
+    | KE_merge (id, es) ->
+      KE_merge (id,
+                List.sort (fun (c1, e1) (c2, e2) -> String.compare c1 c2)
+                  (List.map (fun (c, e) -> (c, sort_exprs e)) es))
+    | KE_app (id, es, e) ->
+      KE_app (id, List.map sort_expr es, sort_expr e)
+  in { e with kexpr_desc = desc }
+
+and sort_exprs es = List.map sort_expr es
+
+let sort_equation (eq : k_equation) : k_equation =
+  { eq with keq_expr = sort_exprs eq.keq_expr; }
+
+let rec sort_instr : p_instr -> p_instr = function
+  | Eq eq -> Eq (sort_equation eq)
+  | Reset (ins, er) ->
+    Reset (List.map sort_instr ins, sort_expr er)
+  | _ -> failwith "TODO sort_instr"
+
+let sort_node (n : p_node) : p_node =
+  { n with pn_instrs = List.map sort_instr n.pn_instrs }
+
+let sort_file (f : p_file) : p_file =
+    { pf_clocks =
+        (List.map
+           (fun (c, constrs) -> (c, List.sort String.compare constrs))
+           f.pf_clocks);
+      pf_nodes = List.map sort_node f.pf_nodes }
+
+(** Elaboration                                                               *)
+
 exception TypeError of (string * location)
 exception MissingHintError of location
 exception MissingEquationError of (ident * location)
 exception UnexpectedEquationError of (ident * location)
 
 (** Typecheck constant. Can take a [hint] for the nil case *)
-let type_const ?hint loc = function
+let type_const loc = function
   | Cbool _ -> Tbool
   | Cint _ -> Tint
   | Creal _ -> Treal
   | Cconstr (_, tyid) -> Tclock tyid
-  | Cnil ->
-    (match hint with
-     | Some t ->
-       if t = Tbool || t = Tint || t = Treal then t
-       else raise (TypeError
-                     (Printf.sprintf "Type %s incompatible with constant nil"
-                        (string_of_ty t), loc))
-     | None ->
-       raise (MissingHintError loc))
 
 (** Get the constructions associated with a clock type *)
 let constrs_of_clock clocks loc = function
@@ -48,7 +86,7 @@ let constrs_of_clock clocks loc = function
                       (string_of_ty ty), loc))
 
 (** Gives operator output type relating to input types *)
-let type_op (inputs : ty list) loc op =
+let type_op op (inputs : ty list) loc =
   match op with
   | Op_eq | Op_neq
     when inputs = [Tbool;Tbool] -> Tbool
@@ -64,28 +102,22 @@ let type_op (inputs : ty list) loc op =
   | Op_and | Op_or | Op_xor when inputs = [Tbool;Tbool] -> Tbool
   | Op_not when inputs = [Tint] -> Tint
   | Op_and | Op_or | Op_xor when inputs = [Tint;Tint] -> Tint
-  | Op_if when List.length inputs = 3 &&
-               List.nth inputs 1 = List.nth inputs 2 -> List.nth inputs 1
   | _ -> raise (TypeError
                   (Printf.sprintf "Wrong input types (%s) for operator %s"
                      (String.concat "," (List.map string_of_ty inputs))
                      (string_of_op op), loc))
 
-(** Provides hints for input of an operator *)
-let hint_op hint arity = function
-  | Op_sub | Op_not -> List.init arity (fun _ -> hint)
-  | Op_eq | Op_neq | Op_lt | Op_le | Op_gt | Op_ge -> [None;None]
-  | Op_add | Op_mul | Op_div | Op_and | Op_or | Op_xor -> [hint;hint]
-  | Op_mod -> [Some Tint;Some Tint]
-  | Op_if -> [Some Tbool;hint;hint]
+let types_of es =
+  List.concat (List.map (fun (e : TPMinils.k_expr) -> e.kexpr_annot) es)
 
 (** Check that an expression has the [expected] type *)
-let rec elab_expr ?hint (nodes : (ident * TPMinils.p_node) list)
+let rec elab_expr (nodes : (ident * TPMinils.p_node) list)
     vars clocks e : TPMinils.k_expr =
   let loc = e.kexpr_loc in
   match e.kexpr_desc with
   | KE_const c ->
-    { kexpr_desc = KE_const c; kexpr_annot = type_const ?hint loc c;
+    { kexpr_desc = KE_const c;
+      kexpr_annot = [type_const loc c];
       kexpr_loc = e.kexpr_loc }
   | KE_ident id ->
     let bty =
@@ -93,144 +125,137 @@ let rec elab_expr ?hint (nodes : (ident * TPMinils.p_node) list)
        with _ -> raise (TypeError
                           (Printf.sprintf "Stream %s not found in node"
                              id, e.kexpr_loc))) in
-    { kexpr_desc = KE_ident id; kexpr_annot = bty; kexpr_loc = e.kexpr_loc }
-  | KE_op (op, es) ->
-    (* This is a bit more complicated than expected, because we need to keep
-       some hints if we want Nil constants to be typed further down the line *)
-    let hints = hint_op hint (List.length es) op in
-    let tes = if op = Op_if
-      then [elab_expr ~hint:Tbool nodes vars clocks (List.nth es 0);
-            elab_expr ?hint nodes vars clocks (List.nth es 1);
-            elab_expr ?hint nodes vars clocks (List.nth es 2)]
-      else
-        let rec get_one_type = function
-          | [] -> None
-          | (e, hint)::tl ->
-            try Some (elab_expr ?hint:hint nodes vars clocks e)
-            with (MissingHintError _) -> get_one_type tl in
-        match (get_one_type (List.combine es hints)) with
-        | None ->
-          raise (TypeError
-                   (Printf.sprintf
-                      "Could not infer types of operands of expression %s"
-                      (string_of_expr e), loc))
-        | Some e ->
-          List.map (elab_expr ~hint:(e.kexpr_annot) nodes vars clocks) es in
-    let outy = type_op
-        (List.map (fun (te:TPMinils.k_expr) -> te.kexpr_annot) tes)
-        e.kexpr_loc op in
-    { kexpr_desc = KE_op (op, tes); kexpr_annot = outy; kexpr_loc = loc }
-  | KE_app (id, es, ever) ->
-    let tes = List.map (elab_expr nodes vars clocks) es in
+    { kexpr_desc = KE_ident id; kexpr_annot = [bty]; kexpr_loc = e.kexpr_loc }
+  | KE_unop (op, e1) ->
+    let e1' = elab_expr nodes vars clocks e1 in
+    let ty = match e1'.kexpr_annot with
+      | [ty] -> ty
+      | ty -> raise (TypeError
+                       (Printf.sprintf "Operand should have a unary type, got %s"
+                          (string_of_tys ty), e1.kexpr_loc)) in
+
+    { kexpr_desc = KE_unop (op, e1');
+      kexpr_annot = [type_op op [ty] loc];
+      kexpr_loc = loc }
+  | KE_binop (op, e1, e2) ->
+    let e1' = elab_expr nodes vars clocks e1
+    and e2' = elab_expr nodes vars clocks e2 in
+    let (ty1, ty2) = match e1'.kexpr_annot, e2'.kexpr_annot with
+      | [ty1], [ty2] -> ty1, ty2
+      | ty1, ty2 -> raise (TypeError
+                             (Printf.sprintf "Operand should have a unary type, got %s and %s"
+                                (string_of_tys ty1) (string_of_tys ty2), e1.kexpr_loc)) in
+
+    { kexpr_desc = KE_binop (op, e1', e2');
+      kexpr_annot = [type_op op [ty1;ty2] loc];
+      kexpr_loc = loc }
+  | KE_app (id, es, er) ->
+    let es' = List.map (elab_expr nodes vars clocks) es in
+    let er' = elab_expr nodes vars clocks er in
     (* Check that reset stream is bool *)
-    let tever = elab_expr nodes vars clocks ever in
-    if(tever.kexpr_annot <> Tbool)
+    if(er'.kexpr_annot <> [Tbool])
     then raise (TypeError
                   (Printf.sprintf
                      "The reset stream should be of type bool, found %s"
-                     (string_of_ty tever.kexpr_annot), ever.kexpr_loc));
+                     (string_of_tys er'.kexpr_annot), er.kexpr_loc));
     (* Find the node *)
     let node = try List.assoc id nodes
       with _ -> raise (TypeError
                          (Printf.sprintf "Node %s not found in file"
                             id, e.kexpr_loc)) in
     (* Check input types *)
-    (try List.iter2 (fun exp act ->
-         if (exp <> act)
-         then raise
-             (TypeError
-                (Printf.sprintf
-                   "Wrong argument type for node %s, expected %s, found %s"
-                   id (string_of_ty exp) (string_of_ty act),
-                 e.kexpr_loc)))
-         (List.map (fun (_, (ty, _)) -> ty) node.pn_input)
-         (List.map (fun (te : TPMinils.k_expr) -> te.kexpr_annot) tes)
-     with Invalid_argument _ ->
-       raise (TypeError
-                (Printf.sprintf
-                   "Wrong number of arguments for node %s, expected %s, found %s"
-                   id (string_of_int (List.length node.pn_input))
-                   (string_of_int (List.length tes)), e.kexpr_loc)));
+    let expected = List.map (fun (_, (ty, _)) -> ty) node.pn_input
+    and actual = types_of es' in
+
+    if actual <> expected
+    then raise
+        (TypeError
+           (Printf.sprintf
+              "Wrong input type for instantiation %s, expected %s, found %s"
+              id (string_of_tys expected) (string_of_tys actual),
+                 e.kexpr_loc));
 
     (* Output type *)
-    let outy = (match node.pn_output with
-        | [] -> failwith "Should not happen (syntax)"
-        | [(_, (ty, _))] -> ty
-        | _ -> Ttuple (List.map (fun (_, (ty, _)) -> ty)
-                         node.pn_output)) in
-    { kexpr_desc = KE_app (id, tes, tever);
+    let outy = List.map (fun (_, (ty, _)) -> ty) node.pn_output in
+    { kexpr_desc = KE_app (id, es', er');
       kexpr_annot = outy; kexpr_loc = loc }
-  | KE_fby (e0, e) ->
-    let te0 = elab_expr ?hint nodes vars clocks e0 in
-    let te = elab_expr ~hint:te0.kexpr_annot nodes vars clocks e in
-    if (te0.kexpr_annot <> te.kexpr_annot)
+  | KE_fby (e0s, es) ->
+    let e0s' = List.map (elab_expr nodes vars clocks) e0s
+    and es' = List.map (elab_expr nodes vars clocks) es in
+
+    let tys0 = types_of e0s' and tys = types_of es' in
+    if (tys0 <> tys)
     then raise
         (TypeError
            (Printf.sprintf
               "Both sides of fby should have the same type, found %s and %s"
-              (string_of_ty te0.kexpr_annot) (string_of_ty te.kexpr_annot),
+              (string_of_tys tys0) (string_of_tys tys),
             e.kexpr_loc));
-    { kexpr_desc = KE_fby(te0, te); kexpr_annot = te0.kexpr_annot; kexpr_loc = loc }
-  | KE_arrow (e0, e) ->
-    let te0 = elab_expr ?hint nodes vars clocks e0 in
-    let te = elab_expr ~hint:te0.kexpr_annot nodes vars clocks e in
-    if (te0.kexpr_annot <> te.kexpr_annot)
+    { kexpr_desc = KE_fby(e0s', es'); kexpr_annot = tys0; kexpr_loc = loc }
+  | KE_arrow (e0s, es) ->
+    let e0s' = List.map (elab_expr nodes vars clocks) e0s
+    and es' = List.map (elab_expr nodes vars clocks) es in
+
+    let tys0 = types_of e0s' and tys = types_of es' in
+    if (tys0 <> tys)
     then raise
         (TypeError
            (Printf.sprintf
               "Both sides of fby should have the same type, found %s and %s"
-              (string_of_ty te0.kexpr_annot) (string_of_ty te.kexpr_annot),
+              (string_of_tys tys0) (string_of_tys tys),
             e.kexpr_loc));
-    { kexpr_desc = KE_arrow(te0, te); kexpr_annot = te0.kexpr_annot; kexpr_loc = loc }
-  | KE_tuple es ->
-    let tes = (List.map (elab_expr nodes vars clocks) es) in
-    let tys = List.map (fun (te : TPMinils.k_expr) -> te.kexpr_annot) tes in
-    { kexpr_desc = KE_tuple tes;
-      kexpr_annot = Ttuple tys; kexpr_loc = loc }
-  | KE_switch (e, es) ->
-    let te = elab_expr nodes vars clocks e in
-    let clt = te.kexpr_annot in
+    { kexpr_desc = KE_arrow(e0s', es'); kexpr_annot = tys0; kexpr_loc = loc }
+  | KE_switch (e, branches) ->
+    let e' = elab_expr nodes vars clocks e in
+    let clt = match e'.kexpr_annot with
+      | [ty] -> ty
+      | ty -> raise (TypeError
+                       (Printf.sprintf "Switch condition should have a unary type, got %s"
+                          (string_of_tys ty), e.kexpr_loc)) in
+
     (* Check the constructors *)
     let constrs = constrs_of_clock clocks loc clt in
-    if (constrs <> List.map fst es)
+    if (constrs <> List.map fst branches)
     then raise
         (TypeError
            (Printf.sprintf
-              "Constructors in merge are incorrect for type %s :\
+              "Constructors in switch are incorrect for type %s :\
                expected %s, found %s"
               (string_of_ty clt)
               (String.concat "," constrs)
-              (String.concat "," (List.map fst es)), loc));
+              (String.concat "," (List.map fst branches)), loc));
 
     (* Check the expression types *)
-    let tes = List.map
-        (fun (c, te) -> c, elab_expr ?hint nodes vars clocks te) es in
-    let ty = (snd (List.hd tes)).kexpr_annot in
-    List.iter (fun ((_, te) : (constr * TPMinils.k_expr)) ->
-        if (te.kexpr_annot <> ty)
+    let branches' = List.map
+        (fun (c, es) -> c, List.map (elab_expr nodes vars clocks) es) branches in
+
+    let tys = types_of (snd (List.hd branches')) in
+    List.iter (fun ((_, es) : (constr * TPMinils.k_expr list)) ->
+        let tys' = types_of es in
+        if (tys' <> tys)
         then raise
             (TypeError
                (Printf.sprintf
-                  "Both args of merge should have the same type, found %s and %s"
-                  (string_of_ty ty)
-                  (string_of_ty te.kexpr_annot), e.kexpr_loc))) tes;
-    { kexpr_desc = KE_switch (te, tes);
-      kexpr_annot = ty; kexpr_loc = loc }
-  | KE_when (e, constr, cl) ->
+                  "All args of switch should have the same type, found %s and %s"
+                  (string_of_tys tys)
+                  (string_of_tys tys'), e.kexpr_loc))) branches';
+    { kexpr_desc = KE_switch (e', branches');
+      kexpr_annot = tys; kexpr_loc = loc }
+  | KE_when (es, constr, cl) ->
     let clt = (try (List.assoc cl vars)
                with _ -> raise (TypeError
                                   (Printf.sprintf "Clock %s not found in node"
-                                     cl, e.kexpr_loc))) in
+                                     cl, loc))) in
     let constrs = constrs_of_clock clocks loc clt in
     if not (List.mem constr constrs) then
       raise (TypeError
                (Printf.sprintf
                   "Constructor %s does not belong to clock type %s"
                   constr (string_of_ty clt), loc));
-    let te = elab_expr ?hint nodes vars clocks e in
-    { kexpr_desc = KE_when (te, constr, cl);
-      kexpr_annot = te.kexpr_annot; kexpr_loc = loc }
-  | KE_merge (cl, es) ->
+    let es' = List.map (elab_expr nodes vars clocks) es in
+    { kexpr_desc = KE_when (es', constr, cl);
+      kexpr_annot = types_of es'; kexpr_loc = loc }
+  | KE_merge (cl, branches) ->
     let clt = (try (List.assoc cl vars)
                with _ -> raise (TypeError
                                   (Printf.sprintf "Clock %s not found in node"
@@ -238,7 +263,7 @@ let rec elab_expr ?hint (nodes : (ident * TPMinils.p_node) list)
 
     (* Check the constructors *)
     let constrs = constrs_of_clock clocks loc clt in
-    if (constrs <> List.map fst es)
+    if (constrs <> List.map fst branches)
     then raise
         (TypeError
            (Printf.sprintf
@@ -246,54 +271,44 @@ let rec elab_expr ?hint (nodes : (ident * TPMinils.p_node) list)
                expected %s, found %s"
               (string_of_ty clt)
               (String.concat "," constrs)
-              (String.concat "," (List.map fst es)), loc));
+              (String.concat "," (List.map fst branches)), loc));
 
     (* Check the expression types *)
-    let tes = List.map
-        (fun (c, te) -> c, elab_expr ?hint nodes vars clocks te) es in
-    let ty = (snd (List.hd tes)).kexpr_annot in
-    List.iter (fun ((_, te) : (constr * TPMinils.k_expr)) ->
-        if (te.kexpr_annot <> ty)
+    let branches' = List.map
+        (fun (c, es) -> c, List.map (elab_expr nodes vars clocks) es) branches in
+
+    let tys = types_of (snd (List.hd branches')) in
+    List.iter (fun ((_, es) : (constr * TPMinils.k_expr list)) ->
+        let tys' = types_of es in
+        if (tys' <> tys)
         then raise
             (TypeError
                (Printf.sprintf
-                  "Both args of merge should have the same type, found %s and %s"
-                  (string_of_ty ty)
-                  (string_of_ty te.kexpr_annot), e.kexpr_loc))) tes;
-    { kexpr_desc = KE_merge (cl, tes);
-      kexpr_annot = ty; kexpr_loc = loc }
-
-(** Convert a KMinils.k_patt into a TMinils.k_patt (trivial) *)
-let convert_patt (p : KMinils.k_patt) : TPMinils.k_patt =
-  let desc = match p.kpatt_desc with
-    | KP_ident i -> TPMinils.KP_ident i
-    | KP_tuple t -> TPMinils.KP_tuple t
-  in { kpatt_desc = desc; kpatt_loc = p.kpatt_loc }
+                  "All args of merge should have the same type, found %s and %s"
+                  (string_of_tys tys)
+                  (string_of_tys tys'), e.kexpr_loc))) branches';
+    { kexpr_desc = KE_merge (cl, branches');
+      kexpr_annot = tys; kexpr_loc = loc }
 
 (** Get the type expected for a pattern [pat] *)
-let get_pattern_type (streams : (ident * ty) list) pat =
-  match pat.kpatt_desc with
-  | KP_ident id ->
-    (try (List.assoc id streams)
-     with _ -> raise (UnexpectedEquationError (id, pat.kpatt_loc)))
-  | KP_tuple ids ->
-    let tys = List.map (fun id ->
-        try (List.assoc id streams)
-        with _ -> raise (UnexpectedEquationError (id, pat.kpatt_loc))) ids in
-    Ttuple (List.rev tys)
+let get_pattern_type (vars : (ident * ty) list) pat loc =
+  List.map (fun id ->
+      try (List.assoc id vars)
+      with _ -> raise (UnexpectedEquationError (id, loc))) pat
 
 (** Check that the equation [eq] is correctly typed. *)
 let elab_equation nodes vars clocks (eq : k_equation) : TPMinils.k_equation =
-  let expected = get_pattern_type vars eq.keq_patt in
-  let te = elab_expr ~hint:expected nodes vars clocks eq.keq_expr in
-  if te.kexpr_annot <> expected
+  let expected = get_pattern_type vars eq.keq_patt eq.keq_loc in
+  let es' = List.map (elab_expr nodes vars clocks) eq.keq_expr in
+  let tys = types_of es' in
+  if tys <> expected
   then raise (TypeError
                 (Printf.sprintf
                    "Wrong type for equation %s; expected %s, found %s"
                    (KMinils.string_of_equation eq)
-                   (string_of_ty expected)
-                   (string_of_ty te.kexpr_annot), eq.keq_expr.kexpr_loc));
-  { keq_patt = convert_patt eq.keq_patt; keq_expr = te }
+                   (string_of_tys expected)
+                   (string_of_tys tys), eq.keq_loc));
+  { keq_patt = eq.keq_patt; keq_expr = es'; keq_loc = eq.keq_loc }
 
 (** Check that the instruction [ins] is correctly typed. *)
 let rec elab_instr nodes vars clocks (ins : p_instr) : TPMinils.p_instr =
@@ -301,21 +316,15 @@ let rec elab_instr nodes vars clocks (ins : p_instr) : TPMinils.p_instr =
   | Eq eq -> Eq (elab_equation nodes vars clocks eq)
   | Reset (ins, er) ->
     Reset (elab_instrs nodes vars clocks ins,
-           elab_expr ~hint:Tbool nodes vars clocks er)
+           elab_expr nodes vars clocks er)
   | _ -> failwith "TODO elab_instr"
 and elab_instrs nodes vars clocks ins =
   List.map (elab_instr nodes vars clocks) ins
 
-(** Get all the names defined in an equation *)
-let rec get_def_eq ({ keq_patt = p }) : ident list =
-  match p.kpatt_desc with
-  | KP_ident i -> [i]
-  | KP_tuple t -> t
-
 (** Get all the names defined in a set of instructions *)
 let rec get_def_instr (i : p_instr) : ident list =
   match i with
-  | Eq eq -> get_def_eq eq
+  | Eq eq -> defined_of_equation eq
   | Reset (ins, _) ->
     get_def_instrs ins
   | _ -> failwith "TODO get_def_instr"
@@ -357,7 +366,6 @@ let elab_node (nodes: (ident * TPMinils.p_node) list) clocks (n : p_node) :
                                  idck n.pn_name, n.pn_loc))) in
         ignore (constrs_of_clock clocks n.pn_loc ckt);
         (id, ty)::streams
-      | Ctuple _ -> failwith "Should not happen"
     ) [] all_streams);
 
   (* Check that all the streams are defined *)
@@ -401,3 +409,6 @@ let elab_file (f : p_file) : TPMinils.p_file =
   | MissingHintError loc ->
     Printf.printf "Type checking error : Could not infer type of nil at %s"
       (string_of_loc loc); exit 1
+
+let type_file (f : p_file) : TPMinils.p_file =
+  f |> sort_file |> elab_file

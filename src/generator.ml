@@ -9,7 +9,6 @@ open MicroC
 let ty_of_ty : Asttypes.ty -> MicroC.ty = function
   | Tint | Tbool -> Tint
   | Treal -> Tfloat
-  | Ttuple _ -> invalid_arg "ty_of_ty"
   | Tclock id -> Tenum ("_clock_"^id)
 
 (** Translate a Lustre const to a C const *)
@@ -19,7 +18,6 @@ let generate_const : Asttypes.const -> MicroC.const = function
   | Creal f -> Float f
   | Cconstr (c, clty) ->
     EnumField (Printf.sprintf "_clock_%s_%s" clty c)
-  | Cnil -> Int 0 (* We don't really care, in C it's all the same *)
 
 (** Generate code for a clock declaration *)
 let generate_clockdec (id, constrs) =

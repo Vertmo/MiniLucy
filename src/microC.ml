@@ -63,7 +63,6 @@ let string_of_cop = function
   | Op_gt -> ">" | Op_ge -> ">="
   | Op_add -> "+" | Op_sub -> "-" | Op_mul -> "*" | Op_div -> "/" | Op_mod -> "%"
   | Op_not -> "~" | Op_and -> "&" | Op_or -> "|" | Op_xor -> "^"
-  | Op_if -> invalid_arg "string_of_cop"
 
 let rec string_of_expr = function
   | Const c -> string_of_const c

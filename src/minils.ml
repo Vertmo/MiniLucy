@@ -15,91 +15,85 @@ end
 module MINILS(A : Annotations) = struct
   type k_expr =
     { kexpr_desc: k_expr_desc;
-      kexpr_annot: A.t;
+      kexpr_annot: A.t list;
       kexpr_loc: location; }
 
   and k_expr_desc =
     | KE_const of const
     | KE_ident of ident
-    | KE_op of op * k_expr list
+    | KE_unop of op * k_expr
+    | KE_binop of op * k_expr * k_expr
     | KE_app of ident * k_expr list * k_expr
-    | KE_fby of k_expr * k_expr
-    | KE_arrow of k_expr * k_expr
-    | KE_tuple of k_expr list
-    | KE_switch of k_expr * (constr * k_expr) list
-    | KE_when of k_expr * constr * ident
-    | KE_merge of ident * (constr * k_expr) list
+    | KE_fby of k_expr list * k_expr list
+    | KE_arrow of k_expr list * k_expr list
+    | KE_switch of k_expr * (constr * k_expr list) list
+    | KE_when of k_expr list * constr * ident
+    | KE_merge of ident * (constr * k_expr list) list
+
+  let string_of_annots anns =
+    Printf.sprintf "[%s]"
+      (String.concat "," (List.map A.string_of_t anns))
 
   let rec string_of_expr ?(print_anns=false) e =
     let desc = string_of_expr_desc ~print_anns e.kexpr_desc in
     if print_anns then
-      Printf.sprintf "%s %s"
+      Printf.sprintf "%s [%s]"
         desc
-        (A.string_of_t e.kexpr_annot)
+        (string_of_annots e.kexpr_annot)
     else desc
 
   and string_of_expr_desc ?(print_anns=false) (e : k_expr_desc) =
-    let string_of_expr = string_of_expr ~print_anns in
+    let string_of_expr = string_of_expr ~print_anns
+    and string_of_exprs = string_of_exprs ~print_anns in
     match e with
     | KE_const c -> string_of_const c
     | KE_ident i -> i
-    | KE_op (op, es) -> Printf.sprintf "(%s [%s])"
-                          (string_of_op op)
-                          (String.concat "; " (List.map string_of_expr es))
-    | KE_app (id, es, ever) -> Printf.sprintf "(%s [%s] every %s)" id
-                                 (String.concat "; " (List.map string_of_expr es))
-                                 (string_of_expr ever)
-    | KE_fby (e0, e) -> Printf.sprintf "(%s fby %s)"
-                         (string_of_expr e) (string_of_expr e)
-    | KE_arrow (e0, e) -> Printf.sprintf "(%s fby %s)"
-                           (string_of_expr e0) (string_of_expr e)
-    | KE_tuple es -> Printf.sprintf "(%s)"
-                       (String.concat ", " (List.map string_of_expr es))
+    | KE_unop (op, e1) ->
+      Printf.sprintf "(%s %s)" (string_of_op op) (string_of_expr e1)
+    | KE_binop (op, e1, e2) ->
+      Printf.sprintf "(%s %s %s)"
+        (string_of_expr e1) (string_of_op op) (string_of_expr e2)
+    | KE_app (id, es, ever) ->
+      Printf.sprintf "(%s%s every %s)" id
+        (string_of_exprs es) (string_of_expr ever)
+    | KE_fby (e0, e) ->
+      Printf.sprintf "(%s fby %s)" (string_of_exprs e) (string_of_exprs e)
+    | KE_arrow (e0, e) ->
+      Printf.sprintf "(%s -> %s)" (string_of_exprs e0) (string_of_exprs e)
     | KE_switch (e, es) ->
       Printf.sprintf "switch %s %s"
         (string_of_expr e) (String.concat " "
                               (List.map
                                  (fun (constr, e) -> Printf.sprintf "(%s -> %s)"
-                                     constr (string_of_expr e)) es))
+                                     constr (string_of_exprs e)) es))
     | KE_when (e, constr, clid) ->
       Printf.sprintf "%s when %s(%s)"
-        (string_of_expr e) constr clid
+        (string_of_exprs e) constr clid
     | KE_merge (id, es) ->
       Printf.sprintf "merge %s %s"
         id (String.concat " "
               (List.map
                  (fun (constr, e) -> Printf.sprintf "(%s -> %s)"
-                     constr (string_of_expr e)) es))
+                     constr (string_of_exprs e)) es))
 
-  type k_patt =
-    { kpatt_desc: k_patt_desc;
-      kpatt_loc: location; }
-
-  and k_patt_desc =
-    | KP_ident of ident
-    | KP_tuple of ident list
+  and string_of_exprs ?(print_anns=false) es =
+    Printf.sprintf "(%s)" (String.concat "," (List.map (string_of_expr ~print_anns) es))
 
   let rec string_of_patt p =
-    string_of_patt_desc p.kpatt_desc
-
-  and string_of_patt_desc = function
-    | KP_ident id -> id
-    | KP_tuple ids -> Printf.sprintf "(%s)" (String.concat ", " ids)
+    Printf.sprintf "(%s)" (String.concat ", " p)
 
   type k_equation =
-    { keq_patt: k_patt;
-      keq_expr: k_expr; }
+    { keq_patt: ident list;
+      keq_expr: k_expr list;
+      keq_loc: location }
 
   let string_of_equation ?(print_anns=false) eq =
     Printf.sprintf "%s = %s"
       (string_of_patt eq.keq_patt)
-      (string_of_expr ~print_anns eq.keq_expr)
+      (string_of_exprs ~print_anns eq.keq_expr)
 
   (** Variables defined by an equation *)
-  let defined_of_equation eq =
-    match eq.keq_patt.kpatt_desc with
-    | KP_ident id -> [id]
-    | KP_tuple ids -> ids
+  let defined_of_equation eq = eq.keq_patt
 
   type k_node =
     { kn_name: ident;

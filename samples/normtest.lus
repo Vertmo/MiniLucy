@@ -1,16 +1,31 @@
 node test_arrow_clock(x : int; b : bool) returns (z : int when True(b));
 let
   z = (x when True(b)) -> (2 * (x when True(b)));
-tel;
+tel
 
 node test_fby_clock(x : int; b : bool) returns (z : int when True(b));
 let
   z = (0 when True(b)) fby (2 * z);
-tel;
+tel
 
 node test_switch(b : bool) returns (z : int);
 let
   z = switch (b or false)
         (True -> 1)
         (False -> 2);
+tel
+  
+node fby_tuple1 (x : int) returns (y : int; z : int);
+let
+  (y, z) = (0, 0) fby (z, y);
+tel
+
+node control_ite_ite (b1 : bool; b2 : bool; x : int; y : int; z : int) returns (t : int);
+let
+  t = if b1 then (if b2 then x else y) else z;
+tel
+
+node control_ite_fby (b1 : bool; b2 : bool; x : int; y : int; z : int) returns (t : int);
+let
+  t = if b1 then (if b2 then (0 fby x) else (0 fby y)) else z;
 tel

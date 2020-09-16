@@ -48,8 +48,7 @@ let control tys env (ck : clock) (ins : instr) : instr =
       Case (translate_ident env ckid,
             List.assoc ckid tys,
             [constr, [aux ck' ins]])
-    | Ctuple _ -> invalid_arg "control" in
-  match ins with
+  in match ins with
   | StAssign _ -> ins
   | _ -> aux ck ins
 

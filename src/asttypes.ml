@@ -15,34 +15,29 @@ type ty =
   | Tint
   | Treal
   | Tclock of ident
-  | Ttuple of ty list
 
 let rec string_of_ty = function
   | Tbool -> "bool"
   | Tint -> "int"
   | Treal -> "real"
   | Tclock id -> id
-  | Ttuple tys -> Printf.sprintf "(%s)"
-                    (String.concat "," (List.map string_of_ty tys))
+
+and string_of_tys tys =
+  Printf.sprintf "(%s)" (String.concat "," (List.map string_of_ty tys))
 
 type clock =
   | Cbase
   | Con of constr * ident * clock
-  | Ctuple of clock list
 
 let rec string_of_clock = function
   | Cbase -> "."
   | Con (constr, id, ck) ->
     Printf.sprintf "(%s on %s(%s))" (string_of_clock ck) constr id
-  | Ctuple cks ->
-    Printf.sprintf "(%s)" (String.concat "," (List.map string_of_clock cks))
 
 (** Get the "variables" of a clock *)
 let rec clock_vars = function
   | Cbase -> []
   | Con (_, id, ck) -> id::(clock_vars ck)
-  | Ctuple cks ->
-    List.concat (List.map clock_vars cks)
 
 type ann = (ty * clock)
 
@@ -54,21 +49,18 @@ type const =
   | Cint of int
   | Creal of float
   | Cconstr of constr * ident (* constructor * clock type identifier *)
-  | Cnil (* Can convert to the necessary type *)
 
 let string_of_const = function
   | Cbool b -> if b then "true" else "false"
   | Cint i -> string_of_int i
   | Creal f -> string_of_float f
   | Cconstr (c, _) -> c
-  | Cnil -> "nil"
 
 type op =
   | Op_eq | Op_neq | Op_lt | Op_le | Op_gt | Op_ge
   | Op_add | Op_sub | Op_mul | Op_div | Op_mod
   | Op_not
   | Op_and | Op_or | Op_xor
-  | Op_if
 
 let string_of_op = function
   | Op_eq -> "=" | Op_neq -> "<>"
@@ -78,7 +70,6 @@ let string_of_op = function
   | Op_mul -> "*" | Op_div -> "/" | Op_mod -> "mod"
   | Op_not -> "not" | Op_and -> "and"
   | Op_or -> "or" | Op_xor -> "xor"
-  | Op_if -> "if"
 
 let string_of_ident_ann_list l =
   String.concat "; " (List.map (fun (id, ann) ->

@@ -3,8 +3,8 @@
   open Asttypes
   open PMinils.PMinils
 
-  let mk_expr e startp endp = { kexpr_desc = e; kexpr_loc = (startp, endp); kexpr_annot = () }
-  let mk_patt p startp endp = { kpatt_desc = p; kpatt_loc = (startp, endp) }
+  let mk_expr e startp endp = { kexpr_desc = e; kexpr_loc = (startp, endp); kexpr_annot = [] }
+  let mk_eq p e startp endp = { keq_patt = p; keq_expr = e; keq_loc = (startp, endp) }
 
 %}
 
@@ -193,15 +193,15 @@ until_list:
 ;
 
 eq:
-| pattern EQUAL expr SEMICOL
-    { { keq_patt = $1; keq_expr = $3; } }
+| pattern EQUAL expr_list SEMICOL
+    { mk_eq $1 $3 $startpos $endpos }
 ;
 
 pattern:
 | IDENT
-    { mk_patt (KP_ident $1) $startpos $endpos }
-| LPAREN IDENT COMMA ident_comma_list RPAREN
-    { mk_patt (KP_tuple($2::$4)) $startpos $endpos }
+    { [$1] }
+| LPAREN ident_comma_list RPAREN
+    { $2 }
 ;
 
 expr:
@@ -216,50 +216,50 @@ expr:
       $startpos $endpos }
 | IDENT LPAREN expr_comma_list_empty RPAREN EVERY expr
     { mk_expr (KE_app ($1, $3, $6)) $startpos $endpos }
-| IF expr THEN expr ELSE expr
-    { mk_expr (KE_op (Op_if, [$2; $4; $6])) $startpos $endpos }
 | expr PLUS expr
-    { mk_expr (KE_op (Op_add, [$1; $3])) $startpos $endpos }
+    { mk_expr (KE_binop (Op_add, $1, $3)) $startpos $endpos }
 | expr MINUS expr
-    { mk_expr (KE_op (Op_sub, [$1; $3])) $startpos $endpos }
+    { mk_expr (KE_binop (Op_sub, $1, $3)) $startpos $endpos }
 | expr STAR expr
-    { mk_expr (KE_op (Op_mul, [$1; $3])) $startpos $endpos }
+    { mk_expr (KE_binop (Op_mul, $1, $3)) $startpos $endpos }
 | expr SLASH expr
-    { mk_expr (KE_op (Op_div, [$1; $3])) $startpos $endpos }
+    { mk_expr (KE_binop (Op_div, $1, $3)) $startpos $endpos }
 | expr DIV expr
-    { mk_expr (KE_op (Op_div, [$1; $3])) $startpos $endpos }
+    { mk_expr (KE_binop (Op_div, $1, $3)) $startpos $endpos }
 | expr MOD expr
-    { mk_expr (KE_op (Op_mod, [$1; $3])) $startpos $endpos }
+    { mk_expr (KE_binop (Op_mod, $1, $3)) $startpos $endpos }
 | expr COMP expr
-    { mk_expr (KE_op ($2, [$1; $3])) $startpos $endpos }
+    { mk_expr (KE_binop ($2, $1, $3)) $startpos $endpos }
 | expr EQUAL expr
-    { mk_expr (KE_op (Op_eq, [$1; $3])) $startpos $endpos }
+    { mk_expr (KE_binop (Op_eq, $1, $3)) $startpos $endpos }
 | expr NEQ expr
-    { mk_expr (KE_op (Op_neq, [$1; $3])) $startpos $endpos }
+    { mk_expr (KE_binop (Op_neq, $1, $3)) $startpos $endpos }
 | expr AND expr
-    { mk_expr (KE_op (Op_and, [$1; $3])) $startpos $endpos }
+    { mk_expr (KE_binop (Op_and, $1, $3)) $startpos $endpos }
 | expr OR expr
-    { mk_expr (KE_op (Op_or, [$1; $3])) $startpos $endpos }
+    { mk_expr (KE_binop (Op_or, $1, $3)) $startpos $endpos }
 | expr XOR expr
-    { mk_expr (KE_op (Op_xor, [$1; $3])) $startpos $endpos }
-| expr ARROW expr
-    { mk_expr (KE_arrow ($1, $3)) $startpos $endpos }
-| expr FBY expr
-    { mk_expr (KE_fby ($1, $3)) $startpos $endpos }
+    { mk_expr (KE_binop (Op_xor, $1, $3)) $startpos $endpos }
 | MINUS expr
-    { mk_expr (KE_op (Op_sub, [$2])) $startpos $endpos }
+    { mk_expr (KE_unop (Op_sub, $2)) $startpos $endpos }
 | NOT expr
-    { mk_expr (KE_op (Op_not, [$2])) $startpos $endpos }
+    { mk_expr (KE_unop (Op_not, $2)) $startpos $endpos }
+| expr_list ARROW expr_list
+    { mk_expr (KE_arrow ($1, $3)) $startpos $endpos }
+| expr_list FBY expr_list
+    { mk_expr (KE_fby ($1, $3)) $startpos $endpos }
 (* | PRE expr
  *     { mk_expr (KE_pre ($2)) $startpos $endpos } *)
-| LPAREN expr COMMA expr_comma_list RPAREN
-    { mk_expr (KE_tuple ($2::$4)) $startpos $endpos }
-| expr WHEN IDENT LPAREN IDENT RPAREN
+(* | LPAREN expr COMMA expr_comma_list RPAREN
+ *     { mk_expr (KE_tuple ($2::$4)) $startpos $endpos } *)
+| expr_list WHEN IDENT LPAREN IDENT RPAREN
     { mk_expr (KE_when ($1, $3, $5)) $startpos $endpos }
 | MERGE IDENT branch_list
     { mk_expr (KE_merge ($2, $3)) $startpos $endpos }
 | SWITCH expr branch_list
     { mk_expr (KE_switch ($2, $3)) $startpos $endpos }
+| IF expr THEN expr ELSE expr
+    { mk_expr (KE_switch ($2, [("True", [$4]); ("False", [$6])])) $startpos $endpos }
 ;
 
 const:
@@ -288,13 +288,17 @@ expr_comma_list:
 | expr { [$1] }
 ;
 
+expr_list:
+| LPAREN expr_comma_list RPAREN { $2 }
+| expr { [$1] }
+
 branch_list:
 | branch { [$1] }
 | branch branch_list { $1::$2 }
 ;
 
 branch:
-| LPAREN IDENT ARROW expr RPAREN { ($2, $4) }
+| LPAREN IDENT ARROW expr_list RPAREN { ($2, $4) }
 ;
 
 typ:

@@ -54,41 +54,41 @@ let dist_merge ckid branches anns =
         kexpr_annot = [a]; kexpr_loc = dummy_loc }
     ) anns
 
-let rec dist_expr (is_control : bool) (e : k_expr) :
+let rec dist_expr (is_rhs : bool) (is_control : bool) (e : k_expr) :
   (k_expr list * k_equation list * (ident * ann) list) =
   let anns = e.kexpr_annot in
   match e.kexpr_desc with
   | KE_const _ | KE_ident _ ->
     [e], [], []
   | KE_unop (op, e1) ->
-    let e1', eqs1, vs1 = dist_expr false e1 in
+    let e1', eqs1, vs1 = dist_expr false false e1 in
     let e1' = List.hd e1' in
     [{ e with kexpr_desc = KE_unop (op, e1') }], eqs1, vs1
   | KE_binop (op, e1, e2) ->
-    let e1', eqs1, vs1 = dist_expr false e1
-    and e2', eqs2, vs2 = dist_expr false e2 in
+    let e1', eqs1, vs1 = dist_expr false false e1
+    and e2', eqs2, vs2 = dist_expr false false e2 in
     let e1' = List.hd e1' and e2' = List.hd e2' in
     [{ e with kexpr_desc = KE_binop (op, e1', e2') }], eqs1@eqs2, vs1@vs2
   | KE_fby (e0s, es) ->
-    let e0s', eqs1, vs1 = dist_exprs false e0s
-    and es', eqs2, vs2 = dist_exprs false es in
+    let e0s', eqs1, vs1 = dist_exprs false false e0s
+    and es', eqs2, vs2 = dist_exprs false false es in
     let fbys = dist_fby e0s' es' anns in
     let ids = idents_for_anns anns in
     dist_make_vars ids,
     (dist_make_eqs ids fbys)@eqs1@eqs2,
     vs1@vs2@ids
   | KE_arrow (e0s, es) ->
-    let e0s', eqs1, vs1 = dist_exprs false e0s
-    and es', eqs2, vs2 = dist_exprs false es in
+    let e0s', eqs1, vs1 = dist_exprs false false e0s
+    and es', eqs2, vs2 = dist_exprs false false es in
     let arrows = dist_arrow e0s' es' anns in
     let ids = idents_for_anns anns in
     dist_make_vars ids,
     (dist_make_eqs ids arrows)@eqs1@eqs2,
     vs1@vs2@ids
   | KE_switch (e, branches) ->
-    let e', eqs1, vs1 = dist_expr false e
+    let e', eqs1, vs1 = dist_expr false false e
     and branches', eqs2, vs2 = dist_branches branches in
-    let switches = dist_switch e branches anns in
+    let switches = dist_switch (List.hd e') branches' anns in
     if is_control then
       switches, eqs1@eqs2, vs1@vs2
     else let ids = idents_for_anns anns in
@@ -96,11 +96,11 @@ let rec dist_expr (is_control : bool) (e : k_expr) :
       (dist_make_eqs ids switches)@eqs1@eqs2,
       vs1@vs2@ids
   | KE_when (es, constr, ckid) ->
-    let es', eqs1, vs1 = dist_exprs false es in
+    let es', eqs1, vs1 = dist_exprs false false es in
     dist_when constr ckid es' anns, eqs1, vs1
   | KE_merge (ckid, branches) ->
     let branches', eqs1, vs1 = dist_branches branches in
-    let merges = dist_merge ckid branches anns in
+    let merges = dist_merge ckid branches' anns in
     if is_control then
       merges, eqs1, vs1
     else let ids = idents_for_anns anns in
@@ -108,26 +108,29 @@ let rec dist_expr (is_control : bool) (e : k_expr) :
       (dist_make_eqs ids merges)@eqs1,
       vs1@ids
   | KE_app (fid, es, er) ->
-    let es', eqs1, vs1 = dist_exprs false es
-    and er', eqs2, vs2 = dist_expr false er in
-    let ids = idents_for_anns' anns in
-    dist_make_vars ids,
-    { keq_patt = List.map fst ids;
-      keq_expr = [{ kexpr_desc = KE_app (fid, es', List.hd er');
-                    kexpr_annot = anns;
-                    kexpr_loc = dummy_loc }];
-      keq_loc = dummy_loc }::eqs1@eqs2,
-    vs1@vs2@ids
+    let es', eqs1, vs1 = dist_exprs false false es
+    and er', eqs2, vs2 = dist_expr false false er in
+    let app = {  kexpr_desc = KE_app (fid, es', List.hd er');
+                 kexpr_annot = anns; kexpr_loc = dummy_loc } in
+    if is_rhs then
+      [app], eqs1@eqs2, vs1@vs2
+    else
+      let ids = idents_for_anns' anns in
+      dist_make_vars ids,
+      { keq_patt = List.map fst ids;
+        keq_expr = [app];
+        keq_loc = dummy_loc }::eqs1@eqs2,
+      vs1@vs2@ids
 
-and dist_exprs (is_control : bool) (es : k_expr list) =
-  let res = List.map (dist_expr is_control) es in
+and dist_exprs (is_rhs : bool) (is_control : bool) (es : k_expr list) =
+  let res = List.map (dist_expr is_rhs is_control) es in
   (List.concat (List.map (fun (e, _, _) -> e) res),
    List.concat (List.map (fun (_, eq, _) -> eq) res),
    List.concat (List.map (fun (_, _, v) -> v) res))
 
 and dist_branches (branches : (constr * k_expr list) list) =
   let res = List.map (fun (cstr, es) ->
-      let es', eqs, vs = dist_exprs true es in
+      let es', eqs, vs = dist_exprs false true es in
       (cstr, es'), eqs, vs) branches in
   (List.map (fun (e, _, _) -> e) res,
    List.concat (List.map (fun (_, eq, _) -> eq) res),
@@ -153,7 +156,7 @@ let rec combine_for_numstreams (es : k_expr list) (vs : 'a list) =
     (hd, (firstn n vs))::(combine_for_numstreams tl (skipn n vs))
 
 let dist_eq (eq : k_equation) : (k_equation list * (ident * ann) list) =
-  let (es, eqs, vs) = dist_exprs true eq.keq_expr in
+  let (es, eqs, vs) = dist_exprs true true eq.keq_expr in
   let eqs' = combine_for_numstreams es eq.keq_patt in
   (List.map (fun (e, ids) ->
        { keq_patt = ids; keq_expr = [e]; keq_loc = dummy_loc }
@@ -199,29 +202,20 @@ let rec extract_constant e =
   | KE_when ([e], _, _) -> extract_constant e
   | _ -> failwith "Should not happen"
 
-let rec add_whens ty ck e : k_expr =
-  match ck with
-  | Cbase -> e
-  | Con (constr, ckid, ck) ->
-    let e = add_whens ty ck e in
-    { kexpr_desc = KE_when ([e], constr, ckid);
-      kexpr_annot = [(ty, (Con (constr, ckid, ck), None))];
-      kexpr_loc = dummy_loc }
-
 let init_expr ck : k_expr =
   let annot = [(Tbool, (Cbase, None))] in
   { kexpr_desc = KE_fby
-        ([add_whens Tbool ck { kexpr_desc = KE_const (Cbool true);
-                               kexpr_annot = annot; kexpr_loc = dummy_loc }],
-         [add_whens Tbool ck { kexpr_desc = KE_const (Cbool false);
-                               kexpr_annot = annot; kexpr_loc = dummy_loc }]);
+        ([Clockchecker.add_whens Tbool ck { kexpr_desc = KE_const (Cbool true);
+                                            kexpr_annot = annot; kexpr_loc = dummy_loc }],
+         [Clockchecker.add_whens Tbool ck { kexpr_desc = KE_const (Cbool false);
+                                            kexpr_annot = annot; kexpr_loc = dummy_loc }]);
     kexpr_loc = dummy_loc; kexpr_annot = [(Tbool, (ck, None))] }
 
 let delay_expr e ty ck : k_expr =
   { kexpr_desc = KE_fby
-        ([add_whens Tbool ck { kexpr_desc = KE_const (Cint 0);
-                               kexpr_annot = [(ty, (Cbase, None))];
-                               kexpr_loc = dummy_loc }],
+        ([Clockchecker.add_whens Tbool ck { kexpr_desc = KE_const (Cint 0);
+                                            kexpr_annot = [(ty, (Cbase, None))];
+                                            kexpr_loc = dummy_loc }],
          [e]);
     kexpr_annot = [(Tbool, (ck, None))]; kexpr_loc = dummy_loc }
 
@@ -236,10 +230,10 @@ let norm_fby_eq (eq : k_equation) : (k_equation list * (ident * ann) list) =
      { eq with keq_expr = [{ kexpr_desc = KE_switch ({ kexpr_desc = KE_ident xinit;
                                                        kexpr_annot = [(Tbool, (ck, None))];
                                                        kexpr_loc = dummy_loc },
-                                                     [("False", [{ kexpr_desc = KE_ident px;
+                                                     [("True", [e0]);
+                                                      ("False", [{ kexpr_desc = KE_ident px;
                                                                   kexpr_annot = [(Tbool, (ck, None))];
-                                                                  kexpr_loc = dummy_loc }]);
-                                                      ("True", [e0])]);
+                                                                   kexpr_loc = dummy_loc }])]);
                              kexpr_annot = [(ty, (ck, None))];
                              kexpr_loc = dummy_loc }] }],
     [ (xinit, (Tbool, ck)); (px, (ty, ck)) ]
@@ -250,7 +244,7 @@ let norm_fby_eq (eq : k_equation) : (k_equation list * (ident * ann) list) =
      { eq with keq_expr = [{ kexpr_desc = KE_switch ({ kexpr_desc = KE_ident xinit;
                                                        kexpr_annot = [(Tbool, (ck, None))];
                                                        kexpr_loc = dummy_loc },
-                                                     [("False", [e1]); ("True", [e0])]);
+                                                     [("True", [e0]); ("False", [e1])]);
                              kexpr_annot = [(ty, (ck, None))];
                              kexpr_loc = dummy_loc }] }],
     [ (xinit, (Tbool, ck)) ]
@@ -272,7 +266,7 @@ let rec tr_lexp (e : k_expr) : n_expr =
     | KE_unop (op, e1) -> NE_op (op, [tr_lexp e1])
     | KE_binop (op, e1, e2) -> NE_op (op, [tr_lexp e1; tr_lexp e2])
     | KE_when ([e], constr, ckid) -> NE_when (tr_lexp e, constr, ckid)
-    | _ -> invalid_arg "tr_lexp"
+    | _ -> invalid_arg (Printf.sprintf "tr_lexp : %s" (Kernelizer.CMinils.string_of_expr e))
   in { nexpr_desc = desc; nexpr_ty = ty; nexpr_clock = ck }
 
 let tr_lexps = List.map tr_lexp
@@ -295,8 +289,8 @@ let rec tr_cexp (e : k_expr) : n_cexpr =
 
 let tr_eq (e : k_equation) : n_equation =
   match e.keq_patt, (List.hd e.keq_expr).kexpr_desc with
-    | [x], KE_fby ([{ kexpr_desc = KE_const c}], [e]) ->
-      NQ_fby (x, c, tr_lexp e)
+    | [x], KE_fby ([e0], [e]) when is_constant e0 ->
+      NQ_fby (x, extract_constant e0, tr_lexp e)
     | xs, KE_app (f, es, { kexpr_desc = KE_ident i; kexpr_annot = [(_, (ck, _))] }) ->
       NQ_app (xs, f, tr_lexps es, i, ck)
     | [x], _ ->

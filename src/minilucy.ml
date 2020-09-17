@@ -7,7 +7,7 @@ let usage = "usage: " ^ Sys.argv.(0) ^
              [-interpret <name> <k>]\
              <input_file>"
 
-type step = Parse | Kernelize | Check | Norm | Translate | Generate
+type step = Parse | Kernelize | Check | Norm | Sched | Translate | Generate
 let asserts = ref false
 let targetAvr = ref false
 
@@ -27,6 +27,8 @@ let speclist = [
    ":check the program, and print it with annotated clocks");
   ("-norm", Arg.Unit (fun () -> step := Norm),
    ": print the normalized program");
+  ("-sched", Arg.Unit (fun () -> step := Sched),
+  ": print the scheduled program");
   ("-translate", Arg.Unit (fun () -> step := Translate),
    ": print the program translated to the Obc language");
   ("-generate", Arg.Unit (fun () -> step := Generate),
@@ -109,9 +111,16 @@ let _ =
   (* Normalize *)
   let nfile = Normalizer.norm_file file in
   (* if !asserts then assert (Normalizer.equiv_norm_file cfile nfile); *)
+
+  if (step = Norm) then (
+    print_endline (NMinils.string_of_file nfile);
+    exit 0
+  );
+
   let nfile = Scheduler.schedule_file nfile in
   if !asserts then assert (Scheduler.schedule_is_correct_file nfile);
-  if (step = Norm) then (
+
+  if (step = Sched) then (
     print_endline (NMinils.string_of_file nfile);
     exit 0
   );

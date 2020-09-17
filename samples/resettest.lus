@@ -18,3 +18,12 @@ let
     y = test2();
   every (true when True(b));
 tel;
+  
+node test4(b : bool) returns (y : int);
+let
+  reset
+    reset
+      y = 0 fby (y + 1);
+    every b;
+  every false;
+tel

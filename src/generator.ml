@@ -62,7 +62,13 @@ let rec generate_instr instances tys outputs : Obc.instr -> MicroC.instr list =
          else Assign (Ident id, e)) ids oids)
   | Case (e, ty, is) ->
     let constrs = List.map fst is in
-    if constrs = [cfalse;ctrue]
+    if constrs = [ctrue;cfalse]
+    then [If (generate_expr outputs e,
+              List.flatten (List.map (generate_instr instances tys outputs)
+                              (snd (List.nth is 0))),
+              List.flatten (List.map (generate_instr instances tys outputs)
+                              (snd (List.nth is 1))))]
+    else if constrs = [cfalse;ctrue]
     then [If (generate_expr outputs e,
               List.flatten (List.map (generate_instr instances tys outputs)
                               (snd (List.nth is 1))),

@@ -11,23 +11,21 @@ let def_vars = function
 
 (** Get the variables used by an expression *)
 let rec expr_vars (e : n_expr) =
-  (match e.nexpr_desc with
-   | NE_const _ -> []
-   | NE_ident id -> [id]
-   | NE_op (_, es) -> List.flatten (List.map expr_vars es)
-   | NE_when (e, _, clid) -> clid::(expr_vars e)
-  )@(clock_vars e.nexpr_clock)
+  match e.nexpr_desc with
+  | NE_const _ -> []
+  | NE_ident id -> [id]
+  | NE_op (_, es) -> List.flatten (List.map expr_vars es)
+  | NE_when (e, _, clid) -> clid::(expr_vars e)
 
 let rec cexpr_vars (e : n_cexpr) =
-  (match e.ncexpr_desc with
-   | NCE_switch (e, es) ->
-     (expr_vars e)@(List.flatten (List.map (fun (_, e) -> cexpr_vars e) es))
-   | NCE_merge (id, es) ->
-     id::(List.flatten (List.map (fun (_, e) -> cexpr_vars e) es))
-   | NCE_expr e' ->
-     (expr_vars { nexpr_desc = e';
-                  nexpr_ty = e.ncexpr_ty; nexpr_clock = e.ncexpr_clock })
-  )@(clock_vars e.ncexpr_clock)
+  match e.ncexpr_desc with
+  | NCE_switch (e, es) ->
+    (expr_vars e)@(List.flatten (List.map (fun (_, e) -> cexpr_vars e) es))
+  | NCE_merge (id, es) ->
+    id::(List.flatten (List.map (fun (_, e) -> cexpr_vars e) es))
+  | NCE_expr e' ->
+    (expr_vars { nexpr_desc = e';
+                 nexpr_ty = e.ncexpr_ty; nexpr_clock = e.ncexpr_clock })
 
 (** Get the variables used by an equation *)
 let used_vars = function

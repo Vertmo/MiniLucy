@@ -258,8 +258,8 @@ expr:
     { mk_expr (KE_merge ($2, $3)) $startpos $endpos }
 | SWITCH expr branch_list
     { mk_expr (KE_switch ($2, $3)) $startpos $endpos }
-| IF expr THEN expr ELSE expr
-    { mk_expr (KE_switch ($2, [("True", [$4]); ("False", [$6])])) $startpos $endpos }
+| IF expr THEN expr_list ELSE expr_list
+    { mk_expr (KE_switch ($2, [("True", $4); ("False", $6)])) $startpos $endpos }
 ;
 
 const:

@@ -149,36 +149,6 @@ let rec elab_expr (nodes : (ident * TPMinils.p_node) list)
     { kexpr_desc = KE_binop (op, e1', e2');
       kexpr_annot = [type_op op [ty1;ty2] loc];
       kexpr_loc = loc }
-  | KE_app (id, es, er) ->
-    let es' = List.map (elab_expr nodes vars clocks) es in
-    let er' = elab_expr nodes vars clocks er in
-    (* Check that reset stream is bool *)
-    if(er'.kexpr_annot <> [Tbool])
-    then raise (TypeError
-                  (Printf.sprintf
-                     "The reset stream should be of type bool, found %s"
-                     (string_of_tys er'.kexpr_annot), er.kexpr_loc));
-    (* Find the node *)
-    let node = try List.assoc id nodes
-      with _ -> raise (TypeError
-                         (Printf.sprintf "Node %s not found in file"
-                            id, e.kexpr_loc)) in
-    (* Check input types *)
-    let expected = List.map (fun (_, (ty, _)) -> ty) node.pn_input
-    and actual = types_of es' in
-
-    if actual <> expected
-    then raise
-        (TypeError
-           (Printf.sprintf
-              "Wrong input type for instantiation %s, expected %s, found %s"
-              id (string_of_tys expected) (string_of_tys actual),
-                 e.kexpr_loc));
-
-    (* Output type *)
-    let outy = List.map (fun (_, (ty, _)) -> ty) node.pn_output in
-    { kexpr_desc = KE_app (id, es', er');
-      kexpr_annot = outy; kexpr_loc = loc }
   | KE_fby (e0s, es) ->
     let e0s' = List.map (elab_expr nodes vars clocks) e0s
     and es' = List.map (elab_expr nodes vars clocks) es in
@@ -289,6 +259,36 @@ let rec elab_expr (nodes : (ident * TPMinils.p_node) list)
                   (string_of_tys tys'), e.kexpr_loc))) branches';
     { kexpr_desc = KE_merge (cl, branches');
       kexpr_annot = tys; kexpr_loc = loc }
+  | KE_app (id, es, er) ->
+    let es' = List.map (elab_expr nodes vars clocks) es in
+    let er' = elab_expr nodes vars clocks er in
+    (* Check that reset stream is bool *)
+    if(er'.kexpr_annot <> [Tbool])
+    then raise (TypeError
+                  (Printf.sprintf
+                     "Reset expr should be of type bool, found %s"
+                     (string_of_tys er'.kexpr_annot), er.kexpr_loc));
+    (* Find the node *)
+    let node = try List.assoc id nodes
+      with _ -> raise (TypeError
+                         (Printf.sprintf "Node %s not found in file"
+                            id, e.kexpr_loc)) in
+    (* Check input types *)
+    let expected = List.map (fun (_, (ty, _)) -> ty) node.pn_input
+    and actual = types_of es' in
+
+    if actual <> expected
+    then raise
+        (TypeError
+           (Printf.sprintf
+              "Wrong input type for instantiation %s, expected %s, found %s"
+              id (string_of_tys expected) (string_of_tys actual),
+                 e.kexpr_loc));
+
+    (* Output type *)
+    let outy = List.map (fun (_, (ty, _)) -> ty) node.pn_output in
+    { kexpr_desc = KE_app (id, es', er');
+      kexpr_annot = outy; kexpr_loc = loc }
 
 (** Get the type expected for a pattern [pat] *)
 let get_pattern_type (vars : (ident * ty) list) pat loc =
@@ -315,8 +315,14 @@ let rec elab_instr nodes vars clocks (ins : p_instr) : TPMinils.p_instr =
   match ins with
   | Eq eq -> Eq (elab_equation nodes vars clocks eq)
   | Reset (ins, er) ->
-    Reset (elab_instrs nodes vars clocks ins,
-           elab_expr nodes vars clocks er)
+    let ins' = elab_instrs nodes vars clocks ins
+    and er' = elab_expr nodes vars clocks er in
+    if er'.kexpr_annot <> [Tbool] then
+      raise (TypeError
+               (Printf.sprintf
+                  "Reset expr should be of type bool, found %s"
+                  (string_of_tys er'.kexpr_annot), er.kexpr_loc));
+    Reset (ins', er')
   | _ -> failwith "TODO elab_instr"
 and elab_instrs nodes vars clocks ins =
   List.map (elab_instr nodes vars clocks) ins
@@ -334,7 +340,7 @@ and get_def_instrs (ins : p_instr list) =
 (** Check that the node [n] is correctly typed *)
 let elab_node (nodes: (ident * TPMinils.p_node) list) clocks (n : p_node) :
   TPMinils.p_node =
-  let out_streams = (n.pn_local@n.pn_output) in
+  let out_streams = (n.pn_output@n.pn_local) in
   let all_streams = (n.pn_input@out_streams) in
 
   (* Check that there are no duplicate stream names *)

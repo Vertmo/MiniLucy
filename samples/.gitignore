@@ -14,3 +14,4 @@ sugartest.c
 uselib.c
 iotest.c
 disptest.c
+resettest.c

@@ -24,8 +24,7 @@ let rec expr_vars (e : k_expr) =
      List.concat ((expr_vars e)::(List.map (fun (_, e) -> exprs_vars e) es))
    | KE_when (e, _, id) -> id::(exprs_vars e)
    | KE_merge (id, es) ->
-     id::(List.concat (List.map (fun (_, e) -> exprs_vars e) es))
-  )@(List.concat (List.map (fun (_, (ck, _)) -> clock_vars ck) e.kexpr_annot))
+     id::(List.concat (List.map (fun (_, e) -> exprs_vars e) es)))
 and exprs_vars es = List.concat (List.map expr_vars es)
 
 module IdentMap = Map.Make(String)

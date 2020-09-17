@@ -2,41 +2,67 @@ type c1 = A + B + C;
 type c2 = B + A;
 type c3 = D + E + F;
 
-node test_when(b : bool; c : bool when True(b)) 
-returns (z : int when True(b) when True(c));
+node test_const1() returns (z : int);
 let
-  z = (1 when True(b)) when True(c);
+  z = 0;
+tel
+
+node test_const2() returns (b : bool; z : int when True(b));
+let
+  b = true;
+  z = 0;
+tel
+
+node test_op(b : bool) returns (z : int when True(b));
+let
+  z = 1 + 2;
 tel;
-  
+
+node test_when(b : bool; x : int when True(b))
+returns (c : bool; z : int when True(c));
+let
+  c = not b;
+  z = 2;
+tel;
+
+node test_when2(b : bool; c : bool when True(b))
+returns (z : int when True(b) when True(c));
+var y : int when True(b) when True(c);
+let
+  (y, z) = ((1 when True(b)), 2) when True(c);
+tel;
+
 node test_when_not(b : bool) returns (z : int when False(b));
 let
   z = 1 when False(b);
 tel;
-  
-node test_op(b : bool) returns (z : int when True(b));
-var x : int when True(b); y : int when True(b);
+
+node test_var(x : int) returns (b : bool; z : int when True(b));
 let
-  x = 1;  -- Implicit subclocking for constants
-  z = x + y;
-  y = 2;
-tel;
-  
-node test_app0(b1 : bool; c1 : bool) returns (z : int when True(c1) when True(b1));
-let
-  z = test_op(b1 when True(c1));
-tel;
-  
-node test_tuple(b : bool; c : bool) 
-returns (x : int when True(b); y : int when True(c));
-let
-  (x, y) = (1, 2);
-tel;
-  
+  b = true;
+  z = x when True(b);
+tel
+
+-- node test_app0(b1 : bool; c1 : bool) returns (z : int when True(c1) when True(b1));
+-- let
+--   z = test_op(b1 when True(c1));
+-- tel;
+
 node test_fby(b : bool) returns (x : int when True(b));
 let
   x = 1 fby x;
 tel;
-  
+
+node test_arrow(b : bool) returns (x : int when True(b));
+let
+  x = 1 -> 2;
+tel;
+
+node test_ite(b : bool) returns (x : int when True(b); y : int when True(b));
+let
+  (x, y) = if (false fby true) then (1,2) else (3,4);
+tel;
+
 node test_merge(b : bool) returns (x : int);
 var t1 : int when True(b); t2 : int when False(b);
 let
@@ -44,25 +70,31 @@ let
   t2 = 2;
   x = merge b (True -> t1) (False -> t2);
 tel;
-  
-node test_app(b1 : bool; c1 : bool when True(b1)) 
-returns (z : int when True(b1) when True(c1));
+
+node test_app(b1 : bool; c1 : int when True(b1))
+returns (b2 : bool; z : int when True(b2));
 let
-  z = test_when(b1, c1);
+  (b2, z) = test_when(test_when(b1, c1));
 tel;
-  
-node test_app2(b1 : bool; b2 : bool; c1 : bool when True(b1)) 
-returns (z : int when True(b1) when True(c1));
-let
-  z = test_when(b1, c1) every b2;
-tel;
-  
+
+-- node test_appbad1(b1 : bool; c1 : bool when True(b1); d1 : int when True(b1))
+-- returns (b2 : bool; z : int when True(b2));
+-- let
+--   (b2, z) = test_when(c1, d1);
+-- tel
+
+-- node test_appbad2(b1 : bool; c1 : int when True(b1))
+-- returns (b2 : bool; z : int when True(b1));
+-- let
+--   (b2, z) = test_when(b1, c1) every b1;
+-- tel;
+
 node test_nary1(a : c1) returns (x : int when A(a));
 let
   x = 1;
 tel;
-  
+
 node test_merge_nary(a : c3) returns (x : int);
 let
-  x = merge a (E -> 2) (D -> 1) (F -> 3); 
+  x = merge a (E -> 2) (D -> 1) (F -> 3);
 tel;

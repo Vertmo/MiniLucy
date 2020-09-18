@@ -337,6 +337,25 @@ let rec get_def_instr (i : p_instr) : ident list =
 and get_def_instrs (ins : p_instr list) =
   List.concat (List.map get_def_instr ins)
 
+(** Check a clock in a typing env *)
+let check_clock clocks (n : p_node) (vars : (ident * ty) list) ck =
+  let rec aux ck =
+    match ck with
+    | Cbase -> ()
+    | Con (constr, idck, ck) ->
+      aux ck;
+      let ckt = (try (List.assoc idck vars)
+                 with _ ->
+                   raise (TypeError
+                            (Printf.sprintf "Clock %s not found in node %s"
+                               idck n.pn_name, n.pn_loc))) in
+      let constrs = constrs_of_clock clocks n.pn_loc ckt in
+      if not (List.mem constr constrs)
+      then raise (TypeError
+                    (Printf.sprintf "%s is not a constructor of %s"
+                     constr (string_of_ty ckt), n.pn_loc))
+  in aux ck
+
 (** Check that the node [n] is correctly typed *)
 let elab_node (nodes: (ident * TPMinils.p_node) list) clocks (n : p_node) :
   TPMinils.p_node =
@@ -361,18 +380,10 @@ let elab_node (nodes: (ident * TPMinils.p_node) list) clocks (n : p_node) :
                                id n.pn_name, n.pn_loc)));
 
   (* Check that all declared types are using correct clocks *)
-  ignore (List.fold_left (fun streams (id, (ty, ck)) ->
-      match ck with
-      | Cbase -> (id, ty)::streams
-      | Con (_, idck, _) ->
-        let ckt =
-          (try (List.assoc idck streams)
-           with _ -> raise (TypeError
-                              (Printf.sprintf "Clock %s not found in node %s"
-                                 idck n.pn_name, n.pn_loc))) in
-        ignore (constrs_of_clock clocks n.pn_loc ckt);
-        (id, ty)::streams
-    ) [] all_streams);
+  let idty = List.map (fun (id, (ty, _)) -> (id, ty)) in
+  List.iter (fun (id, (_, ck)) -> check_clock clocks n (idty n.pn_input) ck) n.pn_input;
+  List.iter (fun (id, (_, ck)) -> check_clock clocks n (idty (n.pn_input@n.pn_output)) ck) n.pn_output;
+  List.iter (fun (id, (_, ck)) -> check_clock clocks n (idty (n.pn_input@n.pn_output@n.pn_local)) ck) n.pn_local;
 
   (* Check that all the streams are defined *)
   let expected = List.sort String.compare (List.map fst out_streams)
@@ -404,16 +415,16 @@ let elab_file (f : p_file) : TPMinils.p_file =
       pf_nodes = List.map snd (List.rev nodes); }
   with
   | UnexpectedEquationError (id, loc) ->
-    Printf.printf "Type checking error : UnexpectedEquation for %s at %s\n"
+    Printf.eprintf "Type checking error : UnexpectedEquation for %s at %s\n"
       id (string_of_loc loc); exit 1
   | MissingEquationError (id, loc) ->
-    Printf.printf "Type checking error : MissingEquation for %s at %s\n"
+    Printf.eprintf "Type checking error : MissingEquation for %s at %s\n"
       id (string_of_loc loc); exit 1
   | TypeError (msg, loc) ->
-    Printf.printf "Type checking error : %s at %s\n"
+    Printf.eprintf "Type checking error : %s at %s\n"
       msg (string_of_loc loc); exit 1
   | MissingHintError loc ->
-    Printf.printf "Type checking error : Could not infer type of nil at %s"
+    Printf.eprintf "Type checking error : Could not infer type of nil at %s"
       (string_of_loc loc); exit 1
 
 let type_file (f : p_file) : TPMinils.p_file =

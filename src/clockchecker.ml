@@ -121,7 +121,11 @@ let unify_sclock loc (ck1 : sclock) (ck2 : sclock) =
 let unify_nsclock loc (ck1, id1) (ck2, id2) =
   unify_sclock loc ck1 ck2;
   match id1, id2 with
-  | Some id1, Some id2 -> unify_ident id1 id2
+  | Some id1, Some id2 ->
+    (try (unify_ident id1 id2)
+     with UnifError (id1, id2) ->
+       raise (ClockError (Printf.sprintf "could not unify %s and %s"
+                            (string_of_instident id1) (string_of_instident id2), loc)))
   | _ -> ()
 
 (** Instantiate an identifier *)
@@ -312,15 +316,41 @@ let rec elab_instr nodes vars (ins : p_instr) : CPMinils.p_instr =
 and elab_instrs nodes vars ins =
   List.map (elab_instr nodes vars) ins
 
+(** Check a clock in a clocking env *)
+let check_clock (n : p_node) vars ck =
+  let error idck ck1 ck2 =
+    raise (ClockError
+             (Printf.sprintf "in %s, %s should be on %s, %s found instead"
+                (string_of_clock ck) idck (string_of_clock ck1) (string_of_clock ck2), n.pn_loc)) in
+  let rec aux ck =
+    match ck with
+    | Cbase -> ()
+    | Con (_, idck, ck) ->
+      aux ck;
+      let ck' = List.assoc idck vars in
+      if (ck <> ck') then error idck ck' ck
+  in aux ck
+
 (** Check the clocks for the node [f] *)
 let elab_node (nodes : (ident * CPMinils.p_node) list) (n : p_node) : CPMinils.p_node =
-  let streams = List.map (fun (id, (ty, ck)) -> (id, ck))
-      (n.pn_input@n.pn_local@n.pn_output) in
+  let idck = List.map (fun (id, (_, ck)) -> (id, ck)) in
+  let in_vars = idck n.pn_input
+  and inout_vars = idck (n.pn_input@n.pn_output)
+  and vars = idck (n.pn_input@n.pn_output@n.pn_local) in
+
+  (* check clocks *)
+  List.iter (fun (_, (_, ck)) -> check_clock n in_vars ck) n.pn_input;
+  List.iter (fun (_, (_, ck)) -> check_clock n inout_vars ck) n.pn_output;
+  List.iter (fun (_, (_, ck)) -> check_clock n vars ck) n.pn_local;
+
+  (* elab instructions *)
+  let instrs' = elab_instrs nodes vars n.pn_instrs in
+
   { pn_name = n.pn_name;
     pn_input = n.pn_input;
     pn_output = n.pn_output;
     pn_local = n.pn_local;
-    pn_instrs = elab_instrs nodes streams n.pn_instrs;
+    pn_instrs = instrs';
     pn_loc = n.pn_loc }
 
 (** Check the clocks for the file [f] *)
@@ -332,6 +362,6 @@ let elab_file (f : p_file) : CPMinils.p_file =
                   (n.pn_name, (elab_node env n))::env) [] f.pf_nodes))
     with
     | ClockError (msg, loc) ->
-      Printf.printf "Clock checking error : %s at %s\n"
+      Printf.eprintf "Clock checking error : %s at %s\n"
         msg (string_of_loc loc); exit 1 in
   { pf_nodes = nodes; pf_clocks = f.pf_clocks }

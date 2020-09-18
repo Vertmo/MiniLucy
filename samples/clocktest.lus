@@ -7,40 +7,40 @@ let
   z = 0;
 tel
 
-node test_const2() returns (b : bool; z : int when True(b));
+node test_const2() returns (b : bool; z : int when b);
 let
   b = true;
   z = 0;
 tel
 
-node test_op(b : bool) returns (z : int when True(b));
+node test_op(b : bool) returns (z : int when b);
 let
   z = 1 + 2;
 tel;
 
-node test_when(b : bool; x : int when True(b))
-returns (c : bool; z : int when True(c));
+node test_when(b : bool; x : int when b)
+returns (c : bool; z : int when c);
 let
   c = not b;
   z = 2;
 tel;
 
-node test_when2(b : bool; c : bool when True(b))
-returns (z : int when True(b) when True(c));
-var y : int when True(b) when True(c);
+node test_when2(b : bool; c : bool when b)
+returns (z : int when b when c);
+var y : int when b when c;
 let
-  (y, z) = ((1 when True(b)), 2) when True(c);
+  (y, z) = ((1 when b), 2) when c;
 tel;
 
-node test_when_not(b : bool) returns (z : int when False(b));
+node test_when_not(b : bool) returns (z : int when not b);
 let
-  z = 1 when False(b);
+  z = 1 when not b;
 tel;
 
-node test_var(x : int) returns (b : bool; z : int when True(b));
+node test_var(x : int) returns (b : bool; z : int when b);
 let
   b = true;
-  z = x when True(b);
+  z = x when b;
 tel
 
 -- node test_app0(b1 : bool; c1 : bool) returns (z : int when True(c1) when True(b1));
@@ -48,31 +48,31 @@ tel
 --   z = test_op(b1 when True(c1));
 -- tel;
 
-node test_fby(b : bool) returns (x : int when True(b));
+node test_fby(b : bool) returns (x : int when b);
 let
   x = 1 fby x;
 tel;
 
-node test_arrow(b : bool) returns (x : int when True(b));
+node test_arrow(b : bool) returns (x : int when b);
 let
   x = 1 -> 2;
 tel;
 
-node test_ite(b : bool) returns (x : int when True(b); y : int when True(b));
+node test_ite(b : bool) returns (x : int when b; y : int when b);
 let
   (x, y) = if (false fby true) then (1,2) else (3,4);
 tel;
 
 node test_merge(b : bool) returns (x : int);
-var t1 : int when True(b); t2 : int when False(b);
+var t1 : int when b; t2 : int when not b;
 let
   t1 = 1;
   t2 = 2;
   x = merge b (True -> t1) (False -> t2);
 tel;
 
-node test_app(b1 : bool; c1 : int when True(b1))
-returns (b2 : bool; z : int when True(b2));
+node test_app(b1 : bool; c1 : int when b1)
+returns (b2 : bool; z : int when b2);
 let
   (b2, z) = test_when(test_when(b1, c1));
 tel;

@@ -17,7 +17,7 @@
 	"else", ELSE;
   "every", EVERY;
   "fby", FBY;
-	"false", CONST_BOOL(false);
+	"false", FALSE;
 	"if", IF;
   "in", IN;
 	"int", INT;
@@ -35,7 +35,7 @@
 	"tel", TEL;
 	"then", THEN;
   "type", TYPE;
-	"true", CONST_BOOL(true);
+	"true", TRUE;
   "until", UNTIL;
 	"var", VAR;
   "when", WHEN;
@@ -61,6 +61,8 @@ rule token = parse
   | "--" [^ '\n']* ['\n']
       { new_line lexbuf; token lexbuf }
   | "/*"
+      { comment lexbuf; token lexbuf }
+  | "(*"
       { comment lexbuf; token lexbuf }
   | ident
       { id_or_keyword (lexeme lexbuf) }
@@ -109,6 +111,7 @@ rule token = parse
 
 and comment = parse
   | "*/" { () }
+  | "*)" { () }
   | '\n' { new_line lexbuf; comment lexbuf }
   | _    { comment lexbuf }
   | eof  { raise (Lexical_error "unterminated comment") }

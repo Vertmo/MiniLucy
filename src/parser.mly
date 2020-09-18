@@ -15,7 +15,7 @@
 %token COLON
 %token COMMA
 %token <Asttypes.op> COMP
-%token <bool> CONST_BOOL
+%token TRUE FALSE
 %token <int> CONST_INT
 %token <float> CONST_REAL
 %token DIV
@@ -103,15 +103,15 @@ node_decs:
 
 
 node:
-| NODE IDENT LPAREN in_params RPAREN
-  RETURNS LPAREN out_params RPAREN SEMICOL
+| NODE IDENT LPAREN in_params RPAREN SEMICOL?
+  RETURNS LPAREN out_params RPAREN SEMICOL?
   local_params
-  LET instr_list TEL semi_opt
+  LET instr_list TEL SEMICOL?
     { { pn_name = $2;
 	pn_input = $4;
-	pn_output = $8;
-	pn_local = $11;
-	pn_instrs = $13;
+	pn_output = $9;
+	pn_local = $12;
+	pn_instrs = $14;
 	pn_loc = ($startpos, $endpos) } }
 ;
 
@@ -131,7 +131,7 @@ out_params:
 local_params:
 | /* empty */
     { [] }
-| VAR param_list_semicol
+| VAR param_list_semicol SEMICOL?
     { $2 }
 ;
 
@@ -198,9 +198,7 @@ eq:
 ;
 
 pattern:
-| IDENT
-    { [$1] }
-| LPAREN ident_comma_list RPAREN
+| LPAREN? ident_comma_list RPAREN?
     { $2 }
 ;
 
@@ -250,10 +248,9 @@ expr:
     { mk_expr (KE_fby ($1, $3)) $startpos $endpos }
 (* | PRE expr
  *     { mk_expr (KE_pre ($2)) $startpos $endpos } *)
-(* | LPAREN expr COMMA expr_comma_list RPAREN
- *     { mk_expr (KE_tuple ($2::$4)) $startpos $endpos } *)
-| expr_list WHEN IDENT LPAREN IDENT RPAREN
-    { mk_expr (KE_when ($1, $3, $5)) $startpos $endpos }
+| expr_list WHEN constr_ckid
+    { let (constr, ckid) = $3 in
+      mk_expr (KE_when ($1, constr, ckid)) $startpos $endpos }
 | MERGE IDENT branch_list
     { mk_expr (KE_merge ($2, $3)) $startpos $endpos }
 | SWITCH expr branch_list
@@ -263,8 +260,8 @@ expr:
 ;
 
 const:
-| CONST_BOOL
-    { Cbool $1 }
+| TRUE { Cbool true }
+| FALSE { Cbool false }
 | CONST_INT
     { Cint $1 }
 | CONST_REAL
@@ -299,6 +296,8 @@ branch_list:
 
 branch:
 | LPAREN IDENT ARROW expr_list RPAREN { ($2, $4) }
+| LPAREN TRUE ARROW expr_list RPAREN { ("True", $4) }
+| LPAREN FALSE ARROW expr_list RPAREN { ("False", $4) }
 ;
 
 typ:
@@ -308,19 +307,19 @@ typ:
 | IDENT  { Tclock ($1) }
 ;
 
+constr_ckid:
+| IDENT LPAREN IDENT RPAREN { ($1, $3) }
+| IDENT { ("True", $1) }
+| NOT IDENT { ("False", $2) }
+;
+
 clock:
-| IDENT LPAREN IDENT RPAREN { Con ($1, $3, Cbase) }
-| clock WHEN IDENT LPAREN IDENT RPAREN { Con ($3, $5, $1) }
+| constr_ckid { let (constr, ckid) = $1 in Con (constr, ckid, Cbase) }
+| clock WHEN constr_ckid { let (constr, ckid) = $3 in Con (constr, ckid, $1) }
 ;
 
 
 annot:
 | typ { ($1, Cbase) }
 | typ WHEN clock { ($1, $3) }
-;
-
-semi_opt:
-    { () }
-| SEMICOL
-    { () }
 ;

@@ -233,8 +233,9 @@
 				"returns" "tel" "type" "var" "if" "with"
             "package" "model" "body" "uses" "provides"
 				"then" "else" "and" "or" "xor" "assert" "with" "struct"
-				"pre" "not" "when"
+				"pre" "not" "when" "match"
         "reset" "every"
+        "switch" "end"
 				"current") 'words))		0 ,kw t)
 
 	;; NB: we need to do this 'cause keywords may be highlighted in comments

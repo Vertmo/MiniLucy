@@ -39,6 +39,7 @@
   "until", UNTIL;
 	"var", VAR;
   "when", WHEN;
+  "with", WITH;
   "xor", XOR;
       ];
     fun s ->

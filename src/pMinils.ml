@@ -24,6 +24,7 @@ module PMINILS(A : Annotations) = struct
     | Eq of k_equation
     | Automaton of (constr * p_let list * p_instr list * p_until list) list
     | Reset of (p_instr list * k_expr)
+    | Switch of (k_expr * (constr * p_instr list) list)
 
   let rec string_of_instr ?(print_anns=false) level = function
     | Eq eq -> Printf.sprintf "%s%s;" (indent level) (string_of_equation ~print_anns eq)
@@ -32,13 +33,22 @@ module PMINILS(A : Annotations) = struct
         (String.concat "\n" (List.map (fun (c, lets, ins, untils) ->
              Printf.sprintf "%s| %s ->\n%s\n%s\n%s" (indent level) c
                (String.concat "\n" (List.map (string_of_let ~print_anns (level+1)) lets))
-               (String.concat "\n" (List.map (string_of_instr ~print_anns (level+1)) ins))
+               (string_of_instrs ~print_anns (level+1) ins)
                (String.concat "\n" (List.map (string_of_until ~print_anns (level+1)) untils)))
              branches))
     | Reset (ins, er) ->
       Printf.sprintf "%sreset\n%s\n%severy %s;" (indent level)
-        (String.concat "\n" (List.map (string_of_instr ~print_anns (level + 1)) ins))
+        (string_of_instrs ~print_anns (level + 1) ins)
         (indent level) (string_of_expr er)
+    | Switch (e, branches) ->
+      Printf.sprintf "%sswitch %s\n%s\n%send;" (indent level) (string_of_expr e)
+        (String.concat "\n" (List.map (fun (c, ins) ->
+             Printf.sprintf "%s| %s -> \n%s" (indent level) c
+               (string_of_instrs ~print_anns (level+1) ins))
+             branches))
+        (indent level)
+  and string_of_instrs ?(print_anns=false) level ins =
+    String.concat "\n" (List.map (string_of_instr ~print_anns level) ins)
 
   (** Variables defined by an instruction *)
   let rec defined_of_instr = function
@@ -47,9 +57,13 @@ module PMINILS(A : Annotations) = struct
       (* If the program is well typed, all the branches
          define the same equations left-hand-sides *)
       let (_, _, is, _) = List.hd brs in
-      List.concat (List.map defined_of_instr is)
-    | Reset (is, _) ->
-      List.concat (List.map defined_of_instr is)
+      defined_of_instrs is
+    | Reset (is, _) -> defined_of_instrs is
+    | Switch (_, brs) ->
+      let (_, is) = List.hd brs in
+      defined_of_instrs is
+  and defined_of_instrs is =
+    List.concat (List.map defined_of_instr is)
 
   type p_node =
     { pn_name: ident;

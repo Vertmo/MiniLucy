@@ -1,0 +1,10 @@
+type t1 = A + B + C;
+
+node test1(x : t1) returns (y : int);
+let
+  switch x
+  | A -> y = 0;
+  | B -> y = 1;
+  | C -> y = 2;
+  end;
+tel

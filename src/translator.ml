@@ -32,7 +32,7 @@ let rec translate_cexpr tys env (x : ident) (e : n_cexpr) : instr =
         { nexpr_desc = e';
           nexpr_ty = e.ncexpr_ty; nexpr_clock = e.ncexpr_clock } in
     Assign (x, e'')
-  | NCE_switch (e, es) ->
+  | NCE_match (e, es) ->
     Case (translate_expr env e, e.nexpr_ty,
           List.map (fun (c, e) -> c, [translate_cexpr tys env x e]) es)
   | NCE_merge (id, es) ->

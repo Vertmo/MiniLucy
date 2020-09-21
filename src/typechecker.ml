@@ -26,10 +26,10 @@ let rec sort_expr (e : k_expr) : k_expr =
     | KE_arrow (e0, e) -> KE_arrow (sort_exprs e0, sort_exprs e)
     (* | KE_pre e -> KE_fby (Cnil, sort_expr e) *)
     | KE_when (e, constr, clid) -> KE_when (sort_exprs e, constr, clid)
-    | KE_switch (e, es) ->
-      KE_switch (sort_expr e,
-                 List.sort (fun (c1, e1) (c2, e2) -> String.compare c1 c2)
-                   (List.map (fun (c, e) -> (c, sort_exprs e)) es))
+    | KE_match (e, es) ->
+      KE_match (sort_expr e,
+                List.sort (fun (c1, e1) (c2, e2) -> String.compare c1 c2)
+                  (List.map (fun (c, e) -> (c, sort_exprs e)) es))
     | KE_merge (id, es) ->
       KE_merge (id,
                 List.sort (fun (c1, e1) (c2, e2) -> String.compare c1 c2)
@@ -175,7 +175,7 @@ let rec elab_expr (nodes : (ident * TPMinils.p_node) list)
               (string_of_tys tys0) (string_of_tys tys),
             e.kexpr_loc));
     { kexpr_desc = KE_arrow(e0s', es'); kexpr_annot = tys0; kexpr_loc = loc }
-  | KE_switch (e, branches) ->
+  | KE_match (e, branches) ->
     let e' = elab_expr nodes vars clocks e in
     let clt = match e'.kexpr_annot with
       | [ty] -> ty
@@ -209,7 +209,7 @@ let rec elab_expr (nodes : (ident * TPMinils.p_node) list)
                   "All args of switch should have the same type, found %s and %s"
                   (string_of_tys tys)
                   (string_of_tys tys'), e.kexpr_loc))) branches';
-    { kexpr_desc = KE_switch (e', branches');
+    { kexpr_desc = KE_match (e', branches');
       kexpr_annot = tys; kexpr_loc = loc }
   | KE_when (es, constr, cl) ->
     let clt = (try (List.assoc cl vars)

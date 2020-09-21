@@ -20,7 +20,7 @@ let rec expr_vars (e : k_expr) =
      (expr_vars ev)@(exprs_vars es)
    | KE_fby (e0, _) -> (exprs_vars e0)
    | KE_arrow (e0, e) -> (exprs_vars e0)@(exprs_vars e)
-   | KE_switch (e, es) ->
+   | KE_match (e, es) ->
      List.concat ((expr_vars e)::(List.map (fun (_, e) -> exprs_vars e) es))
    | KE_when (e, _, id) -> id::(exprs_vars e)
    | KE_merge (id, es) ->

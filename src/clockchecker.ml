@@ -185,12 +185,12 @@ let rec elab_expr ?(is_top=false) (nodes : (ident * CPMinils.p_node) list) vars 
     { kexpr_desc = KE_arrow (e0s', es');
       kexpr_annot = List.combine ty (List.map (fun ck -> (ck, None)) ck0s);
       kexpr_loc = loc }
-  | KE_switch (e, branches) ->
+  | KE_match (e, branches) ->
     let e' = elab_expr nodes vars e and branches' = elab_branches nodes vars branches in
     let (_, (ck, _)) = List.hd e'.kexpr_annot in
     List.iter (fun (_, es) ->
         List.iter (fun ck' -> unify_sclock loc ck ck') (sclocks_of es)) branches';
-    { kexpr_desc = KE_switch (e', branches');
+    { kexpr_desc = KE_match (e', branches');
       kexpr_annot = List.map (fun ty -> (ty, (ck, None))) ty;
       kexpr_loc = loc }
   | KE_when (es, constr, ckid) ->
@@ -267,7 +267,7 @@ let rec freeze_expr (e : CEPMinils.k_expr) : CPMinils.k_expr =
     | KE_binop (op, e1, e2) -> KE_binop (op, freeze_expr e1, freeze_expr e2)
     | KE_fby (e0s, es) -> KE_fby (freeze_exprs e0s, freeze_exprs es)
     | KE_arrow (e0s, es) -> KE_arrow (freeze_exprs e0s, freeze_exprs es)
-    | KE_switch (e, branches) -> KE_switch (freeze_expr e, freeze_branches branches)
+    | KE_match (e, branches) -> KE_match (freeze_expr e, freeze_branches branches)
     | KE_when (es, constr, ckid) -> KE_when (freeze_exprs es, constr, ckid)
     | KE_merge (ckid, branches) -> KE_merge (ckid, freeze_branches branches)
     | KE_app (f, es, er) -> KE_app (f, freeze_exprs es, freeze_expr er)

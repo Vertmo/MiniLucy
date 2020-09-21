@@ -33,6 +33,7 @@
 %token INT
 %token LET
 %token LPAREN
+%token MATCH
 %token MERGE
 %token MINUS
 %token MOD
@@ -55,6 +56,7 @@
 %token UNTIL
 %token VAR
 %token WHEN
+%token WITH
 %token XOR
 
 
@@ -106,7 +108,7 @@ node:
 | NODE IDENT LPAREN in_params RPAREN SEMICOL?
   RETURNS LPAREN out_params RPAREN SEMICOL?
   local_params
-  LET instr_list TEL SEMICOL?
+  LET instr+ TEL SEMICOL?
     { { pn_name = $2;
 	pn_input = $4;
 	pn_output = $9;
@@ -149,35 +151,29 @@ param_list_semicol:
     { $1 @ $3 }
 ;
 
-
 param:
   | ident_comma_list COLON annot
       { let typ = $3 in
         List.map (fun id -> (id, typ)) $1 }
 ;
 
-instr_list:
-| /* empty */ { [] }
-| instr instr_list
-    { $1 :: $2 }
-;
-
 instr:
 | eq
     { Eq $1 }
-| RESET instr_list EVERY expr SEMICOL
+| RESET instr+ EVERY expr SEMICOL
     { Reset ($2, $4) }
-| AUTOMATON auto_branch_list END SEMICOL
+| AUTOMATON auto_branch+ END SEMICOL
     { Automaton $2 }
-;
-
-auto_branch_list:
-| auto_branch { [$1] }
-| auto_branch auto_branch_list { $1::$2 }
+| SWITCH expr instr_branch+ END SEMICOL
+    { Switch ($2, $3) }
 ;
 
 auto_branch:
-| PIPE IDENT ARROW let_list instr_list until_list { ($2, $4, $5, $6) }
+| PIPE IDENT ARROW let_list instr+ until_list { ($2, $4, $5, $6) }
+;
+
+instr_branch:
+| PIPE IDENT ARROW instr+ { ($2, $4) }
 ;
 
 let_list:
@@ -251,12 +247,12 @@ expr:
 | expr_list WHEN constr_ckid
     { let (constr, ckid) = $3 in
       mk_expr (KE_when ($1, constr, ckid)) $startpos $endpos }
-| MERGE IDENT branch_list
+| MERGE IDENT branch+
     { mk_expr (KE_merge ($2, $3)) $startpos $endpos }
-| SWITCH expr branch_list
-    { mk_expr (KE_switch ($2, $3)) $startpos $endpos }
+| MATCH expr WITH branch+
+    { mk_expr (KE_match ($2, $4)) $startpos $endpos }
 | IF expr THEN expr_list ELSE expr_list
-    { mk_expr (KE_switch ($2, [("True", $4); ("False", $6)])) $startpos $endpos }
+    { mk_expr (KE_match ($2, [("True", $4); ("False", $6)])) $startpos $endpos }
 ;
 
 const:
@@ -288,11 +284,6 @@ expr_comma_list:
 expr_list:
 | LPAREN expr_comma_list RPAREN { $2 }
 | expr { [$1] }
-
-branch_list:
-| branch { [$1] }
-| branch branch_list { $1::$2 }
-;
 
 branch:
 | LPAREN IDENT ARROW expr_list RPAREN { ($2, $4) }

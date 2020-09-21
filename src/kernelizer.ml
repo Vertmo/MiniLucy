@@ -17,8 +17,8 @@ let rec reset_expr (x : ident) (ck : clock) (e : k_expr) =
     | KE_unop (op, e1) -> KE_unop (op, reset_expr x ck e1)
     | KE_binop (op, e1, e2) -> KE_binop (op, reset_expr x ck e1, reset_expr x ck e2)
     | KE_when (e, constr, ckid) -> KE_when (reset_exprs x ck e, constr, ckid)
-    | KE_switch (e, es) ->
-      KE_switch (reset_expr x ck e, reset_branches x ck es)
+    | KE_match (e, es) ->
+      KE_match (reset_expr x ck e, reset_branches x ck es)
     | KE_merge (ckid, es) ->
       KE_merge (ckid, reset_branches x ck es)
     | KE_fby (e0, e1) ->
@@ -26,19 +26,19 @@ let rec reset_expr (x : ident) (ck : clock) (e : k_expr) =
       let fby' = { kexpr_desc = KE_fby (e0', e1' );
                    kexpr_annot = e.kexpr_annot;
                    kexpr_loc = e.kexpr_loc } in
-      KE_switch ({ kexpr_desc = KE_ident x; (* TODO *)
-                   kexpr_annot = e.kexpr_annot;
-                   kexpr_loc = dummy_loc },
-                 [("True", e0'); ("False", [fby'])])
+      KE_match ({ kexpr_desc = KE_ident x; (* TODO *)
+                  kexpr_annot = e.kexpr_annot;
+                  kexpr_loc = dummy_loc },
+                [("True", e0'); ("False", [fby'])])
     | KE_arrow (e0, e1) ->
       let e0' = reset_exprs x ck e0 and e1' = reset_exprs x ck e1 in
       let arrow' = { kexpr_desc = KE_arrow (e0', e1' );
-                   kexpr_annot = e.kexpr_annot;
-                   kexpr_loc = e.kexpr_loc } in
-      KE_switch ({ kexpr_desc = KE_ident x; (* TODO *)
-                   kexpr_annot = e.kexpr_annot;
-                   kexpr_loc = dummy_loc },
-                 [("True", e0); ("False", [arrow'])])
+                     kexpr_annot = e.kexpr_annot;
+                     kexpr_loc = e.kexpr_loc } in
+      KE_match ({ kexpr_desc = KE_ident x; (* TODO *)
+                  kexpr_annot = e.kexpr_annot;
+                  kexpr_loc = dummy_loc },
+                [("True", e0); ("False", [arrow'])])
     | KE_app (f, es, er) ->
       let es' = reset_exprs x ck es and er' = reset_expr x ck er in
       KE_app (f, es', { kexpr_desc =
@@ -63,11 +63,11 @@ let rec reset_instr (eq : p_instr) : (p_instr list * (ident * clock) list) =
   match eq with
   | Eq eq -> ([Eq eq], [])
   | Reset (ins, er) ->
-     let (ins', ys) = reset_instrs ins in
-     let y = Atom.fresh "$" and (_, (ckr, _)) = List.hd er.kexpr_annot in
-     let ins' = List.map (reset_instr' y ckr) ins' in
-     (Eq { keq_patt = [y]; keq_expr = [er]; keq_loc = dummy_loc })::ins',
-     (y, ckr)::ys
+    let (ins', ys) = reset_instrs ins in
+    let y = Atom.fresh "$" and (_, (ckr, _)) = List.hd er.kexpr_annot in
+    let ins' = List.map (reset_instr' y ckr) ins' in
+    (Eq { keq_patt = [y]; keq_expr = [er]; keq_loc = dummy_loc })::ins',
+    (y, ckr)::ys
   | _ -> invalid_arg "reset_instr"
 
 and reset_instrs (eqs : p_instr list) =

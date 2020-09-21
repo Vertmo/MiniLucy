@@ -4,7 +4,7 @@ TARGETS := \
 	fulladder.elf bananas.elf heat.elf abro.elf \
 	clocktest.elf typetest.elf \
 	causalitytest.c translationtest.c uselib.elf \
-	resettest.c \
+	resettest.c switchtest.c \
   automatatest.elf \
 	iotest.hex disptest.hex chrono.hex
 

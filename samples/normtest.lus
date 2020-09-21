@@ -8,9 +8,9 @@ let
   z = (0 when True(b)) fby (2 * z);
 tel
 
-node test_switch(b : bool) returns (z : int);
+node test_match(b : bool) returns (z : int);
 let
-  z = switch (b or false)
+  z = match (b or false) with
         (True -> 1)
         (False -> 2);
 tel

@@ -26,7 +26,7 @@ module MINILS(A : Annotations) = struct
     | KE_app of ident * k_expr list * k_expr
     | KE_fby of k_expr list * k_expr list
     | KE_arrow of k_expr list * k_expr list
-    | KE_switch of k_expr * (constr * k_expr list) list
+    | KE_match of k_expr * (constr * k_expr list) list
     | KE_when of k_expr list * constr * ident
     | KE_merge of ident * (constr * k_expr list) list
 
@@ -60,8 +60,8 @@ module MINILS(A : Annotations) = struct
       Printf.sprintf "(%s fby %s)" (string_of_exprs e0) (string_of_exprs e)
     | KE_arrow (e0, e) ->
       Printf.sprintf "(%s -> %s)" (string_of_exprs e0) (string_of_exprs e)
-    | KE_switch (e, es) ->
-      Printf.sprintf "switch %s %s"
+    | KE_match (e, es) ->
+      Printf.sprintf "match %s with %s"
         (string_of_expr e) (String.concat " "
                               (List.map
                                  (fun (constr, e) -> Printf.sprintf "(%s -> %s)"

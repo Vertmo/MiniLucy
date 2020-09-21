@@ -37,9 +37,9 @@ let dist_arrow e0s es anns =
       { kexpr_desc = KE_arrow ([e0], [e]); kexpr_annot = [a]; kexpr_loc = dummy_loc }
     ) (List.combine (List.combine e0s es) anns)
 
-let dist_switch e branches anns =
+let dist_match e branches anns =
   List.mapi (fun i a ->
-      { kexpr_desc = KE_switch (e, List.map (fun (c, es) -> (c, [List.nth es i])) branches);
+      { kexpr_desc = KE_match (e, List.map (fun (c, es) -> (c, [List.nth es i])) branches);
         kexpr_annot = [a]; kexpr_loc = dummy_loc }
     ) anns
 
@@ -85,10 +85,10 @@ let rec dist_expr (is_rhs : bool) (is_control : bool) (e : k_expr) :
     dist_make_vars ids,
     (dist_make_eqs ids arrows)@eqs1@eqs2,
     vs1@vs2@ids
-  | KE_switch (e, branches) ->
+  | KE_match (e, branches) ->
     let e', eqs1, vs1 = dist_expr false false e
     and branches', eqs2, vs2 = dist_branches branches in
-    let switches = dist_switch (List.hd e') branches' anns in
+    let switches = dist_match (List.hd e') branches' anns in
     if is_control then
       switches, eqs1@eqs2, vs1@vs2
     else let ids = idents_for_anns anns in
@@ -227,13 +227,13 @@ let norm_fby_eq (eq : k_equation) : (k_equation list * (ident * ann) list) =
     let xinit = Atom.fresh "$" and px = Atom.fresh "$" in
     [{ keq_patt = [xinit]; keq_expr = [init_expr ck]; keq_loc = dummy_loc };
      { keq_patt = [px]; keq_expr = [delay_expr e1 ty ck]; keq_loc = dummy_loc };
-     { eq with keq_expr = [{ kexpr_desc = KE_switch ({ kexpr_desc = KE_ident xinit;
-                                                       kexpr_annot = [(Tbool, (ck, None))];
-                                                       kexpr_loc = dummy_loc },
-                                                     [("True", [e0]);
-                                                      ("False", [{ kexpr_desc = KE_ident px;
+     { eq with keq_expr = [{ kexpr_desc = KE_match ({ kexpr_desc = KE_ident xinit;
+                                                      kexpr_annot = [(Tbool, (ck, None))];
+                                                      kexpr_loc = dummy_loc },
+                                                    [("True", [e0]);
+                                                     ("False", [{ kexpr_desc = KE_ident px;
                                                                   kexpr_annot = [(Tbool, (ck, None))];
-                                                                   kexpr_loc = dummy_loc }])]);
+                                                                  kexpr_loc = dummy_loc }])]);
                              kexpr_annot = [(ty, (ck, None))];
                              kexpr_loc = dummy_loc }] }],
     [ (xinit, (Tbool, ck)); (px, (ty, ck)) ]
@@ -241,10 +241,10 @@ let norm_fby_eq (eq : k_equation) : (k_equation list * (ident * ann) list) =
     let (ty, (ck, _)) = List.hd e.kexpr_annot in
     let xinit = Atom.fresh "$" in
     [{ keq_patt = [xinit]; keq_expr = [init_expr ck]; keq_loc = dummy_loc };
-     { eq with keq_expr = [{ kexpr_desc = KE_switch ({ kexpr_desc = KE_ident xinit;
-                                                       kexpr_annot = [(Tbool, (ck, None))];
-                                                       kexpr_loc = dummy_loc },
-                                                     [("True", [e0]); ("False", [e1])]);
+     { eq with keq_expr = [{ kexpr_desc = KE_match ({ kexpr_desc = KE_ident xinit;
+                                                      kexpr_annot = [(Tbool, (ck, None))];
+                                                      kexpr_loc = dummy_loc },
+                                                    [("True", [e0]); ("False", [e1])]);
                              kexpr_annot = [(ty, (ck, None))];
                              kexpr_loc = dummy_loc }] }],
     [ (xinit, (Tbool, ck)) ]
@@ -274,11 +274,11 @@ let tr_lexps = List.map tr_lexp
 let rec tr_cexp (e : k_expr) : n_cexpr =
   let (ty, (ck, _)) = List.hd e.kexpr_annot
   and desc = match e.kexpr_desc with
-    | KE_switch (e, branches) ->
-      NCE_switch (tr_lexp e,
-                  List.map (fun (constr, es) ->
-                      (constr, tr_cexp (List.hd es))
-                    ) branches)
+    | KE_match (e, branches) ->
+      NCE_match (tr_lexp e,
+                 List.map (fun (constr, es) ->
+                     (constr, tr_cexp (List.hd es))
+                   ) branches)
     | KE_merge (ckid, branches) ->
       NCE_merge (ckid,
                  List.map (fun (constr, es) ->

@@ -43,11 +43,19 @@ and sort_exprs es = List.map sort_expr es
 let sort_equation (eq : k_equation) : k_equation =
   { eq with keq_expr = sort_exprs eq.keq_expr; }
 
-let rec sort_instr : p_instr -> p_instr = function
-  | Eq eq -> Eq (sort_equation eq)
-  | Reset (ins, er) ->
-    Reset (List.map sort_instr ins, sort_expr er)
-  | _ -> failwith "TODO sort_instr"
+let rec sort_instr (ins : p_instr) : p_instr =
+  let desc =
+    match ins.pinstr_desc with
+    | Eq eq -> Eq (sort_equation eq)
+    | Reset (ins, er) ->
+      Reset (sort_instrs ins, sort_expr er)
+    | Switch (e, branches) ->
+      Switch (sort_expr e,
+              List.sort (fun (c1, e1) (c2, e1) -> String.compare c1 c2)
+                (List.map (fun (c, ins) -> (c, sort_instrs ins)) branches))
+    | _ -> failwith "TODO sort_instr"
+  in { ins with pinstr_desc = desc }
+and sort_instrs ins = List.map sort_instr ins
 
 let sort_node (n : p_node) : p_node =
   { n with pn_instrs = List.map sort_instr n.pn_instrs }
@@ -62,9 +70,22 @@ let sort_file (f : p_file) : p_file =
 (** Elaboration                                                               *)
 
 exception TypeError of (string * location)
-exception MissingHintError of location
-exception MissingEquationError of (ident * location)
 exception UnexpectedEquationError of (ident * location)
+
+let unary_type_error tys loc =
+  TypeError
+    (Printf.sprintf "Expression should have a unary type, found %s"
+       (string_of_tys tys), loc)
+
+let get_unary_type tys loc =
+  match tys with
+  | [ty] -> ty
+  | _ -> raise (unary_type_error tys loc)
+
+let constructors_error expected got loc =
+  TypeError
+    (Printf.sprintf "Incorrect constructors in branches, expected [%s], found [%s]"
+    (String.concat ";" expected) (String.concat ";" got), loc)
 
 (** Typecheck constant. Can take a [hint] for the nil case *)
 let type_const loc = function
@@ -128,11 +149,7 @@ let rec elab_expr (nodes : (ident * TPMinils.p_node) list)
     { kexpr_desc = KE_ident id; kexpr_annot = [bty]; kexpr_loc = e.kexpr_loc }
   | KE_unop (op, e1) ->
     let e1' = elab_expr nodes vars clocks e1 in
-    let ty = match e1'.kexpr_annot with
-      | [ty] -> ty
-      | ty -> raise (TypeError
-                       (Printf.sprintf "Operand should have a unary type, got %s"
-                          (string_of_tys ty), e1.kexpr_loc)) in
+    let ty = get_unary_type e1'.kexpr_annot e1.kexpr_loc in
 
     { kexpr_desc = KE_unop (op, e1');
       kexpr_annot = [type_op op [ty] loc];
@@ -140,11 +157,8 @@ let rec elab_expr (nodes : (ident * TPMinils.p_node) list)
   | KE_binop (op, e1, e2) ->
     let e1' = elab_expr nodes vars clocks e1
     and e2' = elab_expr nodes vars clocks e2 in
-    let (ty1, ty2) = match e1'.kexpr_annot, e2'.kexpr_annot with
-      | [ty1], [ty2] -> ty1, ty2
-      | ty1, ty2 -> raise (TypeError
-                             (Printf.sprintf "Operand should have a unary type, got %s and %s"
-                                (string_of_tys ty1) (string_of_tys ty2), e1.kexpr_loc)) in
+    let ty1 = get_unary_type e1'.kexpr_annot e1.kexpr_loc
+    and ty2 = get_unary_type e2'.kexpr_annot e2.kexpr_loc in
 
     { kexpr_desc = KE_binop (op, e1', e2');
       kexpr_annot = [type_op op [ty1;ty2] loc];
@@ -177,23 +191,12 @@ let rec elab_expr (nodes : (ident * TPMinils.p_node) list)
     { kexpr_desc = KE_arrow(e0s', es'); kexpr_annot = tys0; kexpr_loc = loc }
   | KE_match (e, branches) ->
     let e' = elab_expr nodes vars clocks e in
-    let clt = match e'.kexpr_annot with
-      | [ty] -> ty
-      | ty -> raise (TypeError
-                       (Printf.sprintf "Switch condition should have a unary type, got %s"
-                          (string_of_tys ty), e.kexpr_loc)) in
+    let clt = get_unary_type e'.kexpr_annot e.kexpr_loc in
 
     (* Check the constructors *)
     let constrs = constrs_of_clock clocks loc clt in
     if (constrs <> List.map fst branches)
-    then raise
-        (TypeError
-           (Printf.sprintf
-              "Constructors in switch are incorrect for type %s :\
-               expected %s, found %s"
-              (string_of_ty clt)
-              (String.concat "," constrs)
-              (String.concat "," (List.map fst branches)), loc));
+    then raise (constructors_error constrs (List.map fst branches) loc);
 
     (* Check the expression types *)
     let branches' = List.map
@@ -234,14 +237,7 @@ let rec elab_expr (nodes : (ident * TPMinils.p_node) list)
     (* Check the constructors *)
     let constrs = constrs_of_clock clocks loc clt in
     if (constrs <> List.map fst branches)
-    then raise
-        (TypeError
-           (Printf.sprintf
-              "Constructors in merge are incorrect for type %s :\
-               expected %s, found %s"
-              (string_of_ty clt)
-              (String.concat "," constrs)
-              (String.concat "," (List.map fst branches)), loc));
+    then raise (constructors_error constrs (List.map fst branches) loc);
 
     (* Check the expression types *)
     let branches' = List.map
@@ -312,27 +308,47 @@ let elab_equation nodes vars clocks (eq : k_equation) : TPMinils.k_equation =
 
 (** Check that the instruction [ins] is correctly typed. *)
 let rec elab_instr nodes vars clocks (ins : p_instr) : TPMinils.p_instr =
-  match ins with
-  | Eq eq -> Eq (elab_equation nodes vars clocks eq)
-  | Reset (ins, er) ->
-    let ins' = elab_instrs nodes vars clocks ins
-    and er' = elab_expr nodes vars clocks er in
-    if er'.kexpr_annot <> [Tbool] then
-      raise (TypeError
-               (Printf.sprintf
-                  "Reset expr should be of type bool, found %s"
-                  (string_of_tys er'.kexpr_annot), er.kexpr_loc));
-    Reset (ins', er')
-  | _ -> failwith "TODO elab_instr"
+  let (desc : TPMinils.p_instr_desc) =
+    match ins.pinstr_desc with
+    | Eq eq -> Eq (elab_equation nodes vars clocks eq)
+    | Reset (ins, er) ->
+      let ins' = elab_instrs nodes vars clocks ins
+      and er' = elab_expr nodes vars clocks er in
+      if er'.kexpr_annot <> [Tbool] then
+        raise (TypeError
+                 (Printf.sprintf
+                    "Reset expr should be of type bool, found %s"
+                    (string_of_tys er'.kexpr_annot), er.kexpr_loc));
+      Reset (ins', er')
+    | Switch (e, brs) ->
+      let e' = elab_expr nodes vars clocks e in
+      let clt = get_unary_type e'.kexpr_annot e.kexpr_loc in
+      let constrs = constrs_of_clock clocks e.kexpr_loc clt in
+      if (constrs <> List.map fst brs)
+      then raise (constructors_error constrs (List.map fst brs) ins.pinstr_loc);
+      let brs' = List.map (fun (c, ins) -> (c, elab_instrs nodes vars clocks ins)) brs in
+      Switch (e', brs')
+    | _ -> failwith "TODO elab_instr"
+  in { pinstr_desc = desc; pinstr_loc = ins.pinstr_loc }
 and elab_instrs nodes vars clocks ins =
   List.map (elab_instr nodes vars clocks) ins
 
 (** Get all the names defined in a set of instructions *)
 let rec get_def_instr (i : p_instr) : ident list =
-  match i with
+  match i.pinstr_desc with
   | Eq eq -> defined_of_equation eq
   | Reset (ins, _) ->
     get_def_instrs ins
+  | Switch (e, brs) ->
+    let defs = List.map (fun (_, ins) -> get_def_instrs ins) brs in
+    let defs = List.map (List.sort String.compare) defs in
+    let def = List.hd defs in
+    (** All the branches should define the same idents *)
+    if (not (List.for_all (fun def' -> def = def') defs))
+    then raise (TypeError
+                  ("All the branches of switch should define the same idents",
+                   i.pinstr_loc));
+    def
   | _ -> failwith "TODO get_def_instr"
 and get_def_instrs (ins : p_instr list) =
   List.concat (List.map get_def_instr ins)
@@ -417,15 +433,9 @@ let elab_file (f : p_file) : TPMinils.p_file =
   | UnexpectedEquationError (id, loc) ->
     Printf.eprintf "Type checking error : UnexpectedEquation for %s at %s\n"
       id (string_of_loc loc); exit 1
-  | MissingEquationError (id, loc) ->
-    Printf.eprintf "Type checking error : MissingEquation for %s at %s\n"
-      id (string_of_loc loc); exit 1
   | TypeError (msg, loc) ->
     Printf.eprintf "Type checking error : %s at %s\n"
       msg (string_of_loc loc); exit 1
-  | MissingHintError loc ->
-    Printf.eprintf "Type checking error : Could not infer type of nil at %s"
-      (string_of_loc loc); exit 1
 
 let type_file (f : p_file) : TPMinils.p_file =
   f |> sort_file |> elab_file

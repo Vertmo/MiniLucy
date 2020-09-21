@@ -21,12 +21,17 @@ module PMINILS(A : Annotations) = struct
     else Printf.sprintf "%suntil %s then %s;" (indent level) (string_of_expr ~print_anns e) c
 
   type p_instr =
+    { pinstr_desc: p_instr_desc;
+      pinstr_loc: location }
+
+  and p_instr_desc =
     | Eq of k_equation
     | Automaton of (constr * p_let list * p_instr list * p_until list) list
     | Reset of (p_instr list * k_expr)
     | Switch of (k_expr * (constr * p_instr list) list)
 
-  let rec string_of_instr ?(print_anns=false) level = function
+  let rec string_of_instr ?(print_anns=false) level i =
+    match i.pinstr_desc with
     | Eq eq -> Printf.sprintf "%s%s;" (indent level) (string_of_equation ~print_anns eq)
     | Automaton branches ->
       Printf.sprintf "%sautomaton\n%s" (indent level)
@@ -51,7 +56,8 @@ module PMINILS(A : Annotations) = struct
     String.concat "\n" (List.map (string_of_instr ~print_anns level) ins)
 
   (** Variables defined by an instruction *)
-  let rec defined_of_instr = function
+  let rec defined_of_instr i =
+    match i.pinstr_desc  with
     | Eq eq -> defined_of_equation eq
     | Automaton brs ->
       (* If the program is well typed, all the branches

@@ -56,18 +56,22 @@ and reset_branches (x : ident) (ck : clock) brs =
 let reset_eq (x : ident) (ck : clock) (eq : k_equation) : k_equation =
   { eq with keq_expr = reset_exprs x ck eq.keq_expr }
 
-let rec reset_instr (eq : p_instr) : (p_instr list * (ident * clock) list) =
-  let rec reset_instr' (x : ident) (ck : clock) : p_instr -> p_instr = function
-    | Eq eq -> Eq (reset_eq x ck eq)
-    | _ -> invalid_arg "reset_instr'" in
-  match eq with
-  | Eq eq -> ([Eq eq], [])
+let rec reset_instr (ins : p_instr) : (p_instr list * (ident * clock) list) =
+  let rec reset_instr' (x : ident) (ck : clock) (ins : p_instr) : p_instr =
+    let desc =
+      match ins.pinstr_desc with
+      | Eq eq -> Eq (reset_eq x ck eq)
+      | _ -> invalid_arg "reset_instr'"
+    in { ins with pinstr_desc = desc } in
+  match ins.pinstr_desc with
+  | Eq eq -> ([ins], [])
   | Reset (ins, er) ->
     let (ins', ys) = reset_instrs ins in
     let y = Atom.fresh "$" and (_, (ckr, _)) = List.hd er.kexpr_annot in
     let ins' = List.map (reset_instr' y ckr) ins' in
-    (Eq { keq_patt = [y]; keq_expr = [er]; keq_loc = dummy_loc })::ins',
-    (y, ckr)::ys
+    ({ pinstr_desc = Eq { keq_patt = [y]; keq_expr = [er]; keq_loc = dummy_loc };
+       pinstr_loc = dummy_loc }::ins',
+     (y, ckr)::ys)
   | _ -> invalid_arg "reset_instr"
 
 and reset_instrs (eqs : p_instr list) =
@@ -86,7 +90,8 @@ let reset_file (f : p_file) : p_file =
 
 (** Transcription                                                             *)
 
-let tr_instr : p_instr -> k_equation = function
+let tr_instr (ins : p_instr) : k_equation =
+  match ins.pinstr_desc with
   | Eq eq -> eq
   | _ -> invalid_arg "tr_instr"
 

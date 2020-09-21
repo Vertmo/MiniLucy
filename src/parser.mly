@@ -5,6 +5,7 @@
 
   let mk_expr e startp endp = { kexpr_desc = e; kexpr_loc = (startp, endp); kexpr_annot = [] }
   let mk_eq p e startp endp = { keq_patt = p; keq_expr = e; keq_loc = (startp, endp) }
+  let mk_instr e startp endp = { pinstr_desc = e; pinstr_loc = (startp, endp) }
 
 %}
 
@@ -159,13 +160,13 @@ param:
 
 instr:
 | eq
-    { Eq $1 }
+    { mk_instr (Eq $1) $startpos $endpos }
 | RESET instr+ EVERY expr SEMICOL
-    { Reset ($2, $4) }
+    { mk_instr (Reset ($2, $4)) $startpos $endpos }
 | AUTOMATON auto_branch+ END SEMICOL
-    { Automaton $2 }
+    { mk_instr (Automaton $2) $startpos $endpos }
 | SWITCH expr instr_branch+ END SEMICOL
-    { Switch ($2, $3) }
+    { mk_instr (Switch ($2, $3)) $startpos $endpos }
 ;
 
 auto_branch:

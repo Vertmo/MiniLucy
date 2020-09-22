@@ -231,9 +231,10 @@
 		  (regexp-opt '("/" "*" "#" "=" "+" "-" "*" "<" ">")) "\\|"
 		  (regexp-opt '("node" "const" "function" "include" "let"
 				"returns" "tel" "type" "var" "if" "with"
-            "package" "model" "body" "uses" "provides"
+        "package" "model" "body" "uses" "provides"
 				"then" "else" "and" "or" "xor" "assert" "with" "struct"
 				"pre" "not" "when" "match"
+        "in"
         "reset" "every"
         "switch" "end"
 				"current") 'words))		0 ,kw t)

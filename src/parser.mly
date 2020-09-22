@@ -167,10 +167,12 @@ instr:
     { mk_instr (Automaton $2) $startpos $endpos }
 | SWITCH expr instr_branch+ END SEMICOL
     { mk_instr (Switch ($2, $3)) $startpos $endpos }
+| LET LPAREN IDENT COLON annot RPAREN EQUAL expr IN instr+ END SEMICOL
+    { mk_instr (Let ($3, $5, $8, $10)) $startpos $endpos }
 ;
 
 auto_branch:
-| PIPE IDENT ARROW let_list instr+ until_list { ($2, $4, $5, $6) }
+| PIPE IDENT ARROW instr+ until_list { ($2, $4, $5) }
 ;
 
 instr_branch:

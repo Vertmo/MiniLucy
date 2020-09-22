@@ -1,0 +1,22 @@
+node test1() returns (i : int);
+let
+  let (x : int) = 2 in 
+    i = x + 1;
+  end;
+tel
+  
+node test2() returns (i : int);
+let
+  let (x : int) = 2 in 
+    let (y : int) = 3 in
+      i = x + y;
+    end;
+  end;
+tel
+
+node test3() returns (i : int);
+let
+  let (x : int) = 2 in 
+    i = 41 + 1;
+  end;
+tel

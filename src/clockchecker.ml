@@ -314,6 +314,13 @@ let rec elab_instr nodes vars (ins : p_instr) : CPMinils.p_instr =
   let (desc : CPMinils.p_instr_desc) =
     match ins.pinstr_desc with
     | Eq eq -> Eq (elab_equation nodes vars eq)
+    | Let (id, ((_, ck) as ann), e, instrs) ->
+      let e' = elab_expr nodes vars e in
+      let (_, nck') = List.hd e'.kexpr_annot in
+      unify_nsclock ins.pinstr_loc ((sclock_of_clock ck), None) nck';
+      let e' = freeze_expr e' in
+      let instrs' = elab_instrs nodes ((id, ck)::vars) instrs in
+      Let (id, ann, e', instrs')
     | Reset (ins, er) ->
       Reset (elab_instrs nodes vars ins,
              freeze_expr (elab_expr nodes vars er)) (* TODO should there be a constraint ? *)

@@ -47,6 +47,8 @@ let rec sort_instr (ins : p_instr) : p_instr =
   let desc =
     match ins.pinstr_desc with
     | Eq eq -> Eq (sort_equation eq)
+    | Let (id, ann, e, ins) ->
+      Let (id, ann, sort_expr e, sort_instrs ins)
     | Reset (ins, er) ->
       Reset (sort_instrs ins, sort_expr er)
     | Switch (e, branches) ->
@@ -311,6 +313,16 @@ let rec elab_instr nodes vars clocks (ins : p_instr) : TPMinils.p_instr =
   let (desc : TPMinils.p_instr_desc) =
     match ins.pinstr_desc with
     | Eq eq -> Eq (elab_equation nodes vars clocks eq)
+    | Let (id, ann, e, instrs) ->
+      let e' = elab_expr nodes vars clocks e in
+      if (e'.kexpr_annot <> [fst ann])
+      then raise (TypeError
+                    (Printf.sprintf
+                       "Wrong type in let binding; expected %s, found %s"
+                       (string_of_ty (fst ann))
+                       (string_of_tys e'.kexpr_annot), ins.pinstr_loc));
+      let instrs' = elab_instrs nodes ((id, fst ann)::vars) clocks instrs in
+      Let (id, ann, e', instrs')
     | Reset (ins, er) ->
       let ins' = elab_instrs nodes vars clocks ins
       and er' = elab_expr nodes vars clocks er in
@@ -337,8 +349,8 @@ and elab_instrs nodes vars clocks ins =
 let rec get_def_instr (i : p_instr) : ident list =
   match i.pinstr_desc with
   | Eq eq -> defined_of_equation eq
-  | Reset (ins, _) ->
-    get_def_instrs ins
+  | Let (_, _, _, ins) -> get_def_instrs ins
+  | Reset (ins, _) -> get_def_instrs ins
   | Switch (e, brs) ->
     let defs = List.map (fun (_, ins) -> get_def_instrs ins) brs in
     let defs = List.map (List.sort String.compare) defs in

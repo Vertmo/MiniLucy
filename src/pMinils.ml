@@ -26,18 +26,23 @@ module PMINILS(A : Annotations) = struct
 
   and p_instr_desc =
     | Eq of k_equation
-    | Automaton of (constr * p_let list * p_instr list * p_until list) list
-    | Reset of (p_instr list * k_expr)
+    | Let of (ident * ann * k_expr * p_instr list)
     | Switch of (k_expr * (constr * p_instr list) list)
+    | Reset of (p_instr list * k_expr)
+    | Automaton of (constr * p_instr list * p_until list) list
 
   let rec string_of_instr ?(print_anns=false) level i =
     match i.pinstr_desc with
     | Eq eq -> Printf.sprintf "%s%s;" (indent level) (string_of_equation ~print_anns eq)
+    | Let (id, ann, e, ins) ->
+      Printf.sprintf "%slet (%s : %s) = %s in\n%s\n%send;" (indent level)
+        id (string_of_ann ann) (string_of_expr ~print_anns e)
+        (string_of_instrs ~print_anns (level+1) ins)
+        (indent level)
     | Automaton branches ->
       Printf.sprintf "%sautomaton\n%s" (indent level)
-        (String.concat "\n" (List.map (fun (c, lets, ins, untils) ->
-             Printf.sprintf "%s| %s ->\n%s\n%s\n%s" (indent level) c
-               (String.concat "\n" (List.map (string_of_let ~print_anns (level+1)) lets))
+        (String.concat "\n" (List.map (fun (c, ins, untils) ->
+             Printf.sprintf "%s| %s ->\n%s\n%s" (indent level) c
                (string_of_instrs ~print_anns (level+1) ins)
                (String.concat "\n" (List.map (string_of_until ~print_anns (level+1)) untils)))
              branches))
@@ -59,10 +64,11 @@ module PMINILS(A : Annotations) = struct
   let rec defined_of_instr i =
     match i.pinstr_desc  with
     | Eq eq -> defined_of_equation eq
+    | Let (_, _, _, ins) -> defined_of_instrs ins
     | Automaton brs ->
       (* If the program is well typed, all the branches
          define the same equations left-hand-sides *)
-      let (_, _, is, _) = List.hd brs in
+      let (_, is, _) = List.hd brs in
       defined_of_instrs is
     | Reset (is, _) -> defined_of_instrs is
     | Switch (_, brs) ->

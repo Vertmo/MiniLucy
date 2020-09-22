@@ -16,3 +16,4 @@ iotest.c
 disptest.c
 lettest.c
 resettest.c
+switchtest.c

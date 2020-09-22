@@ -326,18 +326,19 @@ let rec elab_instr nodes vars (ins : p_instr) : CPMinils.p_instr =
              freeze_expr (elab_expr nodes vars er)) (* TODO should there be a constraint ? *)
     | Switch (e, brs) ->
       let e' = freeze_expr (elab_expr nodes vars e) in
-      let ck = match e'.kexpr_annot with
-        | [(_, (ck, _))] -> ck
-        | _ -> failwith "Should not happen" in
+      let (ty, (ck, name)) = List.hd e'.kexpr_annot in
+      let ckid = Atom.fresh "$" in
       (* Only keep variables on the clock ck in the env *)
       let vars' = List.filter (fun (_, ck') -> ck = ck') vars in
-      Switch (e', elab_branches nodes vars' brs)
+      Switch ({ e' with kexpr_annot = [(ty, (ck, Some ckid))] },
+               elab_branches nodes vars' ckid brs)
     | _ -> failwith "TODO elab_instr"
   in { pinstr_desc = desc; pinstr_loc = ins.pinstr_loc }
 and elab_instrs nodes vars ins =
   List.map (elab_instr nodes vars) ins
-and elab_branches nodes vars brs =
-  List.map (fun (c, ins) -> (c, elab_instrs nodes vars ins)) brs
+and elab_branches nodes vars ckid =
+  List.map (fun (c, ins) ->
+      (c, elab_instrs nodes (List.map (fun (id, ck) -> (id, Con (c, ckid, ck))) vars) ins))
 
 (** Check a clock in a clocking env *)
 let check_clock (n : p_node) vars ck =

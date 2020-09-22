@@ -17,3 +17,31 @@ let
   | C -> y = 2;
   end;
 tel
+
+node test3(b : bool; x : t1) returns (y : int);
+let
+  switch x
+  | A -> y = merge b (True -> 0) (False -> 1);
+  | B -> y = 1;
+  | C -> y = 2;
+  end;
+tel
+
+node test4() returns (y, z : int);
+let
+  switch (true fby false)
+  | True -> (y, z) = (1, 2);
+  | False -> y = 3; z = 4;
+  end;
+tel
+  
+node test5() returns (z : int);
+let
+  switch (1 < 2)
+  | True -> switch ((0 fby z) > 3)
+            | True -> z = 1;
+            | False -> z = 4;
+            end;
+  | False -> z = 3;
+  end;
+tel

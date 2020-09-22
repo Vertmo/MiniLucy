@@ -8,6 +8,69 @@ open Clockchecker.CPMinils
 
 module CMinils = MINILS(TypeClockAnnot)
 
+
+(** alpha-conversion, needed for switch and let compilation                   *)
+
+let alpha_conv id id' x =
+  if x = id then id' else x
+
+let rec alpha_conv_ck id id' = function
+  | Cbase -> Cbase
+  | Con (constr, ckid, ck) ->
+    Con (constr, alpha_conv id id' ckid, alpha_conv_ck id id' ck)
+
+let alpha_conv_annot id id' (ty, ck) =
+  (ty, alpha_conv_ck id id' ck)
+
+let alpha_conv_nannot id id' (ty, (ck, name)) =
+  (ty, (alpha_conv_ck id id' ck,
+        match name with
+        | None -> None
+        | Some x -> Some (alpha_conv id id' x)))
+
+let rec alpha_conv_expr id id' e =
+  let desc =
+    match e.kexpr_desc with
+    | KE_const c -> KE_const c
+    | KE_ident x -> KE_ident (alpha_conv id id' x)
+    | KE_unop (op, e1) ->
+      KE_unop (op, alpha_conv_expr id id' e1)
+    | KE_binop (op, e1, e2) ->
+      KE_binop (op, alpha_conv_expr id id' e1, alpha_conv_expr id id' e2)
+    | KE_fby (e0s, es) ->
+      KE_fby (alpha_conv_exprs id id' e0s, alpha_conv_exprs id id' es)
+    | KE_arrow (e0s, es) ->
+      KE_arrow (alpha_conv_exprs id id' e0s, alpha_conv_exprs id id' es)
+    | KE_match (e, brs) ->
+      KE_match (alpha_conv_expr id id' e, alpha_conv_branches id id' brs)
+    | KE_when (es, constr, x) ->
+      KE_when (alpha_conv_exprs id id' es, constr, alpha_conv id id' x)
+    | KE_merge (x, brs) ->
+      KE_merge (alpha_conv id id' x, alpha_conv_branches id id' brs)
+    | KE_app (f, es, er) ->
+      KE_app (f, alpha_conv_exprs id id' es, alpha_conv_expr id id' er)
+  in { e with kexpr_desc = desc;
+              kexpr_annot = List.map (alpha_conv_nannot id id') e.kexpr_annot }
+and alpha_conv_exprs id id' =
+  List.map (alpha_conv_expr id id')
+and alpha_conv_branches id id' =
+  List.map (fun (c, es) -> (c, alpha_conv_exprs id id' es))
+
+let alpha_conv_eq id id' eq =
+  { eq with keq_patt = List.map (alpha_conv id id') eq.keq_patt;
+            keq_expr = alpha_conv_exprs id id' eq.keq_expr }
+
+let rec alpha_conv_instr id id' ins =
+  let desc =
+    match ins.pinstr_desc with
+    | Eq eq -> Eq (alpha_conv_eq id id' eq)
+    | Let (x, ann, e, instrs) ->
+      Let (alpha_conv id id' x, alpha_conv_annot id id' ann,
+           alpha_conv_expr id id' e, alpha_conv_instrs id id' instrs)
+    | _ -> invalid_arg "alpha_conv_instr"
+  in { ins with pinstr_desc = desc }
+and alpha_conv_instrs id id' = List.map (alpha_conv_instr id id')
+
 (** Eliminate reset blocks                                                    *)
 
 let rec reset_expr (x : ident) (ck : clock) (e : k_expr) =
@@ -16,9 +79,9 @@ let rec reset_expr (x : ident) (ck : clock) (e : k_expr) =
     | KE_ident id -> KE_ident id
     | KE_unop (op, e1) -> KE_unop (op, reset_expr x ck e1)
     | KE_binop (op, e1, e2) -> KE_binop (op, reset_expr x ck e1, reset_expr x ck e2)
-    | KE_when (e, constr, ckid) -> KE_when (reset_exprs x ck e, constr, ckid)
     | KE_match (e, es) ->
       KE_match (reset_expr x ck e, reset_branches x ck es)
+    | KE_when (e, constr, ckid) -> KE_when (reset_exprs x ck e, constr, ckid)
     | KE_merge (ckid, es) ->
       KE_merge (ckid, reset_branches x ck es)
     | KE_fby (e0, e1) ->
@@ -63,6 +126,9 @@ let rec reset_instr (ins : p_instr) : p_instr =
       | Eq eq -> Eq (reset_eq x ck eq)
       | Let (id, ann, e, instrs) ->
         Let (id, ann, reset_expr x ck e, reset_instrs' x ck instrs)
+      | Switch (e, brs) ->
+        Switch (reset_expr x ck e,
+                List.map (fun (c, ins) -> (c, List.map (reset_instr' x ck) ins)) brs)
       | _ -> invalid_arg "reset_instr'"
     in { ins with pinstr_desc = desc }
   and reset_instrs' (x : ident) (ck : clock) =
@@ -72,6 +138,8 @@ let rec reset_instr (ins : p_instr) : p_instr =
     | Eq eq -> Eq eq
     | Let (id, ann, e, instrs) ->
       Let (id, ann, e, reset_instrs instrs)
+    | Switch (e, brs) ->
+      Switch (e, reset_branches brs)
     | Reset (instrs, er) ->
       let instrs' = reset_instrs instrs in
       let y = Atom.fresh "$" and (ty, (ckr, _)) = List.hd er.kexpr_annot in
@@ -79,8 +147,8 @@ let rec reset_instr (ins : p_instr) : p_instr =
       Let (y, (ty, ckr), er, instrs')
     | _ -> invalid_arg "reset_instr"
   in { ins with pinstr_desc = desc }
-and reset_instrs (ins : p_instr list) =
-  List.map reset_instr ins
+and reset_instrs instrs = List.map reset_instr instrs
+and reset_branches brs = List.map (fun (c, ins) -> (c, reset_instrs ins)) brs
 
 let reset_node (n : p_node) : p_node =
   { n with pn_instrs = reset_instrs n.pn_instrs }
@@ -88,60 +156,93 @@ let reset_node (n : p_node) : p_node =
 let reset_file (f : p_file) : p_file =
   { f with pf_nodes = List.map reset_node f.pf_nodes }
 
+(** Eliminate switch                                                          *)
+
+
+let rec add_lets ins (lets : (ident * ann * k_expr) list) =
+  match lets with
+  | [] -> ins
+  | (id, ann, e)::tl ->
+    let ins' = [{ pinstr_desc = Let (id, ann, e, ins);
+                  pinstr_loc = dummy_loc }] in
+    add_lets ins' tl
+
+(** Generates the let-bindings necessary to project vars used and defined in a switch block.
+    Does not add let-bindings for names defined by the instrs.
+    Returns both the new let-binding instr, and a substitution for the vars defined inside *)
+let switch_proj (vars : (ident * ann) list) (ck : clock) constr ckid (ins : p_instr list) =
+  let vars = List.filter (fun (_, (ty, ck')) -> ck' = ck) vars in
+  let nvars = List.map (fun (id, ann) -> (id, (Atom.fresh "$", ann))) vars in
+  let defs = defined_of_instrs ins in
+  let ndefs = List.map (fun (id, (id', (ty, ck))) -> (id, (id', (ty, (Con (constr, ckid, ck))))))
+      (List.filter (fun (id, _) -> List.mem id defs) nvars)
+  and tolet = List.filter (fun (id, _) -> not (List.mem id defs)) nvars in
+  let ins' = List.fold_left (fun ins (id, (id', _)) -> alpha_conv_instrs id id' ins) ins nvars in
+  let ins' = add_lets ins'
+      (List.map (fun (id, (id', ((ty, ck) as ann))) ->
+           (id', ann, { kexpr_desc = KE_when ([{ kexpr_desc = KE_ident id;
+                                                 kexpr_annot = [(ty, (ck, Some id))];
+                                                 kexpr_loc = dummy_loc }], constr, ckid);
+                        kexpr_annot = [(ty, (Con (constr, ckid, ck), None))];
+                        kexpr_loc = dummy_loc })) tolet) in
+  ins', ndefs
+
+let mk_merge ty ck ckid (cvars : (constr * ident) list) =
+  { kexpr_desc = KE_merge (ckid,
+                           List.map (fun (constr, id) ->
+                               (constr, [{ kexpr_desc = KE_ident id;
+                                           kexpr_annot = [(ty, (Con (constr, ckid, ck), Some id))];
+                                           kexpr_loc = dummy_loc }])) cvars);
+    kexpr_annot = [(ty, (ck, None))];
+    kexpr_loc = dummy_loc }
+
+let rec switch_instr vars (ins : p_instr) : (p_instr * (ident * ann) list) =
+  match ins.pinstr_desc with
+  | Eq eq -> { ins with pinstr_desc = Eq eq }, []
+  | Let (id, ann, e, instrs) ->
+    let (instrs', ys) = switch_instrs vars instrs in
+    { ins with pinstr_desc = Let (id, ann, e, instrs')}, ys
+  | Switch (e, brs) ->
+    let (ty, (ck, ckid)) = List.hd e.kexpr_annot in
+    let ckid = match ckid with Some ckid -> ckid | None -> failwith "Should not happen" in
+    let (brs', ys) = switch_branches vars ckid brs in
+    let brs' = List.map (fun (c, ins) -> (c, switch_proj vars ck c ckid ins)) brs' in
+    let (_, (_, ndefs)) = List.hd brs' in
+    let mergeeqs =
+      List.map (fun (id, _) ->
+          let cvars = List.map (fun (c, (_, ndefs)) -> (c, fst (List.assoc id ndefs))) brs' in
+          { pinstr_desc = Eq { keq_patt = [id];
+                               keq_expr = [mk_merge ty ck ckid cvars];
+                               keq_loc = dummy_loc; };
+            pinstr_loc = dummy_loc }
+        ) ndefs in
+    { ins with pinstr_desc =
+                 Let (ckid, (ty, ck), e,
+                      mergeeqs@(List.concat (List.map (fun (_, (ins, _)) -> ins) brs'))) },
+    ys@(List.map snd (List.concat (List.map (fun (_, (_, ndefs)) -> ndefs) brs')))
+  | _ -> invalid_arg "switch_instr"
+and switch_instrs vars ins =
+  let (ins, ys) =
+    List.fold_left (fun (inss1, ys1) ins ->
+        let (ins', ys2) = switch_instr vars ins in (ins'::inss1, ys1@ys2))
+      ([], []) ins in List.rev ins, ys
+and switch_branches vars ckid brs =
+  let (brs, ys) =
+    List.fold_left (fun (brss1, ys1) (c, ins) ->
+        let (ins', ys2) = switch_instrs
+            (List.map (fun (id, (ty, ck)) -> (id, (ty, Con (c, ckid, ck)))) vars) ins
+        in ((c, ins')::brss1, ys1@ys2))
+      ([], []) brs in List.rev brs, ys
+
+
+let switch_node (n : p_node) : p_node =
+  let (ins, names) = switch_instrs (n.pn_input@n.pn_output@n.pn_local) n.pn_instrs in
+  { n with pn_instrs = ins; pn_local = n.pn_local@names }
+
+let switch_file (f : p_file) : p_file =
+  { f with pf_nodes = List.map switch_node f.pf_nodes }
+
 (** Eliminate let blocks                                                      *)
-
-(** alpha-conversion *)
-let alpha_conv id id' x =
-  if x = id then id' else x
-
-let rec alpha_conv_ck id id' = function
-  | Cbase -> Cbase
-  | Con (constr, ckid, ck) ->
-    Con (constr, alpha_conv id id' ckid, alpha_conv_ck id id' ck)
-
-let alpha_conv_annot id id' (ty, (ck, name)) =
-  (ty, (alpha_conv_ck id id' ck,
-        match name with
-        | None -> None
-        | Some x -> Some (alpha_conv id id' x)))
-
-let rec alpha_conv_expr id id' e =
-  let desc =
-    match e.kexpr_desc with
-    | KE_const c -> KE_const c
-    | KE_ident x -> KE_ident (alpha_conv id id' x)
-    | KE_unop (op, e1) ->
-      KE_unop (op, alpha_conv_expr id id' e1)
-    | KE_binop (op, e1, e2) ->
-      KE_binop (op, alpha_conv_expr id id' e1, alpha_conv_expr id id' e2)
-    | KE_fby (e0s, es) ->
-      KE_fby (alpha_conv_exprs id id' e0s, alpha_conv_exprs id id' es)
-    | KE_arrow (e0s, es) ->
-      KE_arrow (alpha_conv_exprs id id' e0s, alpha_conv_exprs id id' es)
-    | KE_match (e, brs) ->
-      KE_match (alpha_conv_expr id id' e, alpha_conv_branches id id' brs)
-    | KE_when (es, constr, x) ->
-      KE_when (alpha_conv_exprs id id' es, constr, alpha_conv id id' x)
-    | KE_merge (x, brs) ->
-      KE_merge (alpha_conv id id' x, alpha_conv_branches id id' brs)
-    | KE_app (f, es, er) ->
-      KE_app (f, alpha_conv_exprs id id' es, alpha_conv_expr id id' er)
-  in { e with kexpr_desc = desc;
-              kexpr_annot = List.map (alpha_conv_annot id id') e.kexpr_annot }
-and alpha_conv_exprs id id' =
-  List.map (alpha_conv_expr id id')
-and alpha_conv_branches id id' =
-  List.map (fun (c, es) -> (c, alpha_conv_exprs id id' es))
-
-let alpha_conv_eq id id' eq =
-  { eq with keq_expr = alpha_conv_exprs id id' eq.keq_expr }
-
-let alpha_conv_instr id id' ins =
-  let desc =
-    match ins.pinstr_desc with
-    | Eq eq -> Eq (alpha_conv_eq id id' eq)
-    | _ -> invalid_arg "alpha_conv_instr"
-  in { ins with pinstr_desc = desc }
 
 (** check if ident appears in expr, eq, instr *)
 let rec free_in_expr id e =
@@ -218,4 +319,4 @@ let tr_file (f : p_file) : k_file =
 (** Conclusion                                                                *)
 
 let kernelize_file (f : p_file) : k_file =
-  f |> reset_file |> let_file |> tr_file
+  f |> reset_file |> switch_file |> let_file |> tr_file

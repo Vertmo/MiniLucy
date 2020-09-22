@@ -22,6 +22,7 @@
   "in", IN;
 	"int", INT;
 	"let", LET;
+  "match", MATCH;
   "merge", MERGE;
 	"mod", MOD;
 	"node", NODE;

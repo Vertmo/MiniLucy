@@ -45,12 +45,9 @@ let control tys env (ck : clock) (ins : instr) : instr =
   let rec aux ck ins = match ck with
     | Cbase -> ins
     | Con (constr, ckid, ck') ->
-      Case (translate_ident env ckid,
-            List.assoc ckid tys,
-            [constr, [aux ck' ins]])
-  in match ins with
-  | StAssign _ -> ins
-  | _ -> aux ck ins
+      aux ck' (Case (translate_ident env ckid,
+                     List.assoc ckid tys, [(constr, [ins])]))
+  in aux ck ins
 
 (* Fusion of control structures *)
 let rec fusion i1 i2 =
@@ -66,11 +63,17 @@ let rec fusion i1 i2 =
         (c1, i1)::l1, (c1, [])::l2
       else let (l1, l2) = align_lists ((c1, i1)::tl1) tl2 in
         (c2, [])::l1, (c2, i2)::l2 in
-  match i1, i2 with
+
+  let rec_fusion i =
+    (match i with
+     | Case (x, ty, is) ->
+       Case (x, ty, (List.map (fun (c, ins) -> (c, fusion_list ins)) is))
+     | _ -> i)
+  in match rec_fusion i1, rec_fusion i2 with
   | Case (x1, ty, is1), Case (x2, _, is2) when x1 = x2 ->
     let is1, is2 = align_lists is1 is2 in
     [Case (x1, ty, List.map2 (fun (c1, i1) (_, i2) ->
-         (c1, fusion_list i1@i2)) is1 is2)]
+         (c1, fusion_list (i1@i2))) is1 is2)]
   | _, _ -> [i1;i2]
 and fusion_list instrs =
   match instrs with

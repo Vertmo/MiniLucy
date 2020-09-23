@@ -77,10 +77,13 @@ module MINILS(A : Annotations) = struct
                      constr (string_of_exprs e)) es))
 
   and string_of_exprs ?(print_anns=false) es =
-    Printf.sprintf "(%s)" (String.concat "," (List.map (string_of_expr ~print_anns) es))
+    Printf.sprintf (if List.length es = 1 then "%s" else "(%s)")
+      (String.concat "," (List.map (string_of_expr ~print_anns) es))
 
   let rec string_of_patt p =
-    Printf.sprintf "(%s)" (String.concat ", " p)
+    Printf.sprintf
+      (if List.length p = 1 then "%s" else "(%s)")
+      (String.concat ", " p)
 
   type k_equation =
     { keq_patt: ident list;

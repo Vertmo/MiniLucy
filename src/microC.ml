@@ -91,8 +91,8 @@ type instr =
   (* Only used for AVR main loop, dont worry ! *)
   | While of (expr * instr list)
 
-let rec string_of_instr (indent_level : int) (i : instr) =
-  let indent = String.make indent_level '\t' in
+let rec string_of_instr (level : int) (i : instr) =
+  let indent = String.make (level*2) ' ' in
   match i with
   | Assign (l, e) ->
     Printf.sprintf "%s%s = %s;" indent (string_of_lhs l) (string_of_expr e)
@@ -103,9 +103,9 @@ let rec string_of_instr (indent_level : int) (i : instr) =
                     %s\n\
                     %s}"
       indent (string_of_expr c)
-      (String.concat "\n" (List.map (string_of_instr (indent_level + 1)) t))
+      (String.concat "\n" (List.map (string_of_instr (level + 1)) t))
       indent
-      (String.concat "\n" (List.map (string_of_instr (indent_level + 1)) e))
+      (String.concat "\n" (List.map (string_of_instr (level + 1)) e))
       indent
   | Call (id, es) ->
     Printf.sprintf "%s%s(%s);" indent id
@@ -118,13 +118,13 @@ let rec string_of_instr (indent_level : int) (i : instr) =
            Printf.sprintf "%s\tcase %s:\n%s\n%s\t\tbreak;"
              indent c
              (String.concat "\n"
-                (List.map (string_of_instr (indent_level + 2)) instr))
+                (List.map (string_of_instr (level + 2)) instr))
              indent) cases))
   | While (e, instrs) ->
     Printf.sprintf "%swhile(%s) {\n%s\n%s}" indent
       (string_of_expr e)
       (String.concat "\n"
-         (List.map (string_of_instr (indent_level + 1)) instrs)) indent
+         (List.map (string_of_instr (level + 1)) instrs)) indent
 
 type fundef = {
   fun_name : ident;
@@ -134,7 +134,7 @@ type fundef = {
 }
 
 let string_of_fundef (f : fundef) =
-  Printf.sprintf "%s %s(%s) {\n %s\n}\n"
+  Printf.sprintf "%s %s(%s) {\n%s\n}\n"
     (string_of_ty f.fun_ret) f.fun_name
     (String.concat ", "
        (List.map (fun (id, ty) -> (string_of_ty ty)^" "^id) f.fun_args))

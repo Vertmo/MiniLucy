@@ -23,27 +23,31 @@ type instr =
   | StepAssign of (ident list * ident * expr list)
   | Case of expr * ty * (constr * instr list) list
 
-let rec string_of_instr = function
+let rec string_of_instr level ins = 
+  let indent = String.make (level*2) ' ' in
+  match ins with
   | Assign (id, e) ->
-    Printf.sprintf "%s := %s"
-      id (string_of_expr e)
+    Printf.sprintf "%s%s := %s;"
+      indent id (string_of_expr e)
   | StAssign (id, e) ->
-    Printf.sprintf "state(%s) := %s"
-      id (string_of_expr e)
+    Printf.sprintf "%sstate(%s) := %s;"
+      indent id (string_of_expr e)
   | Reset id ->
-    Printf.sprintf "%s.reset" id
+    Printf.sprintf "%s%s.reset;" indent id
   | StepAssign (ids, fid, es) ->
-    Printf.sprintf "(%s) := %s.step(%s)"
+    Printf.sprintf "%s(%s) := %s.step(%s);"
+      indent
       (String.concat ", " ids) fid
       (String.concat ", " (List.map string_of_expr es))
   | Case (e, _, instrs) ->
-    Printf.sprintf "case(%s) {%s}\n"
-      (string_of_expr e)
+    Printf.sprintf "%scase(%s) {\n%s\n%s}\n"
+      indent (string_of_expr e)
       (String.concat "\n" (List.map (fun (c, ins) ->
-           Printf.sprintf "%s: %s;" c (string_of_instrs ins)) instrs))
+           Printf.sprintf "%s%s:\n%s" indent c (string_of_instrs (level+1) ins)) instrs))
+      indent
 
-and string_of_instrs instrs =
-  String.concat "\n" (List.map string_of_instr instrs)
+and string_of_instrs level instrs =
+  String.concat "\n" (List.map (string_of_instr level) instrs)
 
 type p = (ident * ty) list
 
@@ -72,17 +76,17 @@ type machine = {
 let string_of_machine m =
   let (input, output, vars, instrs) = m.m_step in
   Printf.sprintf "machine %s =\n\
-                   memory %s\n\
-                   instances %s\n\
-                   reset () =\n\
-                   %s\n\
-                   step(%s) returns(%s) = var %s in\n\
-                   %s\n\n"
+                  memory %s\n\
+                  instances %s\n\
+                  reset () =\n\
+                  %s\n\
+                  step(%s) returns(%s) =\nvar %s in\n\
+                  %s\n\n"
     m.m_name (string_of_p m.m_memory)
     (String.concat "\n" (List.map (fun (o, (f, _)) -> o^" : "^f) m.m_instances))
-    (string_of_instrs m.m_reset)
+    (string_of_instrs 1 m.m_reset)
     (string_of_p input) (string_of_p output) (string_of_p vars)
-    (string_of_instrs instrs)
+    (string_of_instrs 1 instrs)
 
 type file =
   { clocks : clockdec list;

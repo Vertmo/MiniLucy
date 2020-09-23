@@ -310,7 +310,7 @@ let elab_equation nodes vars (eq : k_equation) : CPMinils.k_equation =
 
   { keq_patt = eq.keq_patt; keq_expr = freeze_exprs es'; keq_loc = eq.keq_loc }
 
-let rec elab_instr nodes vars (ins : p_instr) : CPMinils.p_instr =
+let rec elab_instr nodes vars bck (ins : p_instr) : CPMinils.p_instr =
   let (desc : CPMinils.p_instr_desc) =
     match ins.pinstr_desc with
     | Eq eq -> Eq (elab_equation nodes vars eq)
@@ -319,26 +319,30 @@ let rec elab_instr nodes vars (ins : p_instr) : CPMinils.p_instr =
       let (_, nck') = List.hd e'.kexpr_annot in
       unify_nsclock ins.pinstr_loc ((sclock_of_clock ck), None) nck';
       let e' = freeze_expr e' in
-      let instrs' = elab_instrs nodes ((id, ck)::vars) instrs in
+      let instrs' = elab_instrs nodes ((id, ck)::vars) bck instrs in
       Let (id, ann, e', instrs')
     | Reset (ins, er) ->
-      Reset (elab_instrs nodes vars ins,
+      Reset (elab_instrs nodes vars bck ins,
              freeze_expr (elab_expr nodes vars er)) (* TODO should there be a constraint ? *)
-    | Switch (e, brs) ->
-      let e' = freeze_expr (elab_expr nodes vars e) in
-      let (ty, (ck, name)) = List.hd e'.kexpr_annot in
+    | Switch (e, brs, _) ->
+      let e' = elab_expr nodes vars e in
+      let (_, (ck, _)) = List.hd e'.kexpr_annot in
+      unify_sclock e.kexpr_loc bck ck; (* Use the bck hint to infer the correct clock for the condition *)
+      let e' = freeze_expr e' in
+      let (_, (ck, _)) = List.hd e'.kexpr_annot in
       let ckid = Atom.fresh "$" in
       (* Only keep variables on the clock ck in the env *)
       let vars' = List.filter (fun (_, ck') -> ck = ck') vars in
-      Switch ({ e' with kexpr_annot = [(ty, (ck, Some ckid))] },
-               elab_branches nodes vars' ckid brs)
+      Switch (e',
+              elab_branches nodes vars' bck ckid brs,
+              Some ckid)
     | _ -> failwith "TODO elab_instr"
   in { pinstr_desc = desc; pinstr_loc = ins.pinstr_loc }
-and elab_instrs nodes vars ins =
-  List.map (elab_instr nodes vars) ins
-and elab_branches nodes vars ckid =
+and elab_instrs nodes vars bck =
+  List.map (elab_instr nodes vars bck)
+and elab_branches nodes vars bck ckid =
   List.map (fun (c, ins) ->
-      (c, elab_instrs nodes (List.map (fun (id, ck) -> (id, Con (c, ckid, ck))) vars) ins))
+      (c, elab_instrs nodes (List.map (fun (id, ck) -> (id, Con (c, ckid, ck))) vars) (Son (c, (ref (InstIdent ckid)), bck)) ins))
 
 (** Check a clock in a clocking env *)
 let check_clock (n : p_node) vars ck =
@@ -368,7 +372,7 @@ let elab_node (nodes : (ident * CPMinils.p_node) list) (n : p_node) : CPMinils.p
   List.iter (fun (_, (_, ck)) -> check_clock n vars ck) n.pn_local;
 
   (* elab instructions *)
-  let instrs' = elab_instrs nodes vars n.pn_instrs in
+  let instrs' = elab_instrs nodes vars (Svar (ref (UnknownCk (Atom.fresh "$")))) n.pn_instrs in
 
   { pn_name = n.pn_name;
     pn_input = n.pn_input;

@@ -126,9 +126,10 @@ let rec reset_instr (ins : p_instr) : p_instr =
       | Eq eq -> Eq (reset_eq x ck eq)
       | Let (id, ann, e, instrs) ->
         Let (id, ann, reset_expr x ck e, reset_instrs' x ck instrs)
-      | Switch (e, brs) ->
+      | Switch (e, brs, ckid) ->
         Switch (reset_expr x ck e,
-                List.map (fun (c, ins) -> (c, List.map (reset_instr' x ck) ins)) brs)
+                List.map (fun (c, ins) -> (c, List.map (reset_instr' x ck) ins)) brs,
+                ckid)
       | _ -> invalid_arg "reset_instr'"
     in { ins with pinstr_desc = desc }
   and reset_instrs' (x : ident) (ck : clock) =
@@ -138,8 +139,8 @@ let rec reset_instr (ins : p_instr) : p_instr =
     | Eq eq -> Eq eq
     | Let (id, ann, e, instrs) ->
       Let (id, ann, e, reset_instrs instrs)
-    | Switch (e, brs) ->
-      Switch (e, reset_branches brs)
+    | Switch (e, brs, ckid) ->
+      Switch (e, reset_branches brs, ckid)
     | Reset (instrs, er) ->
       let instrs' = reset_instrs instrs in
       let y = Atom.fresh "$" and (ty, (ckr, _)) = List.hd er.kexpr_annot in
@@ -196,14 +197,14 @@ let mk_merge ty ck ckid (cvars : (constr * ident) list) =
     kexpr_annot = [(ty, (ck, None))];
     kexpr_loc = dummy_loc }
 
-let rec switch_instr vars (ins : p_instr) : (p_instr * (ident * ann) list) =
+let rec switch_instr vars (ins : p_instr) : (p_instr list * (ident * ann) list) =
   match ins.pinstr_desc with
-  | Eq eq -> { ins with pinstr_desc = Eq eq }, []
+  | Eq eq -> [ins], []
   | Let (id, ann, e, instrs) ->
     let (instrs', ys) = switch_instrs vars instrs in
-    { ins with pinstr_desc = Let (id, ann, e, instrs')}, ys
-  | Switch (e, brs) ->
-    let (ty, (ck, ckid)) = List.hd e.kexpr_annot in
+    [{ ins with pinstr_desc = Let (id, ann, e, instrs')}], ys
+  | Switch (e, brs, ckid) ->
+    let (ty, (ck, _)) = List.hd e.kexpr_annot in
     let ckid = match ckid with Some ckid -> ckid | None -> failwith "Should not happen" in
     let (brs', ys) = switch_branches vars ckid brs in
     let brs' = List.map (fun (c, ins) -> (c, switch_proj vars ck c ckid ins)) brs' in
@@ -216,16 +217,17 @@ let rec switch_instr vars (ins : p_instr) : (p_instr * (ident * ann) list) =
                                keq_loc = dummy_loc; };
             pinstr_loc = dummy_loc }
         ) ndefs in
-    { ins with pinstr_desc =
-                 Let (ckid, (ty, ck), e,
-                      mergeeqs@(List.concat (List.map (fun (_, (ins, _)) -> ins) brs'))) },
-    ys@(List.map snd (List.concat (List.map (fun (_, (_, ndefs)) -> ndefs) brs')))
+    { pinstr_desc = Eq { keq_patt = [ckid];
+                         keq_expr = [e];
+                         keq_loc = dummy_loc };
+      pinstr_loc = dummy_loc }::mergeeqs@(List.concat (List.map (fun (_, (ins, _)) -> ins) brs')),
+    (ckid, (ty, ck))::ys@(List.map snd (List.concat (List.map (fun (_, (_, ndefs)) -> ndefs) brs')))
   | _ -> invalid_arg "switch_instr"
 and switch_instrs vars ins =
   let (ins, ys) =
     List.fold_left (fun (inss1, ys1) ins ->
         let (ins', ys2) = switch_instr vars ins in (ins'::inss1, ys1@ys2))
-      ([], []) ins in List.rev ins, ys
+      ([], []) ins in List.concat (List.rev ins), ys
 and switch_branches vars ckid brs =
   let (brs, ys) =
     List.fold_left (fun (brss1, ys1) (c, ins) ->

@@ -164,9 +164,9 @@ instr:
 | RESET instr+ EVERY expr SEMICOL
     { mk_instr (Reset ($2, $4)) $startpos $endpos }
 | AUTOMATON auto_branch+ END SEMICOL
-    { mk_instr (Automaton $2) $startpos $endpos }
+    { mk_instr (Automaton ($2, None)) $startpos $endpos }
 | SWITCH expr instr_branch+ END SEMICOL
-    { mk_instr (Switch ($2, $3)) $startpos $endpos }
+    { mk_instr (Switch ($2, $3, None)) $startpos $endpos }
 | LET LPAREN IDENT COLON annot RPAREN EQUAL expr IN instr+ END SEMICOL
     { mk_instr (Let ($3, $5, $8, $10)) $startpos $endpos }
 ;

@@ -51,12 +51,14 @@ let rec sort_instr (ins : p_instr) : p_instr =
       Let (id, ann, sort_expr e, sort_instrs ins)
     | Reset (ins, er) ->
       Reset (sort_instrs ins, sort_expr er)
-    | Switch (e, branches) ->
+    | Switch (e, branches, ckid) ->
       Switch (sort_expr e,
               List.sort (fun (c1, _) (c2, _) -> String.compare c1 c2)
-                (List.map (fun (c, ins) -> (c, sort_instrs ins)) branches))
-    | Automaton branches ->
-      Automaton (List.sort (fun (c1, _, _, _) (c2, _, _, _) -> String.compare c1 c2) branches)
+                (List.map (fun (c, ins) -> (c, sort_instrs ins)) branches),
+             ckid)
+    | Automaton (branches, ckid) ->
+      Automaton ((List.sort (fun (c1, _, _, _) (c2, _, _, _) -> String.compare c1 c2) branches),
+                 ckid)
   in { ins with pinstr_desc = desc }
 and sort_instrs ins = List.map sort_instr ins
 
@@ -334,15 +336,15 @@ let rec elab_instr nodes vars clocks (ins : p_instr) : TPMinils.p_instr =
                     "Reset expr should be of type bool, found %s"
                     (string_of_tys er'.kexpr_annot), er.kexpr_loc));
       Reset (ins', er')
-    | Switch (e, brs) ->
+    | Switch (e, brs, ckid) ->
       let e' = elab_expr nodes vars clocks e in
       let clt = get_unary_type e'.kexpr_annot e.kexpr_loc in
       let constrs = constrs_of_clock clocks e.kexpr_loc clt in
       if (constrs <> List.map fst brs)
       then raise (constructors_error constrs (List.map fst brs) ins.pinstr_loc);
       let brs' = List.map (fun (c, ins) -> (c, elab_instrs nodes vars clocks ins)) brs in
-      Switch (e', brs')
-    | Automaton brs ->
+      Switch (e', brs', ckid)
+    | Automaton (brs, ckid) ->
       let elab_un (e, s, b) =
         let e' = elab_expr nodes vars clocks e in
         if e'.kexpr_annot <> [Tbool] then
@@ -358,7 +360,7 @@ let rec elab_instr nodes vars clocks (ins : p_instr) : TPMinils.p_instr =
           and untils' = List.map elab_un untils in
           (c, unlesss', instrs', untils')
         ) brs in
-      Automaton brs'
+      Automaton (brs', ckid)
   in { pinstr_desc = desc; pinstr_loc = ins.pinstr_loc }
 and elab_instrs nodes vars clocks ins =
   List.map (elab_instr nodes vars clocks) ins
@@ -369,7 +371,7 @@ let rec get_def_instr (i : p_instr) : ident list =
   | Eq eq -> defined_of_equation eq
   | Let (_, _, _, ins) -> get_def_instrs ins
   | Reset (ins, _) -> get_def_instrs ins
-  | Switch (e, brs) ->
+  | Switch (e, brs, _) ->
     let defs = List.map (fun (_, ins) -> get_def_instrs ins) brs in
     let defs = List.map (List.sort String.compare) defs in
     let def = List.hd defs in
@@ -379,7 +381,7 @@ let rec get_def_instr (i : p_instr) : ident list =
                   ("All the branches of switch should define the same idents",
                    i.pinstr_loc));
     def
-  | Automaton brs ->
+  | Automaton (brs, _) ->
     let defs = List.map (fun (_, _, ins, _) -> get_def_instrs ins) brs in
     let defs = List.map (List.sort String.compare) defs in
     let def = List.hd defs in

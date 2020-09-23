@@ -39,7 +39,7 @@ node test5() returns (z : int);
 let
   switch (1 < 2)
   | True -> switch ((0 fby z) > 3)
-            | True -> switch (((0 fby z) = 0) fby false) 
+            | True -> switch ((1 < 2) fby false) 
                       | True -> z = 1;
                       | False -> z = 2;
                       end;

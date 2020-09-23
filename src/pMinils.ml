@@ -34,9 +34,9 @@ module PMINILS(A : Annotations) = struct
   and p_instr_desc =
     | Eq of k_equation
     | Let of (ident * ann * k_expr * p_instr list)
-    | Switch of (k_expr * (constr * p_instr list) list)
+    | Switch of (k_expr * (constr * p_instr list) list * ident option)
     | Reset of (p_instr list * k_expr)
-    | Automaton of (constr * p_unless list * p_instr list * p_until list) list
+    | Automaton of ((constr * p_unless list * p_instr list * p_until list) list * ident option)
 
   let rec string_of_instr ?(print_anns=false) level i =
     match i.pinstr_desc with
@@ -46,7 +46,7 @@ module PMINILS(A : Annotations) = struct
         id (string_of_ann ann) (string_of_expr ~print_anns e)
         (string_of_instrs ~print_anns (level+1) ins)
         (indent level)
-    | Automaton branches ->
+    | Automaton (branches, _) ->
       Printf.sprintf "%sautomaton\n%s" (indent level)
         (String.concat "\n" (List.map (fun (c, unlesss, ins, untils) ->
              Printf.sprintf "%s| %s ->\n%s\n%s\n%s" (indent level) c
@@ -58,7 +58,7 @@ module PMINILS(A : Annotations) = struct
       Printf.sprintf "%sreset\n%s\n%severy %s;" (indent level)
         (string_of_instrs ~print_anns (level + 1) ins)
         (indent level) (string_of_expr er)
-    | Switch (e, branches) ->
+    | Switch (e, branches, _) ->
       Printf.sprintf "%sswitch %s\n%s\n%send;" (indent level) (string_of_expr e)
         (String.concat "\n" (List.map (fun (c, ins) ->
              Printf.sprintf "%s| %s -> \n%s" (indent level) c
@@ -73,13 +73,13 @@ module PMINILS(A : Annotations) = struct
     match i.pinstr_desc  with
     | Eq eq -> defined_of_equation eq
     | Let (_, _, _, ins) -> defined_of_instrs ins
-    | Automaton brs ->
+    | Automaton (brs, _) ->
       (* If the program is well typed, all the branches
          define the same equations left-hand-sides *)
       let (_, _, is, _) = List.hd brs in
       defined_of_instrs is
     | Reset (is, _) -> defined_of_instrs is
-    | Switch (_, brs) ->
+    | Switch (_, brs, _) ->
       let (_, is) = List.hd brs in
       defined_of_instrs is
   and defined_of_instrs is =

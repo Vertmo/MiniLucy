@@ -8,9 +8,25 @@ let
     until x > 5 then DEC;
   | DEC ->
     let (u2 : int) = 2 in
-      x = 0 fby x - u2;
+      x = (0 fby x) - u2;
     end;
     until x < -10 continue INC;
+  end;
+tel;
+  
+node two_auto(b : bool) returns (x : int; y : int when b);
+let
+  automaton
+  | INC -> x = 0 fby x + 1;
+    until x > 5 then DEC;
+  | DEC -> x = 0 fby x - 1;
+    until x < -10 then INC;
+  end;
+  automaton
+  | INC -> y = 0 fby y + 1;
+    until y > 5 then DEC;
+  | DEC -> y = 0 fby y - 1;
+    until y < -10 then INC;
   end;
 tel;
   
@@ -37,21 +53,22 @@ let
   end;
 tel;
   
--- node cumulative_sum(x : int) returns (y : int);
--- let
---   y = x + 0 fby y;
--- tel;
+node cumulative_sum(x : int) returns (y : int);
+let
+  y = x + 0 fby y;
+tel;
 
--- node auto_app() returns (x : int);
--- let
---   automaton
---   | APP1 ->
---     let v : int = cumulative_sum(1) in
---     x = 0 fby v;
---     until x > 4 then APP2 and reset;
---   | APP2 ->
---     x = cumulative_sum(-2);
---     until x < -6 then APP1 and reset;
---   end;
--- tel;
+node auto_app() returns (x : int);
+let
+  automaton
+  | APP1 ->
+    let (v : int) = cumulative_sum(1) in
+      x = 0 fby v;
+    end;
+    until x > 4 then APP2;
+  | APP2 ->
+    x = cumulative_sum(-2);
+    until x < -6 then APP1;
+  end;
+tel;
 

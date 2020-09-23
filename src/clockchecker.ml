@@ -72,6 +72,11 @@ open Typechecker.TPMinils
 exception UnifError of (instident * instident)
 exception ClockError of (string * location)
 
+let block_error id bck ck loc =
+  ClockError
+    (Printf.sprintf "%s is declared to have clock %s, but should have the block clock %s"
+    id (string_of_sclock bck) (string_of_sclock ck), loc)
+
 (* let clocks_of (es : CPMinils.k_expr list) =
  *   List.concat (List.map (fun (e : CPMinils.k_expr) -> List.map snd e.kexpr_annot) es) *)
 
@@ -104,7 +109,7 @@ let unify_sclock loc (ck1 : sclock) (ck2 : sclock) =
                 (string_of_sclock ck1) (string_of_sclock ck2) msg, loc)) in
   let rec aux (ck1 : sclock) (ck2 : sclock) =
     match ck1, ck2 with
-    | Sbase, Sbase -> ()
+    | ck1, ck2 when ck1 = ck2 -> ()
     | Svar ({ contents = UnknownCk id } as v), ck | ck, Svar ({ contents = UnknownCk id } as v) ->
       (try occurs_check ck id;
        with _ -> error (Printf.sprintf " : %s occurs in %s" id (string_of_sclock ck)));
@@ -159,7 +164,7 @@ let rec elab_expr ?(is_top=false) (nodes : (ident * CPMinils.p_node) list) vars 
   | KE_ident id ->
     let ck = get_clock_in_env id vars e.kexpr_loc in
     { kexpr_desc = KE_ident id;
-      kexpr_annot = [(List.hd ty, (sclock_of_clock ck,
+      kexpr_annot = [(List.hd ty, (ck,
                                    if is_top then None
                                    else Some (ref (InstIdent id))))];
       kexpr_loc = loc }
@@ -199,7 +204,7 @@ let rec elab_expr ?(is_top=false) (nodes : (ident * CPMinils.p_node) list) vars 
       kexpr_loc = loc }
   | KE_when (es, constr, ckid) ->
     let es' = elab_exprs nodes vars es in
-    let ck = sclock_of_clock (get_clock_in_env ckid vars loc)
+    let ck = get_clock_in_env ckid vars loc
     and cks = sclocks_of es' in
     List.iter (fun ck' -> unify_sclock loc ck ck') cks;
     { kexpr_desc = KE_when (es', constr, ckid);
@@ -207,7 +212,7 @@ let rec elab_expr ?(is_top=false) (nodes : (ident * CPMinils.p_node) list) vars 
       kexpr_loc = loc }
   | KE_merge (ckid, branches) ->
     let branches' = elab_branches nodes vars branches in
-    let ck = sclock_of_clock (get_clock_in_env ckid vars loc) in
+    let ck = get_clock_in_env ckid vars loc in
 
     List.iter (fun (constr, es) ->
         let cks = sclocks_of es in
@@ -283,16 +288,22 @@ and freeze_branches branches = List.map (fun (c, es) -> (c, freeze_exprs es)) br
 
 (** Get the clocks(s) expected for a pattern [pat],
     as well as the translated pattern *)
-let get_pattern_clock (vars : (ident * clock) list) pat loc =
-  List.map (fun id -> sclock_of_clock (get_clock_in_env id vars loc)) pat
+let get_pattern_clock (vars : (ident * sclock) list) pat loc =
+  List.map (fun id -> get_clock_in_env id vars loc) pat
 
 (** Check the clocks for the equation [eq] *)
-let elab_equation nodes vars (eq : k_equation) : CPMinils.k_equation =
+let elab_equation nodes vars bck constrained_block (eq : k_equation) : CPMinils.k_equation =
   let es' = elab_exprs ~is_top:true nodes vars eq.keq_expr in
 
   (** Check that the clocks are correct *)
   let expected = get_pattern_clock vars eq.keq_patt eq.keq_loc
   and actual = sclocks_of es' in
+
+  (** If the block clock is constrained, check that the clock is on the correct base *)
+  if constrained_block then
+    List.iter (unify_sclock eq.keq_loc bck) expected;
+
+  (** Check that the clocks correspond *)
   List.iter2 (unify_sclock eq.keq_loc) expected actual;
 
   (** Check that the anons are correct *)
@@ -310,39 +321,60 @@ let elab_equation nodes vars (eq : k_equation) : CPMinils.k_equation =
 
   { keq_patt = eq.keq_patt; keq_expr = freeze_exprs es'; keq_loc = eq.keq_loc }
 
-let rec elab_instr nodes vars bck (ins : p_instr) : CPMinils.p_instr =
+let rec elab_instr nodes vars bck constrained_block (ins : p_instr) : CPMinils.p_instr =
   let (desc : CPMinils.p_instr_desc) =
     match ins.pinstr_desc with
-    | Eq eq -> Eq (elab_equation nodes vars eq)
-    | Let (id, ((_, ck) as ann), e, instrs) ->
-      let e' = elab_expr nodes vars e in
+    | Eq eq -> Eq (elab_equation nodes vars bck constrained_block eq)
+    | Let (id, (ty, ck), e, instrs) ->
+      let ck' = inst_clock bck (fun id -> ref (InstIdent id)) ck in
+
+      if constrained_block && ck <> Cbase then
+        raise (block_error id ck' bck ins.pinstr_loc);
+
+      let e' = elab_expr nodes ((id, ck')::vars) e in
       let (_, nck') = List.hd e'.kexpr_annot in
-      unify_nsclock ins.pinstr_loc ((sclock_of_clock ck), None) nck';
+      unify_nsclock ins.pinstr_loc (ck', None) nck';
       let e' = freeze_expr e' in
-      let instrs' = elab_instrs nodes ((id, ck)::vars) bck instrs in
-      Let (id, ann, e', instrs')
+      let instrs' = elab_instrs nodes ((id, ck')::vars) bck constrained_block instrs in
+      Let (id, (ty, clock_of_sclock ck'), e', instrs')
     | Reset (ins, er) ->
-      Reset (elab_instrs nodes vars bck ins,
+      Reset (elab_instrs nodes vars bck constrained_block ins,
              freeze_expr (elab_expr nodes vars er)) (* TODO should there be a constraint ? *)
     | Switch (e, brs, _) ->
       let e' = elab_expr nodes vars e in
       let (_, (ck, _)) = List.hd e'.kexpr_annot in
       unify_sclock e.kexpr_loc bck ck; (* Use the bck hint to infer the correct clock for the condition *)
       let e' = freeze_expr e' in
-      let (_, (ck, _)) = List.hd e'.kexpr_annot in
       let ckid = Atom.fresh "$" in
-      (* Only keep variables on the clock ck in the env *)
-      let vars' = List.filter (fun (_, ck') -> ck = ck') vars in
       Switch (e',
-              elab_branches nodes vars' bck ckid brs,
+              List.map (fun (c, ins) ->
+                  let bck' = Son (c, ref (InstIdent ckid), bck)
+                  and vars' = List.map (fun (id, ck) -> (id, Son (c, ref (InstIdent ckid), ck))) vars in
+                  (c, elab_instrs nodes vars' bck' true ins)) brs,
               Some ckid)
-    | _ -> failwith "TODO elab_instr"
+    | Automaton (brs, (ckid, _)) ->
+      let ckid = match ckid with Some ckid -> ckid | _ -> failwith "Should not happen"
+      and bck =
+        if constrained_block then bck
+        else Svar (ref (UnknownCk (Atom.fresh "$"))) in
+      let elab_un vars bck (e, s, b) =
+        let e' = elab_expr nodes vars e in
+        let (_, (ck, _)) = List.hd e'.kexpr_annot in
+        unify_sclock e.kexpr_loc bck ck;
+        (freeze_expr e', s, b)
+      in
+      let brs' = List.map (fun (c, unlesss, instrs, untils) ->
+          let bck' = Son (c, ref (InstIdent ckid), bck)
+          and vars' = List.map (fun (id, ck) -> (id, Son (c, ref (InstIdent ckid), ck))) vars in
+          let unlesss' = List.map (elab_un vars' bck') unlesss
+          and untils' = List.map (elab_un vars' bck') untils
+          and instrs' = elab_instrs nodes vars' bck' true instrs in
+          (c, unlesss', instrs', untils')
+        ) brs in
+      Automaton (brs', (Some ckid, Some (clock_of_sclock bck)))
   in { pinstr_desc = desc; pinstr_loc = ins.pinstr_loc }
-and elab_instrs nodes vars bck =
-  List.map (elab_instr nodes vars bck)
-and elab_branches nodes vars bck ckid =
-  List.map (fun (c, ins) ->
-      (c, elab_instrs nodes (List.map (fun (id, ck) -> (id, Con (c, ckid, ck))) vars) (Son (c, (ref (InstIdent ckid)), bck)) ins))
+and elab_instrs nodes vars bck constrained_block =
+  List.map (elab_instr nodes vars bck constrained_block)
 
 (** Check a clock in a clocking env *)
 let check_clock (n : p_node) vars ck =
@@ -372,7 +404,9 @@ let elab_node (nodes : (ident * CPMinils.p_node) list) (n : p_node) : CPMinils.p
   List.iter (fun (_, (_, ck)) -> check_clock n vars ck) n.pn_local;
 
   (* elab instructions *)
-  let instrs' = elab_instrs nodes vars (Svar (ref (UnknownCk (Atom.fresh "$")))) n.pn_instrs in
+  let vars' = List.map (fun (id, ck) -> (id, sclock_of_clock ck)) vars
+  and bck = Svar (ref (UnknownCk (Atom.fresh "$"))) in
+  let instrs' = elab_instrs nodes vars' bck false n.pn_instrs in
 
   { pn_name = n.pn_name;
     pn_input = n.pn_input;

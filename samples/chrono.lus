@@ -10,30 +10,31 @@ let
   | CHRONO ->
     automaton
     | STOP ->
-      s = pre s;
-      m = pre m;
+      unless rising_edge(StSt) continue START;
+      s = 0 fby s;
+      m = 0 fby m;
       run = false;
-      until rising_edge(StSt) then START and reset;
     | START ->
-      let d : int = (pre d + 1) mod 100 in
-      s = if (d < (pre d)) 
-          then (((pre s) + 1) mod 60)
-          else pre s;
-      m = if (s < (pre s))
-          then (((pre m) + 1) mod 60)
-          else pre m;
-      run = true;
-      until rising_edge(StSt) then STOP and reset;
+      unless rising_edge(StSt) continue STOP;
+      let (d : int) = ((0 fby d) + 1) mod 100 in
+        s = if (d < (0 fby d)) 
+            then (((0 fby s) + 1) mod 60)
+            else (0 fby s);
+        m = if (s < (0 fby s))
+            then (((0 fby m) + 1) mod 60)
+            else (0 fby m);
+        run = true;
+      end;
     end;
   end;
   automaton
   | TIME ->
     disp_1 = s;
     disp_2 = m;
-    until rising_edge(Rst) and run then LAP and reset;
+    until rising_edge(Rst) and run then LAP;
   | LAP ->
-    disp_1 = s -> (pre disp_1);
-    disp_2 = m -> (pre disp_2);
-    until rising_edge(Rst) then TIME and reset;
+    disp_1 = s fby disp_1;
+    disp_2 = m fby disp_2;
+    until rising_edge(Rst) then TIME;
   end;
 tel;

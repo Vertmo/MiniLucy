@@ -83,7 +83,7 @@ let _ =
   let cfile = Clockchecker.elab_file tfile in
 
   if (step = Check) then (
-    print_endline (Clockchecker.CPMinils.string_of_file ~print_anns:true cfile);
+    print_endline (Clockchecker.CPMinils.string_of_file cfile);
     exit 0
   );
 

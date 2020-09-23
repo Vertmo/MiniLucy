@@ -54,7 +54,7 @@ module MINILS(A : Annotations) = struct
       Printf.sprintf "(%s %s %s)"
         (string_of_expr e1) (string_of_op op) (string_of_expr e2)
     | KE_app (id, es, ever) ->
-      Printf.sprintf "(%s%s every %s)" id
+      Printf.sprintf "(%s(%s) every %s)" id
         (string_of_exprs es) (string_of_expr ever)
     | KE_fby (e0, e) ->
       Printf.sprintf "(%s fby %s)" (string_of_exprs e0) (string_of_exprs e)

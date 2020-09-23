@@ -48,3 +48,13 @@ let
   | False -> z = 3;
   end;
 tel
+
+node test6(b : bool) returns (z : int);
+let
+  switch (true fby false)
+  | True -> let (x : int) = 1 in
+              z = x;
+            end;
+  | False -> z = 2;
+  end;
+tel

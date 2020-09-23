@@ -36,7 +36,7 @@ module PMINILS(A : Annotations) = struct
     | Let of (ident * ann * k_expr * p_instr list)
     | Switch of (k_expr * (constr * p_instr list) list * ident option)
     | Reset of (p_instr list * k_expr)
-    | Automaton of ((constr * p_unless list * p_instr list * p_until list) list * ident option)
+    | Automaton of ((constr * p_unless list * p_instr list * p_until list) list * (ident option * clock option))
 
   let rec string_of_instr ?(print_anns=false) level i =
     match i.pinstr_desc with

@@ -57,7 +57,14 @@ let rec sort_instr (ins : p_instr) : p_instr =
                 (List.map (fun (c, ins) -> (c, sort_instrs ins)) branches),
              ckid)
     | Automaton (branches, ckid) ->
-      Automaton ((List.sort (fun (c1, _, _, _) (c2, _, _, _) -> String.compare c1 c2) branches),
+      Automaton ((List.sort (fun (c1, _, _, _) (c2, _, _, _) -> String.compare c1 c2)
+                    (List.map (fun (c, unl, ins, unt) ->
+                         let sort_un (e, c, b) = (sort_expr e, c, b) in
+                         (c,
+                          List.map sort_un unl,
+                          sort_instrs ins,
+                          List.map sort_un unt))
+                        branches)),
                  ckid)
   in { ins with pinstr_desc = desc }
 and sort_instrs ins = List.map sort_instr ins
@@ -344,7 +351,9 @@ let rec elab_instr nodes vars clocks (ins : p_instr) : TPMinils.p_instr =
       then raise (constructors_error constrs (List.map fst brs) ins.pinstr_loc);
       let brs' = List.map (fun (c, ins) -> (c, elab_instrs nodes vars clocks ins)) brs in
       Switch (e', brs', ckid)
-    | Automaton (brs, ckid) ->
+    | Automaton (brs, (_, ck)) ->
+      let tyid = Atom.fresh "$aut"
+      and constrs = List.map (fun (c, _, _, _) -> c) brs in
       let elab_un (e, s, b) =
         let e' = elab_expr nodes vars clocks e in
         if e'.kexpr_annot <> [Tbool] then
@@ -352,6 +361,10 @@ let rec elab_instr nodes vars clocks (ins : p_instr) : TPMinils.p_instr =
                    (Printf.sprintf
                       "unless/until expr should be of type bool, found %s"
                       (string_of_tys e'.kexpr_annot), e.kexpr_loc));
+        if not (List.mem s constrs) then
+          raise (TypeError
+                   (Printf.sprintf
+                      "state %s is not defined in automaton" s, ins.pinstr_loc));
         (e', s, b)
       in
       let brs' = List.map (fun (c, unlesss, instrs, untils) ->
@@ -360,7 +373,7 @@ let rec elab_instr nodes vars clocks (ins : p_instr) : TPMinils.p_instr =
           and untils' = List.map elab_un untils in
           (c, unlesss', instrs', untils')
         ) brs in
-      Automaton (brs', ckid)
+      Automaton (brs', (Some tyid, ck))
   in { pinstr_desc = desc; pinstr_loc = ins.pinstr_loc }
 and elab_instrs nodes vars clocks ins =
   List.map (elab_instr nodes vars clocks) ins
@@ -478,5 +491,29 @@ let elab_file (f : p_file) : TPMinils.p_file =
     Printf.eprintf "Type checking error : %s at %s\n"
       msg (string_of_loc loc); exit 1
 
+(** Add the new clock types corresponding to automata                         *)
+
+let rec collect_ctypes_instr (ins : TPMinils.p_instr) =
+  match ins.pinstr_desc with
+  | Eq _ -> []
+  | Let (_, _, _, instrs) -> collect_ctypes_instrs instrs
+  | Reset (instrs, _) -> collect_ctypes_instrs instrs
+  | Switch (_, brs, _) ->
+    List.concat (List.map (fun (_, ins) -> collect_ctypes_instrs ins) brs)
+  | Automaton (brs, (tyid, _)) ->
+    let tyid = match tyid with Some tyid -> tyid | _ -> failwith "Should not happen"
+    and constrs = List.map (fun (c, _, _, _) -> c) brs in
+    let nclocks = List.concat (List.map (fun (_, _, ins, _) -> collect_ctypes_instrs ins) brs) in
+    (tyid, constrs)::nclocks
+and collect_ctypes_instrs ins =
+  List.concat (List.map collect_ctypes_instr ins)
+
+let collect_ctypes_node (n : TPMinils.p_node) =
+  collect_ctypes_instrs n.pn_instrs
+
+let add_ctypes_file (f : TPMinils.p_file) : TPMinils.p_file =
+  let nclocks = List.concat (List.map collect_ctypes_node f.pf_nodes) in
+  { f with pf_clocks = f.pf_clocks@nclocks }
+
 let type_file (f : p_file) : TPMinils.p_file =
-  f |> sort_file |> elab_file
+  f |> sort_file |> elab_file |> add_ctypes_file

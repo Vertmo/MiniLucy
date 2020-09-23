@@ -233,7 +233,7 @@
 				"returns" "tel" "type" "var" "if" "with"
         "package" "model" "body" "uses" "provides"
 				"then" "else" "and" "or" "xor" "assert" "with" "struct"
-				"pre" "not" "when" "match"
+				"pre" "fby" "not" "when" "match"
         "in"
         "reset" "every"
         "switch" "end"

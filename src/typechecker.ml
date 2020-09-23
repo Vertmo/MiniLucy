@@ -53,9 +53,10 @@ let rec sort_instr (ins : p_instr) : p_instr =
       Reset (sort_instrs ins, sort_expr er)
     | Switch (e, branches) ->
       Switch (sort_expr e,
-              List.sort (fun (c1, e1) (c2, e1) -> String.compare c1 c2)
+              List.sort (fun (c1, _) (c2, _) -> String.compare c1 c2)
                 (List.map (fun (c, ins) -> (c, sort_instrs ins)) branches))
-    | _ -> failwith "TODO sort_instr"
+    | Automaton branches ->
+      Automaton (List.sort (fun (c1, _, _, _) (c2, _, _, _) -> String.compare c1 c2) branches)
   in { ins with pinstr_desc = desc }
 and sort_instrs ins = List.map sort_instr ins
 
@@ -314,14 +315,15 @@ let rec elab_instr nodes vars clocks (ins : p_instr) : TPMinils.p_instr =
     match ins.pinstr_desc with
     | Eq eq -> Eq (elab_equation nodes vars clocks eq)
     | Let (id, ann, e, instrs) ->
-      let e' = elab_expr nodes vars clocks e in
+      let vars' = (id, fst ann)::vars in
+      let e' = elab_expr nodes vars' clocks e in
       if (e'.kexpr_annot <> [fst ann])
       then raise (TypeError
                     (Printf.sprintf
                        "Wrong type in let binding; expected %s, found %s"
                        (string_of_ty (fst ann))
                        (string_of_tys e'.kexpr_annot), ins.pinstr_loc));
-      let instrs' = elab_instrs nodes ((id, fst ann)::vars) clocks instrs in
+      let instrs' = elab_instrs nodes vars' clocks instrs in
       Let (id, ann, e', instrs')
     | Reset (ins, er) ->
       let ins' = elab_instrs nodes vars clocks ins
@@ -340,7 +342,23 @@ let rec elab_instr nodes vars clocks (ins : p_instr) : TPMinils.p_instr =
       then raise (constructors_error constrs (List.map fst brs) ins.pinstr_loc);
       let brs' = List.map (fun (c, ins) -> (c, elab_instrs nodes vars clocks ins)) brs in
       Switch (e', brs')
-    | _ -> failwith "TODO elab_instr"
+    | Automaton brs ->
+      let elab_un (e, s, b) =
+        let e' = elab_expr nodes vars clocks e in
+        if e'.kexpr_annot <> [Tbool] then
+          raise (TypeError
+                   (Printf.sprintf
+                      "unless/until expr should be of type bool, found %s"
+                      (string_of_tys e'.kexpr_annot), e.kexpr_loc));
+        (e', s, b)
+      in
+      let brs' = List.map (fun (c, unlesss, instrs, untils) ->
+          let unlesss' = List.map elab_un unlesss
+          and instrs' = elab_instrs nodes vars clocks instrs
+          and untils' = List.map elab_un untils in
+          (c, unlesss', instrs', untils')
+        ) brs in
+      Automaton brs'
   in { pinstr_desc = desc; pinstr_loc = ins.pinstr_loc }
 and elab_instrs nodes vars clocks ins =
   List.map (elab_instr nodes vars clocks) ins
@@ -361,7 +379,16 @@ let rec get_def_instr (i : p_instr) : ident list =
                   ("All the branches of switch should define the same idents",
                    i.pinstr_loc));
     def
-  | _ -> failwith "TODO get_def_instr"
+  | Automaton brs ->
+    let defs = List.map (fun (_, _, ins, _) -> get_def_instrs ins) brs in
+    let defs = List.map (List.sort String.compare) defs in
+    let def = List.hd defs in
+    (** All the branches should define the same idents *)
+    if (not (List.for_all (fun def' -> def = def') defs))
+    then raise (TypeError
+                  ("All the branches of automaton should define the same idents",
+                   i.pinstr_loc));
+    def
 and get_def_instrs (ins : p_instr list) =
   List.concat (List.map get_def_instr ins)
 

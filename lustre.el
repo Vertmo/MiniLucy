@@ -237,6 +237,7 @@
         "in"
         "reset" "every"
         "switch" "end"
+        "automaton" "until" "unless" "continue"
 				"current") 'words))		0 ,kw t)
 
 	;; NB: we need to do this 'cause keywords may be highlighted in comments

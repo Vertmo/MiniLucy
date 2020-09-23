@@ -12,6 +12,7 @@
 	"and", AND;
   "automaton", AUTOMATON;
 	"bool", BOOL;
+  "continue", CONTINUE;
   "div", DIV;
   "end", END;
 	"else", ELSE;
@@ -37,6 +38,7 @@
 	"then", THEN;
   "type", TYPE;
 	"true", TRUE;
+  "unless", UNLESS;
   "until", UNTIL;
 	"var", VAR;
   "when", WHEN;

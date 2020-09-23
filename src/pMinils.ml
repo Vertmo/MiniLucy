@@ -14,11 +14,18 @@ module PMINILS(A : Annotations) = struct
     Printf.sprintf "%slet %s : %s = %s in"
       (indent level) id (string_of_ty ty) (string_of_expr ~print_anns e)
 
+  type p_unless = k_expr * constr * bool
   type p_until = k_expr * constr * bool
 
+  let string_of_unless ?(print_anns=false) level (e, c, r) =
+    Printf.sprintf "%sunless %s %s %s and reset;"
+      (indent level) (string_of_expr ~print_anns e)
+      (if r then "then" else "continue") c
+
   let string_of_until ?(print_anns=false) level (e, c, r) =
-    if r then Printf.sprintf "%suntil %s then %s and reset;" (indent level) (string_of_expr ~print_anns e) c
-    else Printf.sprintf "%suntil %s then %s;" (indent level) (string_of_expr ~print_anns e) c
+    Printf.sprintf "%suntil %s %s %s and reset;"
+      (indent level) (string_of_expr ~print_anns e)
+      (if r then "then" else "continue") c
 
   type p_instr =
     { pinstr_desc: p_instr_desc;
@@ -29,7 +36,7 @@ module PMINILS(A : Annotations) = struct
     | Let of (ident * ann * k_expr * p_instr list)
     | Switch of (k_expr * (constr * p_instr list) list)
     | Reset of (p_instr list * k_expr)
-    | Automaton of (constr * p_instr list * p_until list) list
+    | Automaton of (constr * p_unless list * p_instr list * p_until list) list
 
   let rec string_of_instr ?(print_anns=false) level i =
     match i.pinstr_desc with
@@ -41,8 +48,9 @@ module PMINILS(A : Annotations) = struct
         (indent level)
     | Automaton branches ->
       Printf.sprintf "%sautomaton\n%s" (indent level)
-        (String.concat "\n" (List.map (fun (c, ins, untils) ->
-             Printf.sprintf "%s| %s ->\n%s\n%s" (indent level) c
+        (String.concat "\n" (List.map (fun (c, unlesss, ins, untils) ->
+             Printf.sprintf "%s| %s ->\n%s\n%s\n%s" (indent level) c
+               (String.concat "\n" (List.map (string_of_unless ~print_anns (level+1)) unlesss))
                (string_of_instrs ~print_anns (level+1) ins)
                (String.concat "\n" (List.map (string_of_until ~print_anns (level+1)) untils)))
              branches))
@@ -68,7 +76,7 @@ module PMINILS(A : Annotations) = struct
     | Automaton brs ->
       (* If the program is well typed, all the branches
          define the same equations left-hand-sides *)
-      let (_, is, _) = List.hd brs in
+      let (_, _, is, _) = List.hd brs in
       defined_of_instrs is
     | Reset (is, _) -> defined_of_instrs is
     | Switch (_, brs) ->

@@ -2,13 +2,15 @@ node auto_simpl() returns (x : int);
 let
   automaton
   | INC ->
-    let u1 : int = (1 + (0 fby u1)) in
-    x = 0 fby x + u1;
-    until x > 5 then DEC and reset;
+    let (u1 : int) = (1 + (0 fby u1)) in
+      x = 0 fby x + u1;
+    end;
+    until x > 5 then DEC;
   | DEC ->
-    let u2 : int = 2 in
-    x = 0 fby x - u2;
-    until x < -10 then INC;
+    let (u2 : int) = 2 in
+      x = 0 fby x - u2;
+    end;
+    until x < -10 continue INC;
   end;
 tel;
   
@@ -16,38 +18,40 @@ node auto_mult() returns (x : int; y : int);
 let
   automaton
   | A ->
-    let l : int = 1 in
-    automaton
-    | A1 ->
-      x = 0 fby x + l;
-      until x > 1 then A2 and reset;
-    | A2 ->
-      x = 0 fby x + (2 * l);
-      until x > 7 then A1 and reset;
+    let (l : int) = 1 in
+      automaton
+      | A1 ->
+        x = 0 fby x + l;
+        until x > 1 then A2;
+      | A2 ->
+        x = 0 fby x + (2 * l);
+        until x > 7 then A1;
+      end;
     end;
     y = 0 fby y + 1;
-    until y > 4 then B and reset;
+    until y > 4 then B;
   | B ->
     x = 0 fby x - 5;
     y = 0 fby y - 1;
-    until y < -1 then A and reset;
+    until y < -1 then A;
   end;
 tel;
   
-node cumulative_sum(x : int) returns (y : int);
-let
-  y = x + 0 fby y;
-tel;
+-- node cumulative_sum(x : int) returns (y : int);
+-- let
+--   y = x + 0 fby y;
+-- tel;
 
-node auto_app() returns (x : int);
-let
-  automaton
-  | APP1 ->
-    let v : int = cumulative_sum(1) in
-    x = 0 fby v;
-    until x > 4 then APP2 and reset;
-  | APP2 ->
-    x = cumulative_sum(-2);
-    until x < -6 then APP1 and reset;
-  end;
-tel;
+-- node auto_app() returns (x : int);
+-- let
+--   automaton
+--   | APP1 ->
+--     let v : int = cumulative_sum(1) in
+--     x = 0 fby v;
+--     until x > 4 then APP2 and reset;
+--   | APP2 ->
+--     x = cumulative_sum(-2);
+--     until x < -6 then APP1 and reset;
+--   end;
+-- tel;
+

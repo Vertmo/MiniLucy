@@ -52,9 +52,9 @@
 %token STAR
 %token SWITCH
 %token TEL
-%token THEN
+%token THEN CONTINUE
 %token TYPE
-%token UNTIL
+%token UNTIL UNLESS
 %token VAR
 %token WHEN
 %token WITH
@@ -172,7 +172,7 @@ instr:
 ;
 
 auto_branch:
-| PIPE IDENT ARROW instr+ until_list { ($2, $4, $5) }
+| PIPE IDENT ARROW unless* instr+ until* { ($2, $4, $5, $6) }
 ;
 
 instr_branch:
@@ -185,11 +185,16 @@ let_list:
   { ($2, $4, $6)::$8 }
 ;
 
-until_list:
-| /* empty */ { [] }
-| UNTIL expr THEN IDENT SEMICOL until_list { ($2, $4, false)::$6 }
-| UNTIL expr THEN IDENT AND RESET SEMICOL until_list { ($2, $4, true)::$8 }
+until:
+| UNTIL expr THEN IDENT SEMICOL { ($2, $4, true) }
+| UNTIL expr CONTINUE IDENT SEMICOL { ($2, $4, false) }
 ;
+
+unless:
+| UNLESS expr THEN IDENT SEMICOL { ($2, $4, true) }
+| UNLESS expr CONTINUE IDENT SEMICOL { ($2, $4, false) }
+;
+
 
 eq:
 | pattern EQUAL expr_list SEMICOL

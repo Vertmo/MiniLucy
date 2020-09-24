@@ -18,12 +18,12 @@ module PMINILS(A : Annotations) = struct
   type p_until = k_expr * constr * bool
 
   let string_of_unless ?(print_anns=false) level (e, c, r) =
-    Printf.sprintf "%sunless %s %s %s and reset;"
+    Printf.sprintf "%sunless %s %s %s;"
       (indent level) (string_of_expr ~print_anns e)
       (if r then "then" else "continue") c
 
   let string_of_until ?(print_anns=false) level (e, c, r) =
-    Printf.sprintf "%suntil %s %s %s and reset;"
+    Printf.sprintf "%suntil %s %s %s;"
       (indent level) (string_of_expr ~print_anns e)
       (if r then "then" else "continue") c
 
@@ -34,9 +34,9 @@ module PMINILS(A : Annotations) = struct
   and p_instr_desc =
     | Eq of k_equation
     | Let of (ident * ann * k_expr * p_instr list)
-    | Switch of (k_expr * (constr * p_instr list) list * ident option)
+    | Switch of (k_expr * (constr * p_instr list) list * (ident option * ident list))
     | Reset of (p_instr list * k_expr)
-    | Automaton of ((constr * p_unless list * p_instr list * p_until list) list * (ident option * clock option))
+    | Automaton of ((constr * p_unless list * p_instr list * p_until list) list * (ident option * clock option * ident list))
 
   let rec string_of_instr ?(print_anns=false) level i =
     match i.pinstr_desc with
@@ -68,22 +68,22 @@ module PMINILS(A : Annotations) = struct
   and string_of_instrs ?(print_anns=false) level ins =
     String.concat "\n" (List.map (string_of_instr ~print_anns level) ins)
 
-  (** Variables defined by an instruction *)
-  let rec defined_of_instr i =
-    match i.pinstr_desc  with
-    | Eq eq -> defined_of_equation eq
-    | Let (_, _, _, ins) -> defined_of_instrs ins
-    | Automaton (brs, _) ->
-      (* If the program is well typed, all the branches
-         define the same equations left-hand-sides *)
-      let (_, _, is, _) = List.hd brs in
-      defined_of_instrs is
-    | Reset (is, _) -> defined_of_instrs is
-    | Switch (_, brs, _) ->
-      let (_, is) = List.hd brs in
-      defined_of_instrs is
-  and defined_of_instrs is =
-    List.concat (List.map defined_of_instr is)
+  (* (\** Variables defined by an instruction *\)
+   * let rec defined_of_instr i =
+   *   match i.pinstr_desc  with
+   *   | Eq eq -> defined_of_equation eq
+   *   | Let (_, _, _, ins) -> defined_of_instrs ins
+   *   | Automaton (brs, _) ->
+   *     (\* If the program is well typed, all the branches
+   *        define the same equations left-hand-sides *\)
+   *     let (_, _, is, _) = List.hd brs in
+   *     defined_of_instrs is
+   *   | Reset (is, _) -> defined_of_instrs is
+   *   | Switch (_, brs, _) ->
+   *     let (_, is) = List.hd brs in
+   *     defined_of_instrs is
+   * and defined_of_instrs is =
+   *   List.concat (List.map defined_of_instr is) *)
 
   type p_node =
     { pn_name: ident;

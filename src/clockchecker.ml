@@ -340,7 +340,7 @@ let rec elab_instr nodes vars bck constrained_block (ins : p_instr) : CPMinils.p
     | Reset (ins, er) ->
       Reset (elab_instrs nodes vars bck constrained_block ins,
              freeze_expr (elab_expr nodes vars er)) (* TODO should there be a constraint ? *)
-    | Switch (e, brs, _) ->
+    | Switch (e, brs, (_, defs)) ->
       let e' = elab_expr nodes vars e in
       let (_, (ck, _)) = List.hd e'.kexpr_annot in
       unify_sclock e.kexpr_loc bck ck; (* Use the bck hint to infer the correct clock for the condition *)
@@ -351,8 +351,8 @@ let rec elab_instr nodes vars bck constrained_block (ins : p_instr) : CPMinils.p
                   let bck' = Son (c, ref (InstIdent ckid), bck)
                   and vars' = List.map (fun (id, ck) -> (id, Son (c, ref (InstIdent ckid), ck))) vars in
                   (c, elab_instrs nodes vars' bck' true ins)) brs,
-              Some ckid)
-    | Automaton (brs, (ckid, _)) ->
+              (Some ckid, defs))
+    | Automaton (brs, (ckid, _, defs)) ->
       let ckid = match ckid with Some ckid -> ckid | _ -> failwith "Should not happen"
       and bck =
         if constrained_block then bck
@@ -371,7 +371,7 @@ let rec elab_instr nodes vars bck constrained_block (ins : p_instr) : CPMinils.p
           and instrs' = elab_instrs nodes vars' bck' true instrs in
           (c, unlesss', instrs', untils')
         ) brs in
-      Automaton (brs', (Some ckid, Some (clock_of_sclock bck)))
+      Automaton (brs', (Some ckid, Some (clock_of_sclock bck), defs))
   in { pinstr_desc = desc; pinstr_loc = ins.pinstr_loc }
 and elab_instrs nodes vars bck constrained_block =
   List.map (elab_instr nodes vars bck constrained_block)

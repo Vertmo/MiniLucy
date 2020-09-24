@@ -57,7 +57,9 @@ let has_self_dependency (x : ident) (graph : dep_graph) =
 let check_node (n : k_node) =
   let graph = List.fold_left
       (fun graph eq -> IdentMap.union
-          (fun _ l1 l2 -> failwith "Should not happen (typing)")
+          (fun k l1 l2 -> failwith
+              (Printf.sprintf "Should not happen %s [%s] [%s]"
+                 k (String.concat "," l1) (String.concat "," l2)))
           graph (eq_dependencies eq))
       IdentMap.empty n.kn_equs in
   IdentMap.iter (fun id _ ->

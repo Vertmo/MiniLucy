@@ -57,14 +57,14 @@ let rec sort_instr (ins : p_instr) : p_instr =
                 (List.map (fun (c, ins) -> (c, sort_instrs ins)) branches),
              ckid)
     | Automaton (branches, ckid) ->
-      Automaton ((List.sort (fun (c1, _, _, _) (c2, _, _, _) -> String.compare c1 c2)
-                    (List.map (fun (c, unl, ins, unt) ->
-                         let sort_un (e, c, b) = (sort_expr e, c, b) in
-                         (c,
-                          List.map sort_un unl,
-                          sort_instrs ins,
-                          List.map sort_un unt))
-                        branches)),
+      Automaton ((List.map
+                    (fun (c, unl, ins, unt) ->
+                       let sort_un (e, c, b) = (sort_expr e, c, b) in
+                       (c,
+                        List.map sort_un unl,
+                        sort_instrs ins,
+                        List.map sort_un unt))
+                    branches),
                  ckid)
   in { ins with pinstr_desc = desc }
 and sort_instrs ins = List.map sort_instr ins
@@ -318,66 +318,6 @@ let elab_equation nodes vars clocks (eq : k_equation) : TPMinils.k_equation =
                    (string_of_tys tys), eq.keq_loc));
   { keq_patt = eq.keq_patt; keq_expr = es'; keq_loc = eq.keq_loc }
 
-(** Check that the instruction [ins] is correctly typed. *)
-let rec elab_instr nodes vars clocks (ins : p_instr) : TPMinils.p_instr =
-  let (desc : TPMinils.p_instr_desc) =
-    match ins.pinstr_desc with
-    | Eq eq -> Eq (elab_equation nodes vars clocks eq)
-    | Let (id, ann, e, instrs) ->
-      let vars' = (id, fst ann)::vars in
-      let e' = elab_expr nodes vars' clocks e in
-      if (e'.kexpr_annot <> [fst ann])
-      then raise (TypeError
-                    (Printf.sprintf
-                       "Wrong type in let binding; expected %s, found %s"
-                       (string_of_ty (fst ann))
-                       (string_of_tys e'.kexpr_annot), ins.pinstr_loc));
-      let instrs' = elab_instrs nodes vars' clocks instrs in
-      Let (id, ann, e', instrs')
-    | Reset (ins, er) ->
-      let ins' = elab_instrs nodes vars clocks ins
-      and er' = elab_expr nodes vars clocks er in
-      if er'.kexpr_annot <> [Tbool] then
-        raise (TypeError
-                 (Printf.sprintf
-                    "Reset expr should be of type bool, found %s"
-                    (string_of_tys er'.kexpr_annot), er.kexpr_loc));
-      Reset (ins', er')
-    | Switch (e, brs, ckid) ->
-      let e' = elab_expr nodes vars clocks e in
-      let clt = get_unary_type e'.kexpr_annot e.kexpr_loc in
-      let constrs = constrs_of_clock clocks e.kexpr_loc clt in
-      if (constrs <> List.map fst brs)
-      then raise (constructors_error constrs (List.map fst brs) ins.pinstr_loc);
-      let brs' = List.map (fun (c, ins) -> (c, elab_instrs nodes vars clocks ins)) brs in
-      Switch (e', brs', ckid)
-    | Automaton (brs, (_, ck)) ->
-      let tyid = Atom.fresh "$aut"
-      and constrs = List.map (fun (c, _, _, _) -> c) brs in
-      let elab_un (e, s, b) =
-        let e' = elab_expr nodes vars clocks e in
-        if e'.kexpr_annot <> [Tbool] then
-          raise (TypeError
-                   (Printf.sprintf
-                      "unless/until expr should be of type bool, found %s"
-                      (string_of_tys e'.kexpr_annot), e.kexpr_loc));
-        if not (List.mem s constrs) then
-          raise (TypeError
-                   (Printf.sprintf
-                      "state %s is not defined in automaton" s, ins.pinstr_loc));
-        (e', s, b)
-      in
-      let brs' = List.map (fun (c, unlesss, instrs, untils) ->
-          let unlesss' = List.map elab_un unlesss
-          and instrs' = elab_instrs nodes vars clocks instrs
-          and untils' = List.map elab_un untils in
-          (c, unlesss', instrs', untils')
-        ) brs in
-      Automaton (brs', (Some tyid, ck))
-  in { pinstr_desc = desc; pinstr_loc = ins.pinstr_loc }
-and elab_instrs nodes vars clocks ins =
-  List.map (elab_instr nodes vars clocks) ins
-
 (** Get all the names defined in a set of instructions *)
 let rec get_def_instr (i : p_instr) : ident list =
   match i.pinstr_desc with
@@ -406,6 +346,66 @@ let rec get_def_instr (i : p_instr) : ident list =
     def
 and get_def_instrs (ins : p_instr list) =
   List.concat (List.map get_def_instr ins)
+
+(** Check that the instruction [ins] is correctly typed. *)
+let rec elab_instr nodes vars clocks (ins : p_instr) : TPMinils.p_instr =
+  let (desc : TPMinils.p_instr_desc) =
+    match ins.pinstr_desc with
+    | Eq eq -> Eq (elab_equation nodes vars clocks eq)
+    | Let (id, ann, e, instrs) ->
+      let vars' = (id, fst ann)::vars in
+      let e' = elab_expr nodes vars' clocks e in
+      if (e'.kexpr_annot <> [fst ann])
+      then raise (TypeError
+                    (Printf.sprintf
+                       "Wrong type in let binding; expected %s, found %s"
+                       (string_of_ty (fst ann))
+                       (string_of_tys e'.kexpr_annot), ins.pinstr_loc));
+      let instrs' = elab_instrs nodes vars' clocks instrs in
+      Let (id, ann, e', instrs')
+    | Reset (ins, er) ->
+      let ins' = elab_instrs nodes vars clocks ins
+      and er' = elab_expr nodes vars clocks er in
+      if er'.kexpr_annot <> [Tbool] then
+        raise (TypeError
+                 (Printf.sprintf
+                    "Reset expr should be of type bool, found %s"
+                    (string_of_tys er'.kexpr_annot), er.kexpr_loc));
+      Reset (ins', er')
+    | Switch (e, brs, (ckid, _)) ->
+      let e' = elab_expr nodes vars clocks e in
+      let clt = get_unary_type e'.kexpr_annot e.kexpr_loc in
+      let constrs = constrs_of_clock clocks e.kexpr_loc clt in
+      if (constrs <> List.map fst brs)
+      then raise (constructors_error constrs (List.map fst brs) ins.pinstr_loc);
+      let brs' = List.map (fun (c, ins) -> (c, elab_instrs nodes vars clocks ins)) brs in
+      Switch (e', brs', (ckid, get_def_instr ins))
+    | Automaton (brs, (_, ck, _)) ->
+      let tyid = Atom.fresh "$aut"
+      and constrs = List.map (fun (c, _, _, _) -> c) brs in
+      let elab_un (e, s, b) =
+        let e' = elab_expr nodes vars clocks e in
+        if e'.kexpr_annot <> [Tbool] then
+          raise (TypeError
+                   (Printf.sprintf
+                      "unless/until expr should be of type bool, found %s"
+                      (string_of_tys e'.kexpr_annot), e.kexpr_loc));
+        if not (List.mem s constrs) then
+          raise (TypeError
+                   (Printf.sprintf
+                      "state %s is not defined in automaton" s, ins.pinstr_loc));
+        (e', s, b)
+      in
+      let brs' = List.map (fun (c, unlesss, instrs, untils) ->
+          let unlesss' = List.map elab_un unlesss
+          and instrs' = elab_instrs nodes vars clocks instrs
+          and untils' = List.map elab_un untils in
+          (c, unlesss', instrs', untils')
+        ) brs in
+      Automaton (brs', (Some tyid, ck, get_def_instr ins))
+  in { pinstr_desc = desc; pinstr_loc = ins.pinstr_loc }
+and elab_instrs nodes vars clocks ins =
+  List.map (elab_instr nodes vars clocks) ins
 
 (** Check a clock in a typing env *)
 let check_clock clocks (n : p_node) (vars : (ident * ty) list) ck =
@@ -500,7 +500,7 @@ let rec collect_ctypes_instr (ins : TPMinils.p_instr) =
   | Reset (instrs, _) -> collect_ctypes_instrs instrs
   | Switch (_, brs, _) ->
     List.concat (List.map (fun (_, ins) -> collect_ctypes_instrs ins) brs)
-  | Automaton (brs, (tyid, _)) ->
+  | Automaton (brs, (tyid, _, defs)) ->
     let tyid = match tyid with Some tyid -> tyid | _ -> failwith "Should not happen"
     and constrs = List.map (fun (c, _, _, _) -> c) brs in
     let nclocks = List.concat (List.map (fun (_, _, ins, _) -> collect_ctypes_instrs ins) brs) in

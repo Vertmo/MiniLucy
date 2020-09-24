@@ -12,24 +12,24 @@ int main() {
     printf("x : %d\n", out1.x);
   }
 
-  printf("Test auto_mult\n====================\n");
-  auto_mult_mem mem2;
-  auto_mult_out out2;
-  auto_mult_reset(&mem2);
+  /* printf("Test auto_mult\n====================\n"); */
+  /* auto_mult_mem mem2; */
+  /* auto_mult_out out2; */
+  /* auto_mult_reset(&mem2); */
 
-  for(int i = 0; i < 30; i++) {
-    auto_mult_step(&mem2, &out2);
-    printf("x : %d, y : %d\n", out2.x, out2.y);
-  }
+  /* for(int i = 0; i < 30; i++) { */
+  /*   auto_mult_step(&mem2, &out2); */
+  /*   printf("x : %d, y : %d\n", out2.x, out2.y); */
+  /* } */
 
-  printf("Test auto_app\n====================\n");
-  auto_app_mem mem3;
-  auto_app_out out3;
-  auto_app_reset(&mem3);
+  /* printf("Test auto_app\n====================\n"); */
+  /* auto_app_mem mem3; */
+  /* auto_app_out out3; */
+  /* auto_app_reset(&mem3); */
 
-  for(int i = 0; i < 30; i++) {
-    auto_app_step(&mem3, &out3);
-    printf("x : %d\n", out3.x);
-  }
+  /* for(int i = 0; i < 30; i++) { */
+  /*   auto_app_step(&mem3, &out3); */
+  /*   printf("x : %d\n", out3.x); */
+  /* } */
   return 0;
 }

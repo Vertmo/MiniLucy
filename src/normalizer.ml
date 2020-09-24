@@ -258,6 +258,39 @@ let norm_fby_eqs (eqs : k_equation list) =
 
 (** Last pass : transcription *)
 
+(* We need to find the base clock for instanciations *)
+
+let clocks_of (es : k_expr list) =
+  List.concat (List.map (fun e -> List.map (fun (_, (ck, _)) -> ck) e.kexpr_annot) es)
+
+let rec suffix_of_clock ck acc =
+  match ck with
+  | Cbase -> acc
+  | Con (x, b, ck') -> suffix_of_clock ck' ((x, b)::acc)
+
+let rec clock_of_suffix sfx ck =
+  match sfx with
+  | [] -> ck
+  | (x, b)::sfx' -> clock_of_suffix sfx' (Con (x, b, ck))
+
+let rec common_suffix sfx1 sfx2 =
+  match sfx1, sfx2 with
+  | [], _ -> []
+  | _, [] -> []
+  | (x1, b1)::sfx1', (x2, b2)::sfx2' ->
+    if (x1 = x2 && b1 = b2)
+    then (x1, b1)::common_suffix sfx1' sfx2'
+    else []
+
+let find_base_clock (cks : clock list) =
+  match cks with
+  | [] -> Cbase
+  | ck::cks ->
+    let sfx = List.fold_left
+        (fun sfx1 ck2 -> common_suffix sfx1 (suffix_of_clock ck2 []))
+        (suffix_of_clock ck []) cks
+    in clock_of_suffix sfx Cbase
+
 let rec tr_lexp (e : k_expr) : n_expr =
   let (ty, (ck, _)) = List.hd e.kexpr_annot
   and desc = match e.kexpr_desc with
@@ -291,8 +324,8 @@ let tr_eq (e : k_equation) : n_equation =
   match e.keq_patt, (List.hd e.keq_expr).kexpr_desc with
     | [x], KE_fby ([e0], [e]) when is_constant e0 ->
       NQ_fby (x, extract_constant e0, tr_lexp e)
-    | xs, KE_app (f, es, { kexpr_desc = KE_ident i; kexpr_annot = [(_, (ck, _))] }) ->
-      NQ_app (xs, f, tr_lexps es, i, ck)
+    | xs, KE_app (f, es, { kexpr_desc = KE_ident i; kexpr_annot = [(_, (ckr, _))] }) ->
+      NQ_app (xs, f, tr_lexps es, i, (find_base_clock (clocks_of es)), ckr)
     | [x], _ ->
       NQ_ident (x, tr_cexp (List.hd e.keq_expr))
     | _ -> invalid_arg "tr_eq"
@@ -310,7 +343,8 @@ let norm_node (n : k_node) =
     nn_input = n.kn_input;
     nn_output = n.kn_output;
     nn_local = n.kn_local@vs1@vs2@vs3;
-    nn_equs = eqs }
+    nn_equs = eqs;
+    nn_loc = n.kn_loc }
 
 (** Normalize the whole file *)
 let norm_file (f : k_file) =

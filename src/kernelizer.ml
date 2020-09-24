@@ -147,7 +147,9 @@ let rec auto_instr (ins : p_instr) =
         let sr_eq =
           { pinstr_desc =
               Eq { keq_patt = [s; r];
-                   keq_expr = generate_un_if ck' unl (c, mk_bexpr ck' (KE_ident pnr));
+                   keq_expr = generate_un_if ck'
+                       (List.map (fun (e, c, b) -> (alpha_conv_expr ckid ckid2 e, c, b)) unl)
+                       (c, mk_bexpr ck' (KE_ident pnr));
                    keq_loc = dummy_loc };
             pinstr_loc = dummy_loc } in
         (c,

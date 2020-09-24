@@ -1,31 +1,40 @@
 (** Causality checking *)
 
 open Asttypes
-open Kernelizer.CMinils
+open NMinils
 
 exception CausalityError of (string * ident * location)
 
+(** Get the variables defined by an equation *)
+let def_vars = function
+  | NQ_ident (id, _) -> [id]
+  | NQ_fby (id, _, _) -> [id]
+  | NQ_app (ids, _, _, _, _, _) -> ids
 
-let clocks_of (es : k_expr list) =
-  List.concat (List.map (fun e -> List.map snd e.kexpr_annot) es)
+(** Get the variables used by an expression *)
+let rec expr_vars (e : n_expr) =
+  match e.nexpr_desc with
+  | NE_const _ -> []
+  | NE_ident id -> [id]
+  | NE_op (_, es) -> List.flatten (List.map expr_vars es)
+  | NE_when (e, _, clid) -> clid::(expr_vars e)
 
-(** Get the "free variables" of the expression [e] *)
-let rec expr_vars (e : k_expr) =
-  (match e.kexpr_desc with
-   | KE_const _ -> []
-   | KE_ident id -> [id]
-   | KE_unop (_, e1) -> expr_vars e1
-   | KE_binop (_, e1, e2) -> (expr_vars e1)@(expr_vars e2)
-   | KE_app (_, es, ev) ->
-     (expr_vars ev)@(exprs_vars es)
-   | KE_fby (e0, _) -> (exprs_vars e0)
-   | KE_arrow (e0, e) -> (exprs_vars e0)@(exprs_vars e)
-   | KE_match (e, es) ->
-     List.concat ((expr_vars e)::(List.map (fun (_, e) -> exprs_vars e) es))
-   | KE_when (e, _, id) -> id::(exprs_vars e)
-   | KE_merge (id, es) ->
-     id::(List.concat (List.map (fun (_, e) -> exprs_vars e) es)))
-and exprs_vars es = List.concat (List.map expr_vars es)
+let rec cexpr_vars (e : n_cexpr) =
+  match e.ncexpr_desc with
+  | NCE_match (e, es) ->
+    (expr_vars e)@(List.flatten (List.map (fun (_, e) -> cexpr_vars e) es))
+  | NCE_merge (id, es) ->
+    id::(List.flatten (List.map (fun (_, e) -> cexpr_vars e) es))
+  | NCE_expr e' ->
+    (expr_vars { nexpr_desc = e';
+                 nexpr_ty = e.ncexpr_ty; nexpr_clock = e.ncexpr_clock })
+
+(** Get the variables used by an equation *)
+let used_vars = function
+  | NQ_ident (_, e) -> (clock_vars e.ncexpr_clock)@(cexpr_vars e)
+  | NQ_fby (_, _, e) -> clock_vars (e.nexpr_clock)
+  | NQ_app (_, _, es, evid, bck, ckr) ->
+    evid::(clock_vars bck)@(clock_vars ckr)@(List.flatten (List.map expr_vars es))
 
 module IdentMap = Map.Make(String)
 
@@ -33,8 +42,8 @@ module IdentMap = Map.Make(String)
 type dep_graph = (ident list) IdentMap.t
 
 (** Compute the dependencies introduced by the equation [eq] *)
-let eq_dependencies (eq : k_equation) : dep_graph =
-  let defined = eq.keq_patt and used = exprs_vars eq.keq_expr in
+let eq_dependencies (eq : n_equation) : dep_graph =
+  let defined = def_vars eq and used = used_vars eq in
   IdentMap.of_seq (List.to_seq (List.map (fun l -> (l, used)) defined))
 
 (** Get all the streams [x] depends on *)
@@ -54,27 +63,27 @@ let has_self_dependency (x : ident) (graph : dep_graph) =
 
 (** Check the node [n] for causality errors
     Return the dependency graph of the node *)
-let check_node (n : k_node) =
+let check_node (n : n_node) =
   let graph = List.fold_left
       (fun graph eq -> IdentMap.union
           (fun k l1 l2 -> failwith
               (Printf.sprintf "Should not happen %s [%s] [%s]"
                  k (String.concat "," l1) (String.concat "," l2)))
           graph (eq_dependencies eq))
-      IdentMap.empty n.kn_equs in
+      IdentMap.empty n.nn_equs in
   IdentMap.iter (fun id _ ->
       if has_self_dependency id graph
       then raise
           (CausalityError
              (Printf.sprintf "%s depends on itself" id,
-              n.kn_name, n.kn_loc))) graph
+              n.nn_name, n.nn_loc))) graph
 
 (** Check the file [f] for causality errors
     Return the dependency graphs *)
-let check_file (f : k_file) =
+let check_file (f : n_file) =
   try
-    List.iter check_node f.kf_nodes
+    List.iter check_node f.nf_nodes
   with
   | CausalityError (msg, nodeid, loc) ->
-    Printf.printf "Causality error : %s in node %s at %s"
+    Printf.printf "Causality error : %s in node %s at %s\n"
       msg nodeid (string_of_loc loc); exit 1

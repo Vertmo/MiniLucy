@@ -10,7 +10,7 @@ let
   | CHRONO ->
     automaton
     | STOP ->
-      unless rising_edge(StSt) continue START;
+      unless rising_edge(StSt) continue STOP;
       s = 0 fby s;
       m = 0 fby m;
       run = false;

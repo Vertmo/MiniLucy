@@ -71,3 +71,12 @@ let
     until x < -6 then APP1;
   end;
 tel;
+
+node auto_unless() returns (x : int);
+let
+  automaton
+  | INC ->
+    unless (1 > 0) then INC;
+    x = 2;
+  end;
+tel;

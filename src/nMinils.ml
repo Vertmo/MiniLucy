@@ -60,7 +60,7 @@ and string_of_cexpr_desc = function
 type n_equation =
   | NQ_ident of ident * n_cexpr
   | NQ_fby of ident * const * n_expr
-  | NQ_app of ident list * ident * n_expr list * ident * clock
+  | NQ_app of ident list * ident * n_expr list * ident * clock * clock
 
 let string_of_equation = function
   | NQ_ident (id, e) ->
@@ -68,7 +68,7 @@ let string_of_equation = function
   | NQ_fby (id, c, e) ->
     Printf.sprintf "%s = %s fby %s"
       id (string_of_const c) (string_of_expr e)
-  | NQ_app (ids, f, es, ever, cl) ->
+  | NQ_app (ids, f, es, ever, _, _) ->
     Printf.sprintf "(%s) = %s(%s) every %s"
       (String.concat ", " ids) f
       (String.concat ", " (List.map string_of_expr es))
@@ -79,7 +79,8 @@ type n_node =
     nn_input: (ident * ann) list;
     nn_output: (ident * ann) list;
     nn_local: (ident * ann) list;
-    nn_equs: n_equation list; }
+    nn_equs: n_equation list;
+    nn_loc: location }
 
 let string_of_node n =
   Printf.sprintf "node %s(%s) returns (%s);\n\

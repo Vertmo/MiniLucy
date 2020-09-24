@@ -106,8 +106,6 @@ let _ =
    *   exit 0;
    * | None -> (); *)
 
-  Causalitychecker.check_file file;
-
   (* Normalize *)
   let nfile = Normalizer.norm_file file in
   (* if !asserts then assert (Normalizer.equiv_norm_file cfile nfile); *)
@@ -117,6 +115,7 @@ let _ =
     exit 0
   );
 
+  Causalitychecker.check_file nfile;
   let nfile = Scheduler.schedule_file nfile in
   if !asserts then assert (Scheduler.schedule_is_correct_file nfile);
 

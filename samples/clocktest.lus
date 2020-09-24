@@ -43,10 +43,10 @@ let
   z = x when b;
 tel
 
--- node test_app0(b1 : bool; c1 : bool) returns (z : int when True(c1) when True(b1));
--- let
---   z = test_op(b1 when True(c1));
--- tel;
+node test_app0(b1 : bool when True(c1); c1 : bool) returns (z : int when True(c1) when True(b1));
+let
+  z = test_op(b1);
+tel;
 
 node test_fby(b : bool) returns (x : int when b);
 let

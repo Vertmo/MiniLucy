@@ -96,13 +96,13 @@ let translate_eq tys env = function
     let e' = translate_expr env e in
     { env with si = (StAssign (x, Const c))::env.si;
                s = (control tys env e.nexpr_clock (StAssign (x, e')))::env.s}
-  | NQ_app (ids, fid, es, everid, cl) ->
+  | NQ_app (ids, fid, es, everid, bck, ckr) ->
     let es' = List.map (translate_expr env) es in
     let o = Atom.fresh ("_"^fid) in
     { env with si = (Reset o)::env.si;
                j = (o, fid)::env.j;
-               s = (control tys env cl (StepAssign (ids, o, es')))::
-                   (control tys env cl
+               s = (control tys env bck (StepAssign (ids, o, es')))::
+                   (control tys env ckr
                       (Case
                          (translate_ident env everid,
                           List.assoc everid tys,

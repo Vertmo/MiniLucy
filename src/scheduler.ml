@@ -2,37 +2,7 @@
 
 open Asttypes
 open NMinils
-
-(** Get the variables defined by an equation *)
-let def_vars = function
-  | NQ_ident (id, _) -> [id]
-  | NQ_fby (id, _, _) -> [id]
-  | NQ_app (ids, _, _, _, _) -> ids
-
-(** Get the variables used by an expression *)
-let rec expr_vars (e : n_expr) =
-  match e.nexpr_desc with
-  | NE_const _ -> []
-  | NE_ident id -> [id]
-  | NE_op (_, es) -> List.flatten (List.map expr_vars es)
-  | NE_when (e, _, clid) -> clid::(expr_vars e)
-
-let rec cexpr_vars (e : n_cexpr) =
-  match e.ncexpr_desc with
-  | NCE_match (e, es) ->
-    (expr_vars e)@(List.flatten (List.map (fun (_, e) -> cexpr_vars e) es))
-  | NCE_merge (id, es) ->
-    id::(List.flatten (List.map (fun (_, e) -> cexpr_vars e) es))
-  | NCE_expr e' ->
-    (expr_vars { nexpr_desc = e';
-                 nexpr_ty = e.ncexpr_ty; nexpr_clock = e.ncexpr_clock })
-
-(** Get the variables used by an equation *)
-let used_vars = function
-  | NQ_ident (_, e) -> (clock_vars e.ncexpr_clock)@(cexpr_vars e)
-  | NQ_fby (_, _, e) -> clock_vars (e.nexpr_clock)
-  | NQ_app (_, _, es, evid, cl) ->
-    evid::(clock_vars cl)@(List.flatten (List.map expr_vars es))
+open Causalitychecker
 
 (** Schedule a node *)
 let schedule_node (n : n_node) =

@@ -77,9 +77,6 @@ let block_error id bck ck loc =
     (Printf.sprintf "%s is declared to have clock %s, but should have the block clock %s"
     id (string_of_sclock bck) (string_of_sclock ck), loc)
 
-(* let clocks_of (es : CPMinils.k_expr list) =
- *   List.concat (List.map (fun (e : CPMinils.k_expr) -> List.map snd e.kexpr_annot) es) *)
-
 let sclocks_of (es : CEPMinils.k_expr list) =
   List.concat (List.map (fun (e : CEPMinils.k_expr) -> List.map (fun (_, (ck, _)) -> ck) e.kexpr_annot) es)
 

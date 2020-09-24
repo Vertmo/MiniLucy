@@ -50,38 +50,43 @@ let control tys env (ck : clock) (ins : instr) : instr =
   in aux ck ins
 
 (* Fusion of control structures *)
-let rec fusion i1 i2 =
-  let rec align_lists l1 l2 =
-    match l1, l2 with
-    | [], [] -> [], []
-    | l1, [] -> l1, List.map (fun (c1, _) -> c1, []) l1
-    | [], l2 -> List.map (fun (c2, _) -> c2, []) l2, l2
-    | (c1, i1)::tl1, (c2, i2)::tl2 ->
-      if c1 = c2 then let (l1, l2) = align_lists tl1 tl2 in
-        (c1, i1)::l1, (c2, i2)::l2
-      else if c1 < c2 then let (l1, l2) = align_lists tl1 ((c2, i2)::tl2) in
-        (c1, i1)::l1, (c1, [])::l2
-      else let (l1, l2) = align_lists ((c1, i1)::tl1) tl2 in
-        (c2, [])::l1, (c2, i2)::l2 in
+let fusion clocks instrs =
+  let sort = List.sort (fun (c1, _) (c2, _) -> String.compare c1 c2) in
 
-  let rec_fusion i =
+  let rec complete_list constrs brs =
+    match constrs, brs with
+    | [], [] -> []
+    | l1, [] -> List.map (fun c1 -> c1, []) l1
+    | [], l2 -> failwith "Should not happen"
+    | c1::tl1, (c2, i2)::tl2 when c1 = c2 ->
+      (c2, i2)::complete_list tl1 tl2
+    | c1::tl1, l2 ->
+      (c1, [])::(complete_list tl1 l2)
+
+  and fusion i1 i2 =
+    match rec_fusion i1, rec_fusion i2 with
+    | Case (x1, ty, is1), Case (x2, _, is2) when x1 = x2 ->
+      let constrs = List.sort String.compare (Typechecker.constrs_of_clock clocks dummy_loc ty) in
+      let is1 = complete_list constrs (sort is1)
+      and is2 = complete_list constrs (sort is2) in
+      [Case (x1, ty, List.map2 (fun (c1, i1) (_, i2) ->
+           (c1, fusion_list (i1@i2))) is1 is2)]
+    | _, _ -> [i1;i2]
+
+  and rec_fusion i =
     (match i with
      | Case (x, ty, is) ->
        Case (x, ty, (List.map (fun (c, ins) -> (c, fusion_list ins)) is))
      | _ -> i)
-  in match rec_fusion i1, rec_fusion i2 with
-  | Case (x1, ty, is1), Case (x2, _, is2) when x1 = x2 ->
-    let is1, is2 = align_lists is1 is2 in
-    [Case (x1, ty, List.map2 (fun (c1, i1) (_, i2) ->
-         (c1, fusion_list (i1@i2))) is1 is2)]
-  | _, _ -> [i1;i2]
-and fusion_list instrs =
-  match instrs with
-  | [] -> []
-  | i1::is ->
-    (match fusion_list is with
-     | [] -> [i1]
-     | i2::is -> (fusion i1 i2)@is)
+
+  and fusion_list instrs =
+    match instrs with
+    | [] -> []
+    | i1::is ->
+      (match fusion_list is with
+       | [] -> [i1]
+       | i2::is -> (fusion i1 i2)@is)
+  in fusion_list instrs
 
 (** Translate an equation *)
 let translate_eq tys env = function
@@ -113,7 +118,7 @@ let collect_mem env = function
   | NQ_app _ -> env
 
 (** Translate a node *)
-let translate_node outputs (n : n_node) : machine =
+let translate_node clocks outputs (n : n_node) : machine =
   let input = List.map (fun (id, (ty, _)) -> (id, ty)) n.nn_input
   and local = List.map (fun (id, (ty, _)) -> (id, ty)) n.nn_local
   and output = List.map (fun (id, (ty, _)) -> (id, ty)) n.nn_output in
@@ -127,7 +132,7 @@ let translate_node outputs (n : n_node) : machine =
     m_reset = env.si;
     m_step = input, output,
              List.sort_uniq (fun (v1, _) (v2, _) -> String.compare v1 v2) env.d,
-             fusion_list
+             fusion clocks
                (List.stable_sort (fun i1 i2 ->
                    let b1 = assign_state i1 and b2 = assign_state i2 in
                    if b1 && not b2 then 1
@@ -138,7 +143,7 @@ let translate_file (f : n_file) =
   let clocks = f.nf_clocks in
   { clocks = clocks;
     machines = List.map
-        (translate_node
+        (translate_node clocks
            (List.map (fun n ->
                 (n.nn_name, List.map fst n.nn_output)) f.nf_nodes)) f.nf_nodes }
 

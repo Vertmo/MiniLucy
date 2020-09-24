@@ -208,13 +208,13 @@ let rec reset_expr (x : ident) (ck : clock) (e : k_expr) =
                    kexpr_annot = e.kexpr_annot;
                    kexpr_loc = e.kexpr_loc } in
       KE_match ({ kexpr_desc = KE_ident x; (* TODO *)
-                  kexpr_annot = e.kexpr_annot;
+                  kexpr_annot = [(Tbool, (ck, Some x))];
                   kexpr_loc = dummy_loc },
                 [("True", e0'); ("False", [fby'])])
     | KE_arrow (e0, e1) ->
       let e0' = reset_exprs x ck e0 and e1' = reset_exprs x ck e1 in
       let arrow' = { kexpr_desc = KE_arrow (e0', e1' );
-                     kexpr_annot = e.kexpr_annot;
+                     kexpr_annot = [(Tbool, (ck, Some x))];
                      kexpr_loc = e.kexpr_loc } in
       KE_match ({ kexpr_desc = KE_ident x; (* TODO *)
                   kexpr_annot = e.kexpr_annot;
@@ -392,9 +392,9 @@ let rec let_instr (ins : p_instr) : (p_instr list * (ident * ann) list) =
   | Let (id, ann, e, instrs) ->
     let (instrs', ys) = let_instrs instrs in
     if free_in_instrs id instrs' then
-      let id' = Atom.fresh "$" in
+      let id' = Atom.fresh (id^"$") in
       ({ pinstr_desc = Eq { keq_patt = [id'];
-                            keq_expr = [e];
+                            keq_expr = [alpha_conv_expr id id' e];
                             keq_loc = dummy_loc };
          pinstr_loc = dummy_loc}::List.map (alpha_conv_instr id id') instrs',
        (id', ann)::ys)

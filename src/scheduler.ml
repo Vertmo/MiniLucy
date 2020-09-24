@@ -29,7 +29,7 @@ let rec cexpr_vars (e : n_cexpr) =
 
 (** Get the variables used by an equation *)
 let used_vars = function
-  | NQ_ident (_, e) -> (cexpr_vars e)
+  | NQ_ident (_, e) -> (clock_vars e.ncexpr_clock)@(cexpr_vars e)
   | NQ_fby (_, _, e) -> clock_vars (e.nexpr_clock)
   | NQ_app (_, _, es, evid, cl) ->
     evid::(clock_vars cl)@(List.flatten (List.map expr_vars es))

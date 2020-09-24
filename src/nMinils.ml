@@ -43,7 +43,7 @@ let rec string_of_cexpr e =
 
 and string_of_cexpr_desc = function
   | NCE_match (e, es) ->
-    Printf.sprintf "switch %s %s"
+    Printf.sprintf "match %s %s"
       (string_of_expr e)
       (String.concat " "
          (List.map

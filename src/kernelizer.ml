@@ -142,23 +142,32 @@ let rec auto_instr (ins : p_instr) =
                   pinstr_loc = dummy_loc } in
 
     (* strong transitions *)
-    let strongbranches = List.map (fun (c, unl, _, _) ->
-        let ck' = Con (c, ckid2, ck) in
-        let sr_eq =
-          { pinstr_desc =
-              Eq { keq_patt = [s; r];
-                   keq_expr = generate_un_if ck'
-                       (List.map (fun (e, c, b) -> (alpha_conv_expr ckid ckid2 e, c, b)) unl)
-                       (c, mk_bexpr ck' (KE_ident pnr));
-                   keq_loc = dummy_loc };
-            pinstr_loc = dummy_loc } in
-        (c,
-         [{ pinstr_desc = Reset ([sr_eq], mk_bexpr ck' (KE_ident pnr));
-            pinstr_loc = dummy_loc }])) brs' in
-    let strongswitch = { pinstr_desc = Switch (mk_ckexpr ck (KE_ident pns),
-                                               strongbranches,
-                                               (Some ckid2, [s;r]));
-                         pinstr_loc = dummy_loc } in
+    let hasstrongtrans = [] <> List.concat (List.map (fun (_, unl, _, _) -> unl) brs) in
+    let strongswitch =
+      if not hasstrongtrans then
+        { pinstr_desc = Eq { keq_patt = [s; r];
+                             keq_expr = [ mk_ckexpr ck (KE_ident pns);
+                                          mk_bexpr ck (KE_ident pnr) ];
+                             keq_loc = dummy_loc };
+          pinstr_loc = dummy_loc }
+      else
+        let strongbranches = List.map (fun (c, unl, _, _) ->
+            let ck' = Con (c, ckid2, ck) in
+            let sr_eq =
+              { pinstr_desc =
+                  Eq { keq_patt = [s; r];
+                       keq_expr = generate_un_if ck'
+                           (List.map (fun (e, c, b) -> (alpha_conv_expr ckid ckid2 e, c, b)) unl)
+                           (c, mk_bexpr ck' (KE_ident pnr));
+                       keq_loc = dummy_loc };
+                pinstr_loc = dummy_loc } in
+            (c,
+             [{ pinstr_desc = Reset ([sr_eq], mk_bexpr ck' (KE_ident pnr));
+                pinstr_loc = dummy_loc }])) brs' in
+        { pinstr_desc = Switch (mk_ckexpr ck (KE_ident pns),
+                                strongbranches,
+                                (Some ckid2, [s;r]));
+          pinstr_loc = dummy_loc } in
 
     (* weak transitions and content *)
     let weakbranches = List.map (fun (c, _, ins, unt) ->

@@ -251,7 +251,18 @@ and elab_branches nodes vars branches =
   List.map (fun (c, es) -> (c, elab_exprs nodes vars es)) branches
 
 (** Once an expression is elaborated, its clocks can be "frozen".
-    Its also at this point that we infer additional whens around constants *)
+    Its also at this point that we infer additional whens around constants.
+    We also check that none of the clocks that were inferred escape are anonymous
+    that escape their scope *)
+
+let rec check_ck_in_scope vars loc = function
+  | Cbase -> ()
+  | Con (_, ckid, ck) ->
+    check_ck_in_scope vars loc ck;
+    if (not (List.mem_assoc ckid vars))
+    then raise (ClockError
+                  (Printf.sprintf "Constant is subsampled by %s which escapes its scope" ckid,
+                   loc))
 
 let rec add_whens ty ck e : CPMinils.k_expr =
   match ck with
@@ -262,7 +273,7 @@ let rec add_whens ty ck e : CPMinils.k_expr =
       kexpr_annot = [(ty, (Con (constr, ckid, ck), None))];
       kexpr_loc = dummy_loc }
 
-let rec freeze_expr (e : CEPMinils.k_expr) : CPMinils.k_expr =
+let rec freeze_expr vars (e : CEPMinils.k_expr) : CPMinils.k_expr =
   let annot = List.map (fun (ty, (ck, id)) ->
       (ty, (clock_of_sclock ck, match id with
          | None -> None
@@ -270,24 +281,26 @@ let rec freeze_expr (e : CEPMinils.k_expr) : CPMinils.k_expr =
   let desc = match e.kexpr_desc with
     | KE_const c ->
       let (ty, (ck, _)) = List.hd annot in
-      (add_whens ty ck { kexpr_desc = (CPMinils.KE_const c);
-                         kexpr_annot = [(ty, (Cbase, None))];
-                         kexpr_loc = e.kexpr_loc; }).kexpr_desc
+      check_ck_in_scope vars e.kexpr_loc ck;
+      (add_whens ty ck
+         { kexpr_desc = (CPMinils.KE_const c);
+           kexpr_annot = [(ty, (Cbase, None))];
+           kexpr_loc = e.kexpr_loc; }).kexpr_desc
     | KE_ident i -> KE_ident i
-    | KE_unop (op, e1) -> KE_unop (op, freeze_expr e1)
-    | KE_binop (op, e1, e2) -> KE_binop (op, freeze_expr e1, freeze_expr e2)
-    | KE_fby (e0s, es) -> KE_fby (freeze_exprs e0s, freeze_exprs es)
-    | KE_arrow (e0s, es) -> KE_arrow (freeze_exprs e0s, freeze_exprs es)
-    | KE_match (e, branches) -> KE_match (freeze_expr e, freeze_branches branches)
-    | KE_when (es, constr, ckid) -> KE_when (freeze_exprs es, constr, ckid)
-    | KE_merge (ckid, branches) -> KE_merge (ckid, freeze_branches branches)
-    | KE_app (f, es, er) -> KE_app (f, freeze_exprs es, freeze_expr er)
+    | KE_unop (op, e1) -> KE_unop (op, freeze_expr vars e1)
+    | KE_binop (op, e1, e2) -> KE_binop (op, freeze_expr vars e1, freeze_expr vars e2)
+    | KE_fby (e0s, es) -> KE_fby (freeze_exprs vars e0s, freeze_exprs vars es)
+    | KE_arrow (e0s, es) -> KE_arrow (freeze_exprs vars e0s, freeze_exprs vars es)
+    | KE_match (e, branches) -> KE_match (freeze_expr vars e, freeze_branches vars branches)
+    | KE_when (es, constr, ckid) -> KE_when (freeze_exprs vars es, constr, ckid)
+    | KE_merge (ckid, branches) -> KE_merge (ckid, freeze_branches vars branches)
+    | KE_app (f, es, er) -> KE_app (f, freeze_exprs vars es, freeze_expr vars er)
     | KE_last i -> KE_last i
   in { kexpr_desc = desc;
        kexpr_annot = annot;
        kexpr_loc = e.kexpr_loc }
-and freeze_exprs es = List.map freeze_expr es
-and freeze_branches branches = List.map (fun (c, es) -> (c, freeze_exprs es)) branches
+and freeze_exprs vars = List.map (freeze_expr vars)
+and freeze_branches vars = List.map (fun (c, es) -> (c, freeze_exprs vars es))
 
 (** Get the clocks(s) expected for a pattern [pat],
     as well as the translated pattern *)
@@ -322,7 +335,7 @@ let elab_equation nodes vars bck constrained_block (eq : k_equation) : CPMinils.
                              , eq.keq_loc)))
     ) ids anons;
 
-  { keq_patt = eq.keq_patt; keq_expr = freeze_exprs es'; keq_loc = eq.keq_loc }
+  { keq_patt = eq.keq_patt; keq_expr = freeze_exprs vars es'; keq_loc = eq.keq_loc }
 
 let rec elab_instr nodes vars bck constrained_block (ins : p_instr) : CPMinils.p_instr =
   let (desc : CPMinils.p_instr_desc) =
@@ -337,22 +350,22 @@ let rec elab_instr nodes vars bck constrained_block (ins : p_instr) : CPMinils.p
       let e' = elab_expr nodes ((id, ck')::vars) e in
       let (_, nck') = List.hd e'.kexpr_annot in
       unify_nsclock ins.pinstr_loc (ck', None) nck';
-      let e' = freeze_expr e' in
+      let e' = freeze_expr vars e' in
       let instrs' = elab_instrs nodes ((id, ck')::vars) bck constrained_block instrs in
       Let (id, (ty, clock_of_sclock ck'), e', instrs')
     | Reset (ins, er) ->
       Reset (elab_instrs nodes vars bck constrained_block ins,
-             freeze_expr (elab_expr nodes vars er)) (* TODO should there be a constraint ? *)
+             freeze_expr vars (elab_expr nodes vars er)) (* TODO should there be a constraint ? *)
     | Switch (e, brs, (_, defs)) ->
       let e' = elab_expr nodes vars e in
       let (_, (ck, _)) = List.hd e'.kexpr_annot in
       unify_sclock e.kexpr_loc bck ck; (* Use the bck hint to infer the correct clock for the condition *)
-      let e' = freeze_expr e' in
+      let e' = freeze_expr vars e' in
       let ckid = Atom.fresh "_" in
       Switch (e',
               List.map (fun (c, ins) ->
                   let bck' = Son (c, ref (InstIdent ckid), bck)
-                  and vars' = List.map (fun (id, ck) -> (id, Son (c, ref (InstIdent ckid), ck))) vars in
+                  and vars' = (ckid, ck)::(List.map (fun (id, ck) -> (id, Son (c, ref (InstIdent ckid), ck)))) vars in
                   (c, elab_instrs nodes vars' bck' true ins)) brs,
               (Some ckid, defs))
     | Automaton (brs, (ckid, _, defs)) ->
@@ -364,11 +377,11 @@ let rec elab_instr nodes vars bck constrained_block (ins : p_instr) : CPMinils.p
         let e' = elab_expr nodes vars e in
         let (_, (ck, _)) = List.hd e'.kexpr_annot in
         unify_sclock e.kexpr_loc bck ck;
-        (freeze_expr e', s, b)
+        (freeze_expr vars e', s, b)
       in
       let brs' = List.map (fun (c, unlesss, instrs, untils) ->
           let bck' = Son (c, ref (InstIdent ckid), bck)
-          and vars' = List.map (fun (id, ck) -> (id, Son (c, ref (InstIdent ckid), ck))) vars in
+          and vars' = (ckid, bck)::(List.map (fun (id, ck) -> (id, Son (c, ref (InstIdent ckid), ck))) vars) in
           let unlesss' = List.map (elab_un vars' bck') unlesss
           and untils' = List.map (elab_un vars' bck') untils
           and instrs' = elab_instrs nodes vars' bck' true instrs in

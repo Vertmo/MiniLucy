@@ -154,7 +154,7 @@ let rec elab_expr ?(is_top=false) (nodes : (ident * CPMinils.p_node) list) vars 
   let loc = e.kexpr_loc and ty = e.kexpr_annot in
   match e.kexpr_desc with
   | KE_const c ->
-    let ck = Svar (ref (UnknownCk (Atom.fresh "$"))) in
+    let ck = Svar (ref (UnknownCk (Atom.fresh "_"))) in
     (* A constant can be subsampled to any clock ! *)
     { kexpr_desc = KE_const c; kexpr_annot = [(List.hd ty, (ck, None))];
       kexpr_loc = loc }
@@ -230,8 +230,8 @@ let rec elab_expr ?(is_top=false) (nodes : (ident * CPMinils.p_node) list) vars 
 
     let node = List.assoc fid nodes in
 
-    let subst = List.map (fun (id, _) -> (id, ref (UnknownIdent (Atom.fresh "$")))) (node.pn_input@node.pn_output) in
-    let subst = fun x -> List.assoc x subst and bck = Svar (ref (UnknownCk (Atom.fresh "$"))) in
+    let subst = List.map (fun (id, _) -> (id, ref (UnknownIdent (Atom.fresh "_")))) (node.pn_input@node.pn_output) in
+    let subst = fun x -> List.assoc x subst and bck = Svar (ref (UnknownCk (Atom.fresh "_"))) in
     let inck = List.map (fun (id, (_, ck)) -> (inst_clock bck subst ck, Some (subst id))) node.pn_input
     and outck = List.map (fun (id, (_, ck)) -> (inst_clock bck subst ck, Some (subst id))) node.pn_output in
 
@@ -348,7 +348,7 @@ let rec elab_instr nodes vars bck constrained_block (ins : p_instr) : CPMinils.p
       let (_, (ck, _)) = List.hd e'.kexpr_annot in
       unify_sclock e.kexpr_loc bck ck; (* Use the bck hint to infer the correct clock for the condition *)
       let e' = freeze_expr e' in
-      let ckid = Atom.fresh "$" in
+      let ckid = Atom.fresh "_" in
       Switch (e',
               List.map (fun (c, ins) ->
                   let bck' = Son (c, ref (InstIdent ckid), bck)
@@ -359,7 +359,7 @@ let rec elab_instr nodes vars bck constrained_block (ins : p_instr) : CPMinils.p
       let ckid = match ckid with Some ckid -> ckid | _ -> failwith "Should not happen"
       and bck =
         if constrained_block then bck
-        else Svar (ref (UnknownCk (Atom.fresh "$"))) in
+        else Svar (ref (UnknownCk (Atom.fresh "_"))) in
       let elab_un vars bck (e, s, b) =
         let e' = elab_expr nodes vars e in
         let (_, (ck, _)) = List.hd e'.kexpr_annot in
@@ -410,7 +410,7 @@ let elab_node (nodes : (ident * CPMinils.p_node) list) (n : p_node) : CPMinils.p
 
   (* elab instructions *)
   let vars' = List.map (fun (id, ck) -> (id, sclock_of_clock ck)) vars
-  and bck = Svar (ref (UnknownCk (Atom.fresh "$"))) in
+  and bck = Svar (ref (UnknownCk (Atom.fresh "_"))) in
   let instrs' = elab_instrs nodes vars' bck false n.pn_instrs in
 
   { pn_name = n.pn_name;

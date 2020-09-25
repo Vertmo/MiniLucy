@@ -389,7 +389,7 @@ let rec elab_instr nodes vars clocks (ins : p_instr) : TPMinils.p_instr =
       let brs' = List.map (fun (c, ins) -> (c, elab_instrs nodes vars clocks ins)) brs in
       Switch (e', brs', (ckid, get_def_instr ins))
     | Automaton (brs, (_, ck, _)) ->
-      let tyid = Atom.fresh "$aut"
+      let tyid = Atom.fresh "_aut"
       and constrs = List.map (fun (c, _, _, _) -> c) brs in
       let elab_un (e, s, b) =
         let e' = elab_expr nodes vars clocks e in

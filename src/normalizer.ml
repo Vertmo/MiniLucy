@@ -8,13 +8,13 @@ open NMinils
     distribute constructions *)
 
 let idents_for_anns anns =
-  List.map (fun (ty, (ck, _)) -> (Atom.fresh "$", (ty, ck))) anns
+  List.map (fun (ty, (ck, _)) -> (Atom.fresh "_", (ty, ck))) anns
 
 let idents_for_anns' anns =
   List.map (fun (ty, (ck, id)) ->
       match id with
       | Some id -> (id, (ty, ck))
-      | None -> (Atom.fresh "$", (ty, ck))) anns
+      | None -> (Atom.fresh "_", (ty, ck))) anns
 
 let dist_make_vars ids =
   List.map (fun (id, (ty, ck)) ->
@@ -174,7 +174,7 @@ let norm_reset_eq (eq : k_equation) : (k_equation list * (ident * ann) list) =
   match eq.keq_expr with
   | [{ kexpr_desc = KE_app (f, es, { kexpr_desc = KE_ident _}) }] -> [eq], []
   | [{ kexpr_desc = KE_app (f, es, er) } as e] ->
-    let y = Atom.fresh "$"
+    let y = Atom.fresh "_"
     and (ty, (ck, _)) = List.hd er.kexpr_annot in
     [{ keq_patt = [y]; keq_expr = [er]; keq_loc = dummy_loc };
      { eq with keq_expr = [{ e with
@@ -225,7 +225,7 @@ let norm_fby_eq (eq : k_equation) : (k_equation list * (ident * ann) list) =
   | [{ kexpr_desc = KE_fby ([e0], [e1]) }] when is_constant e0 -> [eq], []
   | [{ kexpr_desc = KE_fby ([e0], [e1]) } as e] ->
     let (ty, (ck, _)) = List.hd e.kexpr_annot in
-    let xinit = Atom.fresh "$" and px = Atom.fresh "$" in
+    let xinit = Atom.fresh "_" and px = Atom.fresh "_" in
     [{ keq_patt = [xinit]; keq_expr = [init_expr ck]; keq_loc = dummy_loc };
      { keq_patt = [px]; keq_expr = [delay_expr e1 ty ck]; keq_loc = dummy_loc };
      { eq with keq_expr = [{ kexpr_desc = KE_match ({ kexpr_desc = KE_ident xinit;
@@ -240,7 +240,7 @@ let norm_fby_eq (eq : k_equation) : (k_equation list * (ident * ann) list) =
     [ (xinit, (Tbool, ck)); (px, (ty, ck)) ]
   | [{ kexpr_desc = KE_arrow ([e0], [e1]) } as e] ->
     let (ty, (ck, _)) = List.hd e.kexpr_annot in
-    let xinit = Atom.fresh "$" in
+    let xinit = Atom.fresh "_" in
     [{ keq_patt = [xinit]; keq_expr = [init_expr ck]; keq_loc = dummy_loc };
      { eq with keq_expr = [{ kexpr_desc = KE_match ({ kexpr_desc = KE_ident xinit;
                                                       kexpr_annot = [(Tbool, (ck, None))];

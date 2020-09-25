@@ -66,7 +66,7 @@ let last_node (n : p_node) : p_node =
   let nlocals = List.map (fun (x, a, c) ->
       (x, a,
        match c with
-       | Some constr -> Some (Atom.fresh (x^"$"), constr)
+       | Some constr -> Some (Atom.fresh (x^"_"), constr)
        | None -> None)) n.pn_local in
   let instrs = List.fold_left
       (fun instrs (x, (ty, ck), c) ->
@@ -208,10 +208,10 @@ let rec auto_instr (ins : p_instr) =
     let (fconstr, _, _, _) = List.hd brs in
 
     (* Necessary idents *)
-    let ckid2 = Atom.fresh "$saut" in
-    let s = Atom.fresh "$s" and r = Atom.fresh "$r"
-    and ns = Atom.fresh "$ns" and nr = Atom.fresh "$nr"
-    and pns = Atom.fresh "$pns" and pnr = Atom.fresh "$pnr" in
+    let ckid2 = Atom.fresh "_saut" in
+    let s = Atom.fresh "_s" and r = Atom.fresh "_r"
+    and ns = Atom.fresh "_ns" and nr = Atom.fresh "_nr"
+    and pns = Atom.fresh "_pns" and pnr = Atom.fresh "_pnr" in
 
     (* Delay equations *)
     let pnseq = { pinstr_desc =
@@ -363,7 +363,7 @@ let rec reset_instr (ins : p_instr) : p_instr =
       Switch (e, reset_branches brs, ckid)
     | Reset (instrs, er) ->
       let instrs' = reset_instrs instrs in
-      let y = Atom.fresh "$" and (ty, (ckr, _)) = List.hd er.kexpr_annot in
+      let y = Atom.fresh "_" and (ty, (ckr, _)) = List.hd er.kexpr_annot in
       let instrs' = List.map (reset_instr' y ckr) instrs' in
       Let (y, (ty, ckr), er, instrs')
     | _ -> invalid_arg "reset_instr"
@@ -391,9 +391,9 @@ let rec add_lets ins (lets : (ident * ann * k_expr) list) =
     Does not add let-bindings for names defined by the instrs.
     Returns both the new let-binding instr, and a substitution for the vars defined inside *)
 let switch_proj (vars : (ident * ann) list) (ck : clock) constr ckid defs (ins : p_instr list) =
-  let nvars = List.map (fun (id, ann) -> (id, (Atom.fresh (id^"$"), ann)))
+  let nvars = List.map (fun (id, ann) -> (id, (Atom.fresh (id^"_"), ann)))
       (List.filter (fun (id, (_, ck')) -> ck' = ck && not (List.mem id defs)) vars)
-  and ndefs = List.map (fun (id, (ty, ck)) -> (id, (Atom.fresh (id^"$"), (ty, (Con (constr, ckid, ck))))))
+  and ndefs = List.map (fun (id, (ty, ck)) -> (id, (Atom.fresh (id^"_"), (ty, (Con (constr, ckid, ck))))))
       (List.filter (fun (id, (_, ck')) -> List.mem id defs) vars) in
   let ins' = List.fold_left (fun ins (id, (id', _)) -> alpha_conv_instrs id id' ins) ins (nvars@ndefs) in
   let ins' = add_lets ins'
@@ -498,7 +498,7 @@ let rec let_instr (ins : p_instr) : (p_instr list * (ident * ann) list) =
   | Let (id, ann, e, instrs) ->
     let (instrs', ys) = let_instrs instrs in
     if free_in_instrs id instrs' then
-      let id' = Atom.fresh (id^"$") in
+      let id' = Atom.fresh (id^"_") in
       ({ pinstr_desc = Eq { keq_patt = [id'];
                             keq_expr = [alpha_conv_expr id id' e];
                             keq_loc = dummy_loc };

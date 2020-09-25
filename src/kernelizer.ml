@@ -8,7 +8,96 @@ open Clockchecker.CPMinils
 
 module CMinils = MINILS(TypeClockAnnot)
 
-(** alpha-conversion, needed for switch and let compilation                   *)
+(** Eliminate last expressions                                                 *)
+
+let rec last_expr id id' (e : k_expr) : k_expr =
+  let desc =
+    match e.kexpr_desc with
+    | KE_const c -> KE_const c
+    | KE_ident x -> KE_ident x
+    | KE_unop (op, e1) ->
+      KE_unop (op, last_expr id id' e1)
+    | KE_binop (op, e1, e2) ->
+      KE_binop (op, last_expr id id' e1, last_expr id id' e2)
+    | KE_fby (e0s, es) ->
+      KE_fby (last_exprs id id' e0s, last_exprs id id' es)
+    | KE_arrow (e0s, es) ->
+      KE_arrow (last_exprs id id' e0s, last_exprs id id' es)
+    | KE_match (e, brs) ->
+      KE_match (last_expr id id' e, last_branches id id' brs)
+    | KE_when (es, c, ckid) -> KE_when (last_exprs id id' es, c, ckid)
+    | KE_merge (x, brs) -> KE_merge (x, last_branches id id' brs)
+    | KE_app (id, es, er) ->
+      KE_app (id, last_exprs id id' es, last_expr id id' er)
+    | KE_last x when x = id -> KE_ident id'
+    | KE_last x -> KE_last x
+  in { e with kexpr_desc = desc }
+and last_exprs id id' = List.map (last_expr id id')
+and last_branches id id' = List.map (fun (c, es) -> (c, last_exprs id id' es))
+
+let last_eq id id' (eq : k_equation) : k_equation =
+  { eq with keq_expr = last_exprs id id' eq.keq_expr }
+
+let rec last_instr id id' (ins : p_instr) : p_instr =
+  let desc =
+    match ins.pinstr_desc with
+    | Eq eq -> Eq (last_eq id id' eq)
+    | Let (x, a, e, instrs) ->
+      Let (x, a, last_expr id id' e, last_instrs id id' instrs)
+    | Reset (instrs, e) ->
+      Reset (last_instrs id id' instrs, last_expr id id' e)
+    | Switch (e, brs, ckid) ->
+      Switch (last_expr id id' e,
+              List.map (fun (c, ins) -> (c, last_instrs id id' ins)) brs,
+              ckid)
+    | Automaton (brs, ckid) ->
+      let last_un (e, s, b) = (last_expr id id' e, s, b) in
+      Automaton (List.map
+                   (fun (c, unt, ins, unl) ->
+                      (c,
+                       List.map last_un unt,
+                       last_instrs id id' ins,
+                       List.map last_un unl)) brs,
+                 ckid)
+  in { ins with pinstr_desc = desc }
+and last_instrs id id' = List.map (last_instr id id')
+
+let last_node (n : p_node) : p_node =
+  let nlocals = List.map (fun (x, a, c) ->
+      (x, a,
+       match c with
+       | Some constr -> Some (Atom.fresh (x^"$"), constr)
+       | None -> None)) n.pn_local in
+  let instrs = List.fold_left
+      (fun instrs (x, (ty, ck), c) ->
+         match c with
+         | Some (x', c) ->
+           let mk_expr desc =
+             { kexpr_desc = desc; kexpr_annot = [(ty, (ck, None))]; kexpr_loc = dummy_loc } in
+           let eq_fby =
+             { pinstr_desc =
+                 Eq { keq_patt = [x'];
+                      keq_expr = [mk_expr (KE_fby ([mk_expr (KE_const c)],
+                                                   [mk_expr (KE_ident x)]))];
+                      keq_loc = dummy_loc };
+               pinstr_loc = dummy_loc } in
+           eq_fby::(last_instrs x x' instrs)
+         | None -> instrs)
+      n.pn_instrs nlocals
+  and nlocals = List.fold_left
+      (fun acc (x, a, c) ->
+         match c with
+         | Some (x', c) ->
+           (x', a, None)::(x, a, None)::acc
+         | None -> (x, a, None)::acc
+      ) [] nlocals in
+  { n with pn_local = List.rev nlocals;
+           pn_instrs = instrs }
+
+let last_file (f : p_file) : p_file =
+  { f with pf_nodes = List.map last_node f.pf_nodes }
+
+(** alpha-conversion, needed for automaton, switch and let compilation         *)
 
 let alpha_conv id id' x =
   if x = id then id' else x
@@ -48,6 +137,7 @@ let rec alpha_conv_expr id id' e =
       KE_merge (alpha_conv id id' x, alpha_conv_branches id id' brs)
     | KE_app (f, es, er) ->
       KE_app (f, alpha_conv_exprs id id' es, alpha_conv_expr id id' er)
+    | KE_last _ -> invalid_arg "alpha_conv_expr"
   in { e with kexpr_desc = desc;
               kexpr_annot = List.map (alpha_conv_nannot id id') e.kexpr_annot }
 and alpha_conv_exprs id id' =
@@ -195,7 +285,7 @@ and auto_instrs (ins : p_instr list) =
 
 let auto_node (n : p_node) : p_node =
   let (instrs, ys) = auto_instrs n.pn_instrs in
-  { n with pn_instrs = instrs; pn_local = n.pn_local@ys }
+  { n with pn_instrs = instrs; pn_local = n.pn_local@(List.map (fun (x, a) -> (x, a, None)) ys) }
 
 let rec auto_file (f : p_file) : p_file =
   { f with pf_nodes = List.map auto_node f.pf_nodes }
@@ -240,6 +330,7 @@ let rec reset_expr (x : ident) (ck : clock) (e : k_expr) =
                                       kexpr_loc = dummy_loc });
                         kexpr_annot = e.kexpr_annot;
                         kexpr_loc = dummy_loc })
+    | KE_last _ -> invalid_arg "reset_expr"
   in { e with kexpr_desc = desc }
 and reset_exprs (x : ident) (ck : clock) es = List.map (reset_expr x ck) es
 and reset_branches (x : ident) (ck : clock) brs =
@@ -363,8 +454,11 @@ and switch_branches vars ckid brs =
 
 
 let switch_node (n : p_node) : p_node =
-  let (ins, names) = switch_instrs (n.pn_input@n.pn_output@n.pn_local) n.pn_instrs in
-  { n with pn_instrs = ins; pn_local = n.pn_local@names }
+  let (ins, names) =
+    switch_instrs (n.pn_input@n.pn_output@
+                   (List.map (fun (x, a, _) -> (x, a)) n.pn_local))
+      n.pn_instrs in
+  { n with pn_instrs = ins; pn_local = n.pn_local@(List.map (fun (x, a) -> (x, a, None)) names) }
 
 let switch_file (f : p_file) : p_file =
   { f with pf_nodes = List.map switch_node f.pf_nodes }
@@ -384,6 +478,7 @@ let rec free_in_expr id e =
   | KE_when (es, _, x) -> free_in_exprs id es || id = x
   | KE_merge (x, brs) -> id = x || free_in_branches id brs
   | KE_app (_, es, er) -> free_in_exprs id es || free_in_expr id er
+  | KE_last x -> id = x
 and free_in_exprs id = List.exists (free_in_expr id)
 and free_in_branches id = List.exists (fun (_, es) -> free_in_exprs id es)
 
@@ -419,7 +514,7 @@ and let_instrs (ins : p_instr list) =
 let let_node (n : p_node) : p_node =
   let (instrs', names) = let_instrs n.pn_instrs in
   { n with pn_instrs = instrs';
-           pn_local = n.pn_local@names }
+           pn_local = n.pn_local@(List.map (fun (x, a) -> (x, a, None)) names) }
 
 let let_file (f : p_file) : p_file =
   { f with pf_nodes = List.map let_node f.pf_nodes }
@@ -435,7 +530,7 @@ let tr_node (n : p_node) : k_node =
   { kn_name = n.pn_name;
     kn_input = n.pn_input;
     kn_output = n.pn_output;
-    kn_local = n.pn_local;
+    kn_local = List.map (fun (x, a, _) -> (x, a)) n.pn_local;
     kn_equs = List.map tr_instr n.pn_instrs;
     kn_loc = n.pn_loc }
 
@@ -446,4 +541,4 @@ let tr_file (f : p_file) : k_file =
 (** Conclusion                                                                *)
 
 let kernelize_file (f : p_file) : k_file =
-  f |> auto_file |> reset_file |> switch_file |> let_file |> tr_file
+  f |> last_file |> auto_file |> reset_file |> switch_file |> let_file |> tr_file

@@ -31,5 +31,16 @@ int main() {
     auto_app_step(&mem3, &out3);
     printf("x : %d\n", out3.x);
   }
+
+
+  printf("Test auto_last\n====================\n");
+  auto_last_mem mem4;
+  auto_last_out out4;
+  auto_last_reset(&mem4);
+
+  for(int i = 0; i < 30; i++) {
+    auto_last_step(&mem4, &out4);
+    printf("y : %d\n", out4.y);
+  }
   return 0;
 }

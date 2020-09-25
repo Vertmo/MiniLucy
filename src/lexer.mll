@@ -22,6 +22,7 @@
 	"if", IF;
   "in", IN;
 	"int", INT;
+  "last", LAST;
 	"let", LET;
   "match", MATCH;
   "merge", MERGE;

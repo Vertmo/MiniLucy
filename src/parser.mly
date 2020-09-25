@@ -32,6 +32,7 @@
 %token IF
 %token IN
 %token INT
+%token LAST
 %token LET
 %token LPAREN
 %token MATCH
@@ -106,36 +107,16 @@ node_decs:
 
 
 node:
-| NODE IDENT LPAREN in_params RPAREN SEMICOL?
-  RETURNS LPAREN out_params RPAREN SEMICOL?
+| NODE IDENT LPAREN param_list? RPAREN SEMICOL?
+  RETURNS LPAREN param_list RPAREN SEMICOL?
   local_params
   LET instr+ TEL SEMICOL?
     { { pn_name = $2;
-	pn_input = $4;
+	pn_input = (match $4 with Some l -> l | None -> []);
 	pn_output = $9;
 	pn_local = $12;
 	pn_instrs = $14;
 	pn_loc = ($startpos, $endpos) } }
-;
-
-in_params:
-| /* empty */
-    { [] }
-| param_list
-    { $1 }
-;
-
-
-out_params:
-| param_list
-    { $1 }
-;
-
-local_params:
-| /* empty */
-    { [] }
-| VAR param_list_semicol SEMICOL?
-    { $2 }
 ;
 
 param_list:
@@ -145,17 +126,31 @@ param_list:
     { $1 @ $3 }
 ;
 
-param_list_semicol:
-| param  SEMICOL
+param:
+| ident_comma_list COLON annot
+    { let typ = $3 in
+      List.map (fun id -> (id, typ)) $1 }
+;
+
+local_params:
+| /* empty */
+    { [] }
+| VAR local_param_list
+    { $2 }
+;
+
+local_param_list:
+| local_param SEMICOL
     { $1 }
-| param SEMICOL param_list_semicol
+| local_param SEMICOL local_param_list
     { $1 @ $3 }
 ;
 
-param:
-  | ident_comma_list COLON annot
-      { let typ = $3 in
-        List.map (fun id -> (id, typ)) $1 }
+local_param:
+| param
+    { List.map (fun (a, b) -> (a, b, None)) $1 }
+| LAST IDENT COLON annot EQUAL const
+    { [($2, $4, Some $6)] }
 ;
 
 instr:
@@ -261,6 +256,8 @@ expr:
     { mk_expr (KE_match ($2, $4)) $startpos $endpos }
 | IF expr THEN expr_list ELSE expr_list
     { mk_expr (KE_match ($2, [("True", $4); ("False", $6)])) $startpos $endpos }
+| LAST IDENT
+    { mk_expr (KE_last $2) $startpos $endpos }
 ;
 
 const:

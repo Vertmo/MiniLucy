@@ -29,6 +29,7 @@ module MINILS(A : Annotations) = struct
     | KE_match of k_expr * (constr * k_expr list) list
     | KE_when of k_expr list * constr * ident
     | KE_merge of ident * (constr * k_expr list) list
+    | KE_last of ident
 
   let string_of_annots anns =
     Printf.sprintf "[%s]"
@@ -75,6 +76,8 @@ module MINILS(A : Annotations) = struct
               (List.map
                  (fun (constr, e) -> Printf.sprintf "(%s -> %s)"
                      constr (string_of_exprs e)) es))
+    | KE_last id ->
+      Printf.sprintf "last %s" id
 
   and string_of_exprs ?(print_anns=false) es =
     Printf.sprintf (if List.length es = 1 then "%s" else "(%s)")

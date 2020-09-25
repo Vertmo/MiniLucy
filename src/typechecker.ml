@@ -36,6 +36,7 @@ let rec sort_expr (e : k_expr) : k_expr =
                   (List.map (fun (c, e) -> (c, sort_exprs e)) es))
     | KE_app (id, es, e) ->
       KE_app (id, List.map sort_expr es, sort_expr e)
+    | KE_last id -> KE_last id
   in { e with kexpr_desc = desc }
 
 and sort_exprs es = List.map sort_expr es
@@ -297,6 +298,13 @@ let rec elab_expr (nodes : (ident * TPMinils.p_node) list)
     let outy = List.map (fun (_, (ty, _)) -> ty) node.pn_output in
     { kexpr_desc = KE_app (id, es', er');
       kexpr_annot = outy; kexpr_loc = loc }
+  | KE_last id ->
+    let bty =
+      (try (List.assoc id vars)
+       with _ -> raise (TypeError
+                          (Printf.sprintf "Stream %s not found in node"
+                             id, e.kexpr_loc))) in
+    { kexpr_desc = KE_last id; kexpr_annot = [bty]; kexpr_loc = e.kexpr_loc }
 
 (** Get the type expected for a pattern [pat] *)
 let get_pattern_type (vars : (ident * ty) list) pat loc =
@@ -429,7 +437,8 @@ let check_clock clocks (n : p_node) (vars : (ident * ty) list) ck =
 (** Check that the node [n] is correctly typed *)
 let elab_node (nodes: (ident * TPMinils.p_node) list) clocks (n : p_node) :
   TPMinils.p_node =
-  let out_streams = (n.pn_output@n.pn_local) in
+  let local = List.map (fun (x, a, _) -> (x, a)) n.pn_local in
+  let out_streams = (n.pn_output@local) in
   let all_streams = (n.pn_input@out_streams) in
 
   (* Check that there are no duplicate stream names *)
@@ -453,7 +462,18 @@ let elab_node (nodes: (ident * TPMinils.p_node) list) clocks (n : p_node) :
   let idty = List.map (fun (id, (ty, _)) -> (id, ty)) in
   List.iter (fun (id, (_, ck)) -> check_clock clocks n (idty n.pn_input) ck) n.pn_input;
   List.iter (fun (id, (_, ck)) -> check_clock clocks n (idty (n.pn_input@n.pn_output)) ck) n.pn_output;
-  List.iter (fun (id, (_, ck)) -> check_clock clocks n (idty (n.pn_input@n.pn_output@n.pn_local)) ck) n.pn_local;
+  List.iter (fun (id, (_, ck)) -> check_clock clocks n (idty (n.pn_input@n.pn_output@local)) ck) local;
+
+  (* Check that the last init constants are well typed *)
+  List.iter (fun (id, (ty, _), const) ->
+      match const with
+      | Some const ->
+        let ty' = type_const n.pn_loc const in
+        if ty' <> ty then
+          raise (TypeError
+                   (Printf.sprintf "last %s was declared with type %s, but found %s for its init constant"
+                      id (string_of_ty ty) (string_of_ty ty'), n.pn_loc))
+      | _ -> ()) n.pn_local;
 
   (* Check that all the streams are defined *)
   let expected = List.sort String.compare (List.map fst out_streams)

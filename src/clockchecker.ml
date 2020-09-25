@@ -240,6 +240,11 @@ let rec elab_expr ?(is_top=false) (nodes : (ident * CPMinils.p_node) list) vars 
     { kexpr_desc = KE_app (fid, es', er');
       kexpr_annot = List.combine ty outck;
       kexpr_loc = loc }
+  | KE_last id ->
+    let ck = get_clock_in_env id vars e.kexpr_loc in
+    { kexpr_desc = KE_last id;
+      kexpr_annot = [(List.hd ty, (ck, None))];
+      kexpr_loc = loc }
 and elab_exprs ?(is_top=false) nodes vars (es : k_expr list) =
   List.map (elab_expr ~is_top nodes vars) es
 and elab_branches nodes vars branches =
@@ -277,6 +282,7 @@ let rec freeze_expr (e : CEPMinils.k_expr) : CPMinils.k_expr =
     | KE_when (es, constr, ckid) -> KE_when (freeze_exprs es, constr, ckid)
     | KE_merge (ckid, branches) -> KE_merge (ckid, freeze_branches branches)
     | KE_app (f, es, er) -> KE_app (f, freeze_exprs es, freeze_expr er)
+    | KE_last i -> KE_last i
   in { kexpr_desc = desc;
        kexpr_annot = annot;
        kexpr_loc = e.kexpr_loc }
@@ -390,15 +396,17 @@ let check_clock (n : p_node) vars ck =
 
 (** Check the clocks for the node [f] *)
 let elab_node (nodes : (ident * CPMinils.p_node) list) (n : p_node) : CPMinils.p_node =
+  let local = List.map (fun (x, a, _) -> (x, a)) n.pn_local in
+
   let idck = List.map (fun (id, (_, ck)) -> (id, ck)) in
   let in_vars = idck n.pn_input
   and inout_vars = idck (n.pn_input@n.pn_output)
-  and vars = idck (n.pn_input@n.pn_output@n.pn_local) in
+  and vars = idck (n.pn_input@n.pn_output@local) in
 
   (* check clocks *)
   List.iter (fun (_, (_, ck)) -> check_clock n in_vars ck) n.pn_input;
   List.iter (fun (_, (_, ck)) -> check_clock n inout_vars ck) n.pn_output;
-  List.iter (fun (_, (_, ck)) -> check_clock n vars ck) n.pn_local;
+  List.iter (fun (_, (_, ck)) -> check_clock n vars ck) local;
 
   (* elab instructions *)
   let vars' = List.map (fun (id, ck) -> (id, sclock_of_clock ck)) vars

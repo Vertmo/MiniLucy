@@ -121,6 +121,7 @@ let rec dist_expr (is_rhs : bool) (is_control : bool) (e : k_expr) :
         keq_expr = [app];
         keq_loc = dummy_loc }::eqs1@eqs2,
       vs1@vs2@ids
+  | KE_last _ -> invalid_arg "dist_expr"
 
 and dist_exprs (is_rhs : bool) (is_control : bool) (es : k_expr list) =
   let res = List.map (dist_expr is_rhs is_control) es in

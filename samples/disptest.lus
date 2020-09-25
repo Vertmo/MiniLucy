@@ -1,4 +1,4 @@
 node main() returns (x : int);
 let
-  x = (pre x) + 1;
+  x = (0 fby x) + 1;
 tel;

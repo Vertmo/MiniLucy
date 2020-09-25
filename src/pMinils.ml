@@ -68,30 +68,19 @@ module PMINILS(A : Annotations) = struct
   and string_of_instrs ?(print_anns=false) level ins =
     String.concat "\n" (List.map (string_of_instr ~print_anns level) ins)
 
-  (* (\** Variables defined by an instruction *\)
-   * let rec defined_of_instr i =
-   *   match i.pinstr_desc  with
-   *   | Eq eq -> defined_of_equation eq
-   *   | Let (_, _, _, ins) -> defined_of_instrs ins
-   *   | Automaton (brs, _) ->
-   *     (\* If the program is well typed, all the branches
-   *        define the same equations left-hand-sides *\)
-   *     let (_, _, is, _) = List.hd brs in
-   *     defined_of_instrs is
-   *   | Reset (is, _) -> defined_of_instrs is
-   *   | Switch (_, brs, _) ->
-   *     let (_, is) = List.hd brs in
-   *     defined_of_instrs is
-   * and defined_of_instrs is =
-   *   List.concat (List.map defined_of_instr is) *)
-
   type p_node =
     { pn_name: ident;
       pn_input: (ident * ann) list;
       pn_output: (ident * ann) list;
-      pn_local: (ident * ann) list;
+      pn_local: (ident * ann * const option) list;
       pn_instrs: p_instr list;
       pn_loc: location; }
+
+  let string_of_local (id, ann, init) =
+    match init with
+    | Some init -> Printf.sprintf "last %s:%s = %s"
+                     id (string_of_ann ann) (string_of_const init)
+    | None -> Printf.sprintf "%s:%s" id (string_of_ann ann)
 
   let string_of_node ?(print_anns=false) n =
     Printf.sprintf "node %s(%s) returns (%s);\n\
@@ -102,7 +91,7 @@ module PMINILS(A : Annotations) = struct
       n.pn_name
       (string_of_ident_ann_list n.pn_input)
       (string_of_ident_ann_list n.pn_output)
-      (string_of_ident_ann_list n.pn_local)
+      (String.concat "; " (List.map string_of_local n.pn_local))
       (String.concat "\n" (List.map (string_of_instr ~print_anns 1) n.pn_instrs))
 
   type p_file =

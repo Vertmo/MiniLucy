@@ -95,8 +95,9 @@ let rec occurs_check ck id =
   match ck with
   | Sbase -> ()
   | Svar { contents = UnknownCk id' } when id = id' -> invalid_arg "occurs_check"
-  | Svar _ -> ()
+  | Svar { contents = InstCk ck }
   | Son (_, _, ck) -> occurs_check ck id
+  | _ -> ()
 
 (** unify two clocks [ck1] and [ck2] *)
 let unify_sclock loc (ck1 : sclock) (ck2 : sclock) =
@@ -407,19 +408,47 @@ let check_clock (n : p_node) vars ck =
       if (ck <> ck') then error idck ck' ck
   in aux ck
 
+let inst_clocks (cks : (ident * (ty * clock)) list) : (ident * sclock) list =
+  List.map (fun (id, (_, ck)) ->
+      (id, inst_clock
+         (Svar (ref (UnknownCk (Atom.fresh "$"))))
+         (fun id -> (ref (InstIdent id)))
+         ck))
+    cks
+
+let rec elab_clock (cks : (ident * sclock) list) = function
+  | Sbase | Svar { contents = UnknownCk _ } -> ()
+  | Svar { contents = InstCk ck } -> elab_clock cks ck
+  | Son (constr, { contents = InstIdent ckid }, ck' ) ->
+    elab_clock cks ck';
+    let ck'' = List.assoc ckid cks in
+    unify_sclock dummy_loc ck'' ck';
+  | _ -> invalid_arg "elab_clock"
+
+(* let elab_clocks (cks : (ident * sclock) list) =
+ *   List.iter (fun (_, ck) -> elab_clock cks ck) cks *)
+
+let freeze_clocks (cks : (ident * sclock) list) =
+  List.map (fun (id, ck) -> (id, clock_of_sclock ck)) cks
+
 (** Check the clocks for the node [f] *)
 let elab_node (nodes : (ident * CPMinils.p_node) list) (n : p_node) : CPMinils.p_node =
   let local = List.map (fun (x, a, _) -> (x, a)) n.pn_local in
 
-  let idck = List.map (fun (id, (_, ck)) -> (id, ck)) in
-  let in_vars = idck n.pn_input
-  and inout_vars = idck (n.pn_input@n.pn_output)
-  and vars = idck (n.pn_input@n.pn_output@local) in
+  let in_vars = inst_clocks n.pn_input
+  and out_vars = inst_clocks n.pn_output
+  and loc_vars = inst_clocks local in
 
   (* check clocks *)
-  List.iter (fun (_, (_, ck)) -> check_clock n in_vars ck) n.pn_input;
-  List.iter (fun (_, (_, ck)) -> check_clock n inout_vars ck) n.pn_output;
-  List.iter (fun (_, (_, ck)) -> check_clock n vars ck) local;
+  let vars =
+    try
+      List.iter (fun (_, ck) -> elab_clock in_vars ck) in_vars;
+      List.iter (fun (_, ck) -> elab_clock (in_vars@out_vars) ck) out_vars;
+      List.iter (fun (_, ck) -> elab_clock (in_vars@out_vars@loc_vars) ck) loc_vars;
+      freeze_clocks (in_vars@out_vars@loc_vars)
+    with _ -> raise (ClockError
+                       (Printf.sprintf "Cyclic clock declarations in node %s" n.pn_name,
+                        n.pn_loc)) in
 
   (* elab instructions *)
   let vars' = List.map (fun (id, ck) -> (id, sclock_of_clock ck)) vars
@@ -427,9 +456,9 @@ let elab_node (nodes : (ident * CPMinils.p_node) list) (n : p_node) : CPMinils.p
   let instrs' = elab_instrs nodes vars' bck false n.pn_instrs in
 
   { pn_name = n.pn_name;
-    pn_input = n.pn_input;
-    pn_output = n.pn_output;
-    pn_local = n.pn_local;
+    pn_input = (List.map (fun (id, (ty, _)) -> (id, (ty, List.assoc id vars))) n.pn_input);
+    pn_output = (List.map (fun (id, (ty, _)) -> (id, (ty, List.assoc id vars))) n.pn_output);
+    pn_local = (List.map (fun (id, (ty, _), init) -> (id, (ty, List.assoc id vars), init)) n.pn_local);
     pn_instrs = instrs';
     pn_loc = n.pn_loc }
 

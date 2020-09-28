@@ -41,6 +41,7 @@
 %token MOD
 %token NODE
 %token NOT
+%token ON
 %token OR
 %token PIPE
 %token PLUS
@@ -252,6 +253,8 @@ expr:
       mk_expr (KE_when ($1, constr, ckid)) $startpos $endpos }
 | MERGE IDENT branch+
     { mk_expr (KE_merge ($2, $3)) $startpos $endpos }
+| MERGE IDENT expr expr
+    { mk_expr (KE_merge ($2, [("True", [$3]); ("False", [$4])])) $startpos $endpos }
 | MATCH expr WITH branch+
     { mk_expr (KE_match ($2, $4)) $startpos $endpos }
 | IF expr THEN expr_list ELSE expr_list
@@ -309,13 +312,13 @@ constr_ckid:
 | NOT IDENT { ("False", $2) }
 ;
 
-clock:
-| constr_ckid { let (constr, ckid) = $1 in Con (constr, ckid, Cbase) }
-| clock WHEN constr_ckid { let (constr, ckid) = $3 in Con (constr, ckid, $1) }
-;
-
+(* clock:
+ * | constr_ckid { let (constr, ckid) = $1 in Con (constr, ckid, Cbase) }
+ * | clock ON constr_ckid { let (constr, ckid) = $3 in Con (constr, ckid, $1) }
+ * ; *)
 
 annot:
 | typ { ($1, Cbase) }
-| typ WHEN clock { ($1, $3) }
+| typ WHEN constr_ckid
+    { let (constr, ckid) = $3 in ($1, Con (constr, ckid, Cbase)) }
 ;

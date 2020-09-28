@@ -26,8 +26,8 @@ let
 tel;
 
 node test_when2(b : bool; c : bool when b)
-returns (z : int when b when c);
-var y : int when b when c;
+returns (z : int when c);
+var y : int when c;
 let
   (y, z) = ((1 when b), 2) when c;
 tel;
@@ -43,7 +43,7 @@ let
   z = x when b;
 tel
 
-node test_app0(b1 : bool when True(c1); c1 : bool) returns (z : int when True(c1) when True(b1));
+node test_app0(b1 : bool when True(c1); c1 : bool) returns (z : int when True(b1));
 let
   z = test_op(b1);
 tel;

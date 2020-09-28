@@ -29,6 +29,7 @@
 	"mod", MOD;
 	"node", NODE;
 	"not", NOT;
+  "on", ON;
 	"or", OR;
   "pre", PRE;
 	"real", REAL;

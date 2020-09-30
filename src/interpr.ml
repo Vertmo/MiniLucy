@@ -1,86 +1,51 @@
-(*                  Denotational semantics based interpreter                  *)
+(*                  Coiterative semantics based interpreter                   *)
 
 open Asttypes
-open Minils.KMinils
+open Kernelizer.CMinils
 
 exception InterpreterError of string
 exception NotYetCalculated of ident
 exception CausalityError of ident
-exception StreamError of ident * string
 
 (** Value of the interpreter *)
-type value = Bottom
-           | Nil
-           | Int of int | Bool of bool | Real of float
-           | Constr of ident
-           | Tuple of value list
+type value =
+  | Int of int | Bool of bool | Real of float
+  | Constr of ident
 
-let rec string_of_value = function
-  | Bottom -> "bottom"
-  | Nil -> "nil"
+type sync_value =
+  | Present of value
+  | Absent
+
+let string_of_value = function
   | Int i -> string_of_int i
   | Bool b -> if b then "true" else "false"
   | Real f -> string_of_float f
   | Constr id -> id
-  | Tuple vs -> Printf.sprintf "(%s)" (String.concat ","
-                                         (List.map string_of_value vs))
 
-(** Stream of values. Latest value is at head of the stream *)
-type stream = (ident * value list)
+let string_of_sync_value = function
+  | Absent -> "."
+  | Present v -> string_of_value v
 
 (** Association from name to value (inputs and outputs) *)
-type assoc = (ident * value) list
-
-(** Association from name to stream of values (states) *)
-type assoc_str = stream list
-
-(** Add a value in front of the correct stream *)
-let add_val strs x v : assoc_str =
-  let str = try List.assoc x strs
-    with Not_found -> [] in
-  (x, v::str)::(List.remove_assoc x strs)
-
-(** Check if all the values of a clock are true *)
-let rec check_clock_value strs = function
-  | Base -> true
-  | Cl (base, constr, clid) ->
-    let str = List.assoc clid strs in
-    (match List.hd str with
-     | Bottom -> raise (NotYetCalculated clid)
-     | Bool true -> constr = "True"
-     | Bool false -> constr = "False"
-     | Constr constr' -> constr = constr'
-     | _ -> raise (InterpreterError "Wrong clock type")) &&
-    (check_clock_value strs base)
-  | _ -> failwith "Should not happen"
-
-(** ``Fills`` the Bottom at the beginning of the stream.
-    If the calculated value is nil, simply remove the head of the stream
-    If the head of the stream is not bottom, exception *)
-let fill_val tys strs x v : assoc_str =
-  let str = try List.assoc x strs
-    with Not_found -> raise (StreamError (x, "stream not found")) in
-  match str with
-  | Bottom::tl ->
-    let str =
-      let cl = clock_of_ty (List.assoc x tys) in
-      if (check_clock_value strs cl) then
-        if (v = Nil) then
-        (match base_ty_of_ty (List.assoc x tys) with
-         | Tint -> Int 0
-         | Tbool -> Bool false
-         | Treal -> Real 0.
-         | ty ->
-           raise
-             (InterpreterError
-                (Printf.sprintf "Value nil could not be converted to type %s"
-                   (string_of_base_ty ty))))::tl
-      else v::tl else tl in
-    (x, str)::(List.remove_assoc x strs)
-  | _ -> raise (StreamError (x, "has already been calculated"))
+module IdentMap = Map.Make(String)
+type env = sync_value IdentMap.t
 
 (** Node state *)
-type state = St of assoc_str * instance list
+type state =
+  | NoSt
+  | StTuple of state * state
+  | StFby of (value option) list * state list * state list
+  | StArrow of bool list * state list * state list
+  | StMatch of state * state list list
+  | StWhen of state list
+  | StMerge of state list list
+  | StApp of node_state * state list * state
+
+and eq_state =
+  state list
+
+and node_state =
+  eq_state list
 
 (** Instance of a node *)
 and instance = ((ident * location) * state)
@@ -90,18 +55,20 @@ let value_of_const = function
   | Cint i -> Int i
   | Creal r -> Real r
   | Cconstr (c, _) -> Constr c
-  | Cnil -> Nil
 
 (** Apply a unary operator *)
-let apply_unary op e =
-  match (op, e) with
+let apply_unary op v =
+  match (op, v) with
   | Op_not, Bool b -> Bool (not b)
-  | Op_not, Nil -> Bool (true)
   | Op_not, Int i -> Int (lnot i)
   | Op_sub, Int i -> Int (-i)
   | Op_sub, Real r -> Real (-.r)
-  | Op_sub, Nil -> Nil
   | _,_ -> failwith "Invalid unary op"
+
+let lift_unary op v =
+  match v with
+  | Absent -> Absent
+  | Present v -> Present (apply_unary op v)
 
 (** Apply comparator *)
 let apply_comp comp vl vr =
@@ -112,29 +79,21 @@ let apply_comp comp vl vr =
   | Op_le -> vl <= vr
   | Op_gt -> vl > vr
   | Op_ge -> vl >= vr
-  | _ -> failwith "Invalid comparator"
+  | _ -> invalid_arg "apply_comp"
 
 (** Apply arithmetic operator *)
 let apply_arith fint ffloat el er =
   match el, er with
   | Int il, Int ir -> Int (fint il ir)
-  | Int il, Nil -> Int (fint il 0)
-  | Nil, Int ir -> Int (fint 0 ir)
   | Real fl, Real fr -> Real (ffloat fl fr)
-  | Real fl, Nil -> Real (ffloat fl 0.)
-  | Nil, Real fr -> Real (ffloat 0. fr)
-  | _, _ -> failwith "Invalid args for arith op"
+  | _, _ -> invalid_arg "apply_arith"
 
 (** Apply logic operator *)
 let apply_logic fbool fint el er =
   match el, er with
   | Bool bl, Bool br -> Bool (fbool bl br)
-  | Bool bl, Nil -> Bool (fbool bl false)
-  | Nil, Bool br -> Bool (fbool false br)
   | Int il, Int ir -> Int (fint il ir)
-  | Int il, Nil -> Int (fint il 0)
-  | Nil, Int ir -> Int (fint 0 ir)
-  | _, _ -> failwith "Invalid args for bool op"
+  | _, _ -> invalid_arg "apply_logic"
 
 (** Apply a binary operator *)
 let apply_binary op v1 v2 =
@@ -151,240 +110,333 @@ let apply_binary op v1 v2 =
   | Op_eq | Op_neq | Op_lt | Op_le | Op_gt | Op_ge ->
     (match v1, v2 with
      | Bool b1, Bool b2 -> Bool (apply_comp op b1 b2)
-     | Bool b1, Nil -> Bool (apply_comp op b1 false)
-     | Nil, Bool b2 -> Bool (apply_comp op false b2)
      | Int i1, Int i2 -> Bool (apply_comp op i1 i2)
-     | Int i1, Nil -> Bool (apply_comp op i1 0)
-     | Nil, Int i2 -> Bool (apply_comp op 0 i2)
      | Real f1, Real f2 -> Bool (apply_comp op f1 f2)
-     | Real f1, Nil -> Bool (apply_comp op f1 0.)
-     | Nil, Real f2 -> Bool (apply_comp op 0. f2)
-     | _, _ -> failwith "Invalid operands for comparator")
-  | _ -> failwith "Invalid binary operator"
+     | _, _ -> invalid_arg "apply_binary")
+  | _ -> invalid_arg "apply_binary"
 
-(** Apply an if operator *)
-let apply_if cond th el =
-  match cond with
-  | Bool true -> th
-  | Bool false | Nil -> el
-  | _ -> raise (InterpreterError "Condition of if should be a bool")
+let lift_binary op v1 v2 =
+  match (v1, v2) with
+  | (Absent, Absent) -> Absent
+  | (Present v1, Present v2) ->
+    Present (apply_binary op v1 v2)
+  | _ -> invalid_arg
+           (Printf.sprintf "lift_binary: %s %s %s"
+              (string_of_op op) (string_of_sync_value v1) (string_of_sync_value v2))
 
-(** Apply an operator *)
-let apply_op op vs =
-  if (List.mem Bottom vs) then Bottom
-  else
-    match (List.length vs) with
-    | 1 -> apply_unary op (List.nth vs 0)
-    | 2 -> apply_binary op (List.nth vs 0) (List.nth vs 1)
-    | 3 -> apply_if (List.nth vs 0) (List.nth vs 1) (List.nth vs 2)
-    | _ -> raise (InterpreterError "Wrong number of arguments for an op")
-
-(** Get the initial state for an instances in an expression *)
-let rec expr_init_instances nodes (e : k_expr) : instance list =
+(** Get the initial state for an expression *)
+let rec expr_init_state nodes (e : k_expr) : state =
+  let numstreams = List.length e.kexpr_annot in
   match e.kexpr_desc with
-  | KE_const c -> [] | KE_ident x -> []
-  | KE_op (op, es) ->
-    let is = List.map (expr_init_instances nodes) es in
-    List.flatten is
-  | KE_app (fid, es, e) ->
-    let is = List.map (expr_init_instances nodes) es
-    and ie = expr_init_instances nodes e in
-    let n = List.assoc fid nodes in
-    let st = get_node_init nodes n in
-    (((fid, e.kexpr_loc), st)::ie@(List.concat is))
-  | KE_fby (_, e) -> expr_init_instances nodes e
-  | KE_tuple es ->
-    let is = List.map (expr_init_instances nodes) es in
-    List.flatten is
-  | KE_when (e, _, _) -> expr_init_instances nodes e
-  | KE_merge (clid, brs) ->
-    List.flatten (List.map (fun (_, e) -> expr_init_instances nodes e) brs)
+  | KE_const c -> NoSt
+  | KE_ident x -> NoSt
+  | KE_unop (_, e1) -> expr_init_state nodes e1
+  | KE_binop (_, e1, e2) ->
+    StTuple (expr_init_state nodes e1, expr_init_state nodes e2)
+  | KE_fby (e0s, es) ->
+    let st0 = exprs_init_state nodes e0s
+    and st = exprs_init_state nodes es in
+    StFby (List.init numstreams (fun _ -> None), st0, st)
+  | KE_arrow (e0s, es) ->
+    let st0 = exprs_init_state nodes e0s
+    and st = exprs_init_state nodes es in
+    StArrow (List.init numstreams (fun _ -> true), st0, st)
+  | KE_match (e, brs) ->
+    StMatch (expr_init_state nodes e, brs_init_state nodes brs)
+  | KE_when (es, _, _) ->
+    let sts = exprs_init_state nodes es in
+    StWhen sts
+  | KE_merge (_, brs) ->
+    StMerge (brs_init_state nodes brs)
+  | KE_app (f, es, er) ->
+    StApp (node_init_state nodes (List.assoc f nodes),
+           exprs_init_state nodes es, expr_init_state nodes er)
+  | KE_last _ -> invalid_arg "expr_init_state"
+and exprs_init_state nodes = List.map (expr_init_state nodes)
+and brs_init_state nodes = List.map (fun (_, es) -> exprs_init_state nodes es)
 
 (** Get the initial states for an equation *)
-and get_eq_init nodes (e : k_equation) : (assoc_str * instance list) =
-  let is = expr_init_instances nodes e.keq_expr in
-  match e.keq_patt.kpatt_desc with
-  | KP_ident id -> [(id, [])], is
-  | KP_tuple ids -> List.map (fun id -> (id, [])) ids, is
+and eq_init_state nodes (e : k_equation) : eq_state =
+  exprs_init_state nodes e.keq_expr
 
 (** Get the initial state for a node *)
-and get_node_init nodes n : state =
-  let vis = List.map (get_eq_init nodes) n.kn_equs in
-  let vs = List.flatten (List.map fst vis)
-  and is = List.flatten (List.map snd vis) in
-  St (vs, is)
-
-(** Transition function for expressions.
-    The second parameter indicated the index of the value we're trying to
-    calculate (used to know when to use consts in fby) *)
-type trans_expr = state -> int -> (value * instance list)
+and node_init_state nodes n : node_state =
+  List.map (eq_init_state nodes) n.kn_equs
 
 (** Transition function for nodes (input, st) -> (st, output) *)
-type trans_node = (assoc * state) -> (state * assoc)
+type node_trans = sync_value list -> node_state -> (sync_value list * node_state)
 
-(** Get the instances used in an expression *)
-let rec get_instances insts (e : k_expr) =
+let get_val_in_env env id =
+  try IdentMap.find id env
+  with _ -> raise (NotYetCalculated id)
+
+let get_st_tuple = function
+  | StTuple (st1, st2) -> (st1, st2)
+  | _ -> invalid_arg "get_st_tuple"
+
+let get_st_fby = function
+  | StFby (v0s, st0, st) -> (v0s, st0, st)
+  | _ -> invalid_arg "get_st_fby"
+
+let get_st_arrow = function
+  | StArrow (bs, st0, st) -> (bs, st0, st)
+  | _ -> invalid_arg "get_st_arrow"
+
+let get_st_match = function
+  | StMatch (st, stss) -> (st, stss)
+  | _ -> invalid_arg "get_st_match"
+
+let get_st_when = function
+  | StWhen sts -> sts
+  | _ -> invalid_arg "get_st_when"
+
+let get_st_merge = function
+  | StMerge stss -> stss
+  | _ -> invalid_arg "get_st_merge"
+
+let get_st_app = function
+  | StApp (st, sts, str) -> (st, sts, str)
+  | _ -> invalid_arg "get_st_app"
+
+let check_constr constr = function
+  | Absent -> false
+  | Present (Constr c) -> constr = c
+  | Present (Bool true) -> constr = "True"
+  | Present (Bool false) -> constr = "False"
+  | _ -> invalid_arg "check_constr"
+
+let find_branch v n vs =
+  let rec aux = function
+    | [] -> invalid_arg "find_branch"
+    | (c, vs)::tl ->
+      if check_constr c v then vs else aux tl
+  in match v with
+  | Absent -> List.init n (fun _ -> Absent) (* If v is absent, all the values are also absent *)
+  | _ -> aux vs
+
+(** Get the values for an expression *)
+let rec interp_expr nodes (e : k_expr) : env -> state -> (sync_value list * state) =
+  let numstreams = List.length e.kexpr_annot in
   match e.kexpr_desc with
-  | KE_const _ -> []
-  | KE_ident _ -> []
-  | KE_op (op, es) ->
-    List.flatten (List.map (get_instances insts) es)
-  | KE_app (fid, es, e) ->
-    let is = List.flatten (List.map (get_instances insts) es)
-    and i = get_instances insts e in
-    ((fid, e.kexpr_loc),
-     (List.assoc (fid, e.kexpr_loc) insts))::i@is
-  | KE_fby (_, e) -> get_instances insts e
-  | KE_tuple es ->
-    List.flatten (List.map (get_instances insts) es)
-  | KE_when (e, _, _) -> get_instances insts e
-  | KE_merge (_, brs) ->
-    List.flatten (List.map (fun (_, e) -> get_instances insts e) brs)
+  | KE_const c -> fun _ st -> [Present (value_of_const c)], st
+  | KE_ident id -> fun env st -> [get_val_in_env env id], st
+  | KE_unop (op, e1) ->
+    let tr1 = interp_expr nodes e1 in
+    fun env st ->
+      let (v1, st') = tr1 env st in
+      [lift_unary op (List.hd v1)], st'
+  | KE_binop (op, e1, e2) ->
+    let tr1 = interp_expr nodes e1
+    and tr2 = interp_expr nodes e2 in
+    fun env st ->
+      let (st1, st2) = get_st_tuple st in
+      let (v1, st1') = tr1 env st1 and (v2, st2') = tr2 env st2 in
+      [lift_binary op (List.hd v1) (List.hd v2)], StTuple (st1', st2')
+  | KE_fby (e0s, es) ->
+    let tr0s = interp_exprs nodes e0s in
+    fun env st ->
+      let (v0s, st0, st) = get_st_fby st in
+      let (v0s', st0') = do_interp_exprs env tr0s st0 in
+      List.map2 (fun v v0 -> match (v, v0) with
+          | Absent, _ -> Absent
+          | Present _, Some v -> Present v
+          | Present v, _ -> Present v) v0s' v0s,
+      StFby (v0s, st0', st)
+  | KE_arrow (e0s, es) ->
+    let tr0s = interp_exprs nodes e0s
+    and trs = interp_exprs nodes es in
+    fun env st ->
+      let (bs, st0, st) = get_st_arrow st in
+      let (v0s', st0') = do_interp_exprs env tr0s st0
+      and (vs', st') = do_interp_exprs env trs st in
+      List.map2 (fun b (v0, v) -> if b then v0 else v) bs (List.combine v0s' vs'),
+      let bs' = List.map2 (fun b v -> match v with Present _ -> false | Absent -> b) bs v0s' in
+      StArrow (bs', st0', st')
+  | KE_match (e, brs) ->
+    let tr = interp_expr nodes e in
+    let trs = interp_branches nodes brs in
+    fun env st ->
+      let (st, stss) = get_st_match st in
+      let (v, st') = tr env st
+      and (vss', stss') = do_interp_brs env trs stss in
+      find_branch (List.hd v) numstreams vss', StMatch (st', stss')
+  | KE_when (es, cstr, ckid) ->
+    let trs = interp_exprs nodes es in
+    fun env st ->
+      let sts = get_st_when st in
+      let (vs', sts') = do_interp_exprs env trs sts in
+      let b = get_val_in_env env ckid in
+      List.map (fun v -> if check_constr cstr b then v else Absent) vs', StWhen sts'
+  | KE_merge (ckid, brs) ->
+    let trs = interp_branches nodes brs in
+    fun env st ->
+      let stss = get_st_merge st in
+      let v = get_val_in_env env ckid
+      and (vss', stss') = do_interp_brs env trs stss in
+      find_branch v numstreams vss', StMerge stss'
+  | KE_app (f, es, er) ->
+    let n = List.assoc f nodes in
+    let trs = interp_exprs nodes es
+    and trr = interp_expr nodes er in
+    fun env st ->
+      let (st, sts, str) = get_st_app st in
+      let (vs, sts') = do_interp_exprs env trs sts
+      and (vr, str') = trr env str in
+      (* Treat reset *)
+      let st = (match vr with
+        | [Present (Bool true)] -> node_init_state nodes n
+        | _ -> st) in
+      (* Only execute the node when at least one input is present *)
+      let b = List.exists (fun v -> match v with Present _ -> true | Absent -> false) vs in
+      let (vs, st') =
+        if b then (interp_node nodes n vs st)
+        else (List.map (fun _ -> Absent) e.kexpr_annot, st) in
+      vs, StApp (st', sts', str')
+  | KE_last _ -> invalid_arg "interp_expr"
+and interp_exprs nodes = List.map (interp_expr nodes)
+and interp_branches nodes =
+  List.map (fun (c, es) -> (c, interp_exprs nodes es))
+and do_interp_exprs env trs sts =
+  let res = List.map2 (fun tr st -> tr env st) trs sts in
+  (List.concat (List.map fst res), List.map snd res)
+and do_interp_brs env trs sts =
+  let res = List.map2 (fun (c, tr) st ->
+      let (vs, st) = do_interp_exprs env tr st in ((c, vs), st)) trs sts in
+  (List.map fst res, List.map snd res)
 
-(** Get the transition function for an expression *)
-let rec get_expr_trans nodes fbys (e : k_expr) : trans_expr =
+(** Get the values for an equation *)
+and interp_eq nodes (e : k_equation) : env -> eq_state -> (env * eq_state) =
+  let trans = interp_exprs nodes e.keq_expr in
+  fun env st ->
+    let (vals, st') = do_interp_exprs env trans st in
+    let env' = List.fold_left (fun env (id, v) -> IdentMap.add id v env) env (List.combine e.keq_patt vals) in
+    env', st'
+
+(** Update the delays for an expression *)
+and next_for_expr nodes (e : k_expr) : env -> state -> state =
   match e.kexpr_desc with
-  | KE_const c -> fun _ _ -> value_of_const c, []
-  | KE_ident id ->
-    (fun (St (strs, _)) _ ->
-       let str = List.assoc id strs in
-       match try List.nth str fbys with _ -> List.hd str with
-       | Bottom -> raise (NotYetCalculated id)
-       | v -> v, [])
-  | KE_op (op, es) ->
-    let ts = List.map (get_expr_trans nodes fbys) es in
-    fun cont tocalc ->
-      let vis = List.map (fun t -> t cont tocalc) ts in
-      let vs = List.map fst vis and is = List.map snd vis in
-      apply_op op vs, (List.flatten is)
-  | KE_app (fid, es, e) ->
-    let ts = List.map (get_expr_trans nodes fbys) es in
-    let te = get_expr_trans nodes fbys e in
-    let n = List.assoc fid nodes in
-    fun st tocalc ->
-      let vis = List.map (fun t -> t st tocalc) ts
-      and (ve, ie) = te st tocalc in
-      let vs = List.map fst vis and is = List.map snd vis in
-      let inputs = List.map2 (fun (id, _) v -> id, v) n.kn_input vs in
-      let (st, outs) = (match ve with
-          | Bool true ->
-            let init = get_node_init nodes n in
-            get_node_trans nodes n (inputs, init)
-          | _ ->
-            let st = List.assoc (fid, e.kexpr_loc)
-                (match st with St (_, ins) -> ins) in
-            get_node_trans nodes n (inputs, st)) in
-      let St (strs, _) = st in
-      (match outs with
-       | [(_, v)] -> v
-       | vs -> (Tuple (List.map snd vs))),
-      (((fid, e.kexpr_loc), st)::ie@(List.concat is))
-  | KE_fby (c, e) ->
-    let t = get_expr_trans nodes (fbys+1) e in
-    fun st tocalc -> if tocalc <= fbys
-      then (value_of_const c), get_instances (match st with St (_, i) -> i) e
-      else t st tocalc
-  | KE_tuple es ->
-    let ts = List.map (get_expr_trans nodes fbys) es in
-    fun st tocalc ->
-      let vis = List.map (fun t -> t st tocalc) ts in
-      let vs = List.map fst vis and is = List.map snd vis in
-      Tuple vs, (List.flatten is)
-  | KE_when (e, constr, clid) -> get_expr_trans nodes fbys e
-  | KE_merge (clid, brs) ->
-    fun st tocalc ->
-      let St (strs, insts) = st in
-      let c = (match List.nth (List.assoc clid strs) fbys with
-          | Bottom -> raise (NotYetCalculated clid)
-          | c -> c) in
-      let c = (match c with
-          | Bool true -> "True" | Bool false -> "False"
-          | Constr c -> c
-          | _ -> failwith "merge expects either bool or constr") in
-      let e = (match (List.assoc_opt c brs) with
-          | None -> failwith "constructor not found in merge branches"
-          | Some e -> e) in
-      let insts = (match st with St (_, i) -> i) in
-      let (v, ins) = get_expr_trans nodes fbys e st tocalc in
-      v, ins@(List.flatten (List.map (fun (_, e) -> get_instances insts e)
-                              (List.remove_assoc c brs)))
+  | KE_const _ -> fun _ st -> st
+  | KE_ident _ -> fun _ st -> st
+  | KE_unop (_, e1) ->
+    next_for_expr nodes e1
+  | KE_binop (_, e1, e2) ->
+    let n1 = next_for_expr nodes e1
+    and n2 = next_for_expr nodes e2 in
+    fun env st ->
+      let (st1, st2) = get_st_tuple st in
+      StTuple (n1 env st1, n2 env st2)
+  | KE_fby (e0s, es) ->
+    let trs = interp_exprs nodes es
+    and n0 = next_for_exprs nodes e0s
+    and n = next_for_exprs nodes es in
+    fun env st ->
+      let (v0s, st0, st) = get_st_fby st in
+      let (vs, st') = do_interp_exprs env trs st in
+      let st0' = do_next_for_exprs env n0 st0
+      and st' = do_next_for_exprs env n st' in
+      let v0s' =
+        List.map2 (fun v0 v -> match v with
+            | Absent -> v0
+            | Present v -> Some v) v0s vs in
+      StFby (v0s', st0', st')
+  | KE_arrow (e0s, es) ->
+    let n0 = next_for_exprs nodes e0s
+    and n = next_for_exprs nodes es in
+    fun env st ->
+      let (bs, st0, st) = get_st_arrow st in
+      let st0' = do_next_for_exprs env n0 st0
+      and st' = do_next_for_exprs env n st in
+      StArrow (bs, st0', st')
+  | KE_match (e, brs) ->
+    let n = next_for_expr nodes e in
+    let ns = next_for_branches nodes brs in
+    fun env st ->
+      let (st, stss) = get_st_match st in
+      let st' = n env st
+      and stss' = do_next_for_brs env ns stss in
+      StMatch (st', stss')
+  | KE_when (es, _, _) ->
+    let n = next_for_exprs nodes es in
+    fun env st ->
+      let sts = get_st_when st in
+      let sts' = do_next_for_exprs env n sts in
+      StWhen sts'
+  | KE_merge (ckid, brs) ->
+    let ns = next_for_branches nodes brs in
+    fun env st ->
+      let stss = get_st_merge st in
+      let stss' = do_next_for_brs env ns stss in
+      StMerge stss'
+  | KE_app (_, es, er) ->
+    let ns = next_for_exprs nodes es
+    and nr = next_for_expr nodes er in
+    fun env st ->
+      let (st, sts, str) = get_st_app st in
+      let sts' = do_next_for_exprs env ns sts
+      and str' = nr env str in
+      StApp (st, sts', str')
+  | KE_last _ -> invalid_arg "next_for_expr"
+and next_for_exprs nodes = List.map (next_for_expr nodes)
+and next_for_branches nodes = List.map (fun (_, es) -> next_for_exprs nodes es)
+and do_next_for_exprs env = List.map2 (fun n st -> n env st)
+and do_next_for_brs env = List.map2 (fun n st -> do_next_for_exprs env n st)
 
-(** Get the transitions for an equation *)
-and get_eq_trans nodes (e : k_equation) types =
-  let trans = get_expr_trans nodes 0 e.keq_expr in
-  let defs = defined_of_equation e in
-  let tys = List.map (fun d -> d, List.assoc d types) defs in
-  fun st ->
-    let St (strs, insts) = st in
-    (match e.keq_patt.kpatt_desc with
-     | KP_ident id ->
-       let cl = clock_of_ty (List.assoc id types) in
-       if check_clock_value strs cl
-       then
-         let (v, is) =
-           trans st (List.length (List.assoc (List.hd defs) strs)-1) in
-         St (fill_val tys strs id v, is@insts)
-       else St (fill_val tys strs id Bottom, insts)
-     | KP_tuple ids ->
-       let cls = List.map (fun id ->
-           clock_of_ty (List.assoc id types)) ids in
-       if (List.exists (check_clock_value strs) cls) then
-         let (v, is) =
-           trans st (List.length (List.assoc (List.hd defs) strs)-1) in
-         (match v with
-          | Tuple vs ->
-            St(List.fold_left2 (fill_val tys) strs ids vs, is@insts)
-          | _ -> failwith "Should not happen")
-       else St (List.fold_left (fun strs id ->
-           fill_val tys strs id Bottom) strs ids, insts))
+(** Update the delays for an equation *)
+and next_for_eq nodes (eq : k_equation) : env -> eq_state -> eq_state =
+  let nextfuns = List.map (next_for_expr nodes) eq.keq_expr in
+  fun env st ->
+    List.map2 (fun f st -> f env st) nextfuns st
 
-(** Get transition functions for a node *)
-and get_node_trans nodes (n : k_node) : trans_node =
+(** Get the delays for a node *)
+and interp_node nodes (n : k_node) : node_trans =
   (* Transition functions for all the equations *)
-  let transfuns = List.map (fun eq ->
-      defined_of_equation eq,
-      get_eq_trans nodes eq (n.kn_local@n.kn_output)) n.kn_equs in
-  fun (inputs, St (strs, insts)) ->
-  (* Add the new inputs to the relevant streams *)
-  let strs = List.fold_left (fun strs (x, v) ->
-      add_val strs x v) strs inputs in
-  (* Add Bottom in front of everything to calculate *)
-  let locouts = List.map (fun (id, _) -> id) (n.kn_local@n.kn_output) in
-  let strs = List.fold_left (fun strs x -> add_val strs x Bottom) strs locouts in
-    let rec gnt_aux eqs stack st : state =
-      if (eqs = [] && stack = []) then st
-      else (match stack with
-        | [] -> gnt_aux (List.tl eqs) [List.hd eqs] st
-        | hd::tl ->
-          (* Try to compute an equation *)
-          (try gnt_aux eqs tl ((snd hd) st)
-             (* If we're missing something, we need to add
-                it to the compute stack *)
-             with NotYetCalculated id ->
-               let eqmis =
-                 (try List.find (fun (decs, _) -> List.mem id decs) eqs
-                  with _ -> raise (CausalityError id)) in
-               gnt_aux (List.remove_assoc (fst eqmis) eqs)
-                 (eqmis::stack) st))
-  in let St (strs, insts) = gnt_aux transfuns [] (St (strs, insts)) in
-  St (strs, insts),
-  List.map (fun (id, l) -> id, try List.hd l with _ -> Nil)
-    (List.filter (fun (id, _) -> List.mem_assoc id n.kn_output) strs)
+  let interpfuns = List.map (interp_eq nodes) n.kn_equs
+  and nextfuns = List.map (next_for_eq nodes) n.kn_equs in
+
+  fun inputs st ->
+    (* Add the inputs to the env *)
+    let env = List.fold_left (fun env ((id, _), v) -> IdentMap.add id v env)
+        IdentMap.empty (List.combine n.kn_input inputs) in
+
+    (* Give the states to the equations *)
+    let interpfuns = List.combine interpfuns st in
+
+    (* Turn the crank until all eqs have been computed.
+       Not efficient !
+       And incomplete because of the bad causality notion *)
+    let rec compute_eqs env =
+      let (env', st) =
+        List.fold_left (fun (env, sts) (tr, st) ->
+            try
+              let (env', st') = tr env st in
+              env', st'::sts
+            with NotYetCalculated _ -> (env, sts)
+          ) (env, []) interpfuns
+      in if IdentMap.cardinal env' = List.length (n.kn_input@n.kn_local@n.kn_output)
+      then (env', List.rev st)
+      else if env' = env
+      then raise (CausalityError n.kn_name)
+      else compute_eqs env'
+    in
+    let (env, st') = compute_eqs env in
+    let nextfuns = List.combine nextfuns st' in
+    let st' = List.map (fun (tr, st) -> tr env st) nextfuns in
+    List.map (fun (id, _) -> IdentMap.find id env) n.kn_output, st'
 
 (*                          Running the interpreter                          *)
 
-(** Create random inputs of the right type for a node *)
+(** Create random inputs of the right type for a node
+    TODO : correctly generate clocked inputs *)
 let generate_rd_input (cls : Asttypes.clockdec list) (n : k_node) =
-  List.map (fun (id, ty) ->
-      id, match (base_ty_of_ty ty) with
-      | Tint -> Int (Random.int 100)
-      | Treal -> Real (Random.float 100.)
-      | Tbool -> Bool (Random.bool ())
+  List.map (fun (_, (ty, _)) ->
+      match ty with
+      | Tint -> Present (Int (Random.int 100))
+      | Treal -> Present (Real (Random.float 100.))
+      | Tbool -> Present(Bool (Random.bool ()))
       | Tclock id ->
         let constrs = List.assoc id cls in
         let n = List.length constrs in
-        Constr (List.nth constrs (Random.int n))
-      | Ttuple _ -> invalid_arg "generate_rd_input"
+        Present (Constr (List.nth constrs (Random.int n)))
     ) n.kn_input
 
 (** Run a node, for testing purposes *)
@@ -392,21 +444,28 @@ let run_node (f : k_file) (name : ident) k =
   Random.self_init ();
   let ns = List.map (fun n -> (n.kn_name, n)) f.kf_nodes in
   let node = List.assoc name ns in
-  let init = get_node_init ns node in
-  let trans = get_node_trans ns node in
-  let rec aux n st =
+  let init = node_init_state ns node in
+  let trans = interp_node ns node in
+  let rec aux n st vs =
     match n with
-    | 0 -> st
-    | n -> aux (n-1) (fst (trans (generate_rd_input f.kf_clocks node, st)))
+    | 0 -> vs
+    | n ->
+      let ins = generate_rd_input f.kf_clocks node in
+      let (outs, st') = trans ins st in
+      let vs' = List.fold_left
+          (fun vs ((id, _), v) ->
+             IdentMap.update id (fun vs -> match vs with
+                 | None -> Some [v]
+                 | Some vs -> Some (v::vs)) vs)
+          vs (List.combine (node.kn_input@node.kn_output) (ins@outs)) in
+      aux (n-1) st' vs'
   in
-  let st = (aux k init) in
-  print_endline (Printf.sprintf "First %d iterations of outputs:" k);
-  List.iter (fun (id, vs) ->
+  let vs = (aux k init (IdentMap.empty)) in
+  print_endline (Printf.sprintf "First %d iterations:" k);
+  IdentMap.iter (fun id vs ->
       print_endline (Printf.sprintf "(%s, [%s])"
                        id (String.concat ";"
-                             (List.map string_of_value (List.rev vs)))))
-    (match st with St (st, _) ->
-       List.filter (fun (id, _) -> List.mem_assoc id node.kn_output) st)
+                             (List.map string_of_sync_value (List.rev vs))))) vs
 
 let run_file (f : k_file) =
   List.iter (fun n -> run_node f n.kn_name 10) f.kf_nodes

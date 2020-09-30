@@ -99,12 +99,12 @@ let _ =
   );
 
   (* Let's interpr this a bit ! *)
-  (* match (!interpret_name) with
-   * | Some name ->
-   *   (\* Interpr.run_file file; *\)
-   *   Interpr.run_node file name !interpret_k;
-   *   exit 0;
-   * | None -> (); *)
+  match (!interpret_name) with
+  | Some name ->
+    (* Interpr.run_file file; *)
+    Interpr.run_node file name !interpret_k;
+    exit 0;
+  | None -> ();
 
   (* Normalize *)
   let nfile = Normalizer.norm_file file in

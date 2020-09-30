@@ -108,7 +108,6 @@ let _ =
 
   (* Normalize *)
   let nfile = Normalizer.norm_file file in
-  (* if !asserts then assert (Normalizer.equiv_norm_file cfile nfile); *)
 
   if (step = Norm) then (
     print_endline (NMinils.string_of_file nfile);
@@ -126,7 +125,6 @@ let _ =
 
   (* Translate *)
   let mfile = Translator.translate_file nfile in
-  (* if !asserts then assert (Translator.equiv_translate_file nfile mfile); *)
   if (step = Translate) then (
     print_endline (Obc.string_of_file mfile);
     exit 0

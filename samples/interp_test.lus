@@ -30,9 +30,9 @@ let
   b = x < y;
 tel
   
-node test_fby() returns (x : int);
+node test_fby(xinit : int) returns (x : int);
 let
-  x = 0 fby (x + (1 fby x));
+  x = xinit fby (x + (1 fby x));
 tel
   
 node test_arrow() returns (x : int);
@@ -42,12 +42,12 @@ tel
   
 node test_app1() returns (b : bool);
 let
-  b = test_fby() > 10;
+  b = test_fby(0) > 10;
 tel
   
 node test_reset() returns (x : int);
 let
-  x = test_fby() every ((0 fby x) > 10);
+  x = test_fby(0) every ((0 fby x) > 10);
 tel
   
 node test_when() returns (b : bool; x : int when b);
@@ -77,4 +77,14 @@ let
   b1 = false;
   x1 = if true then 1 else 0;
   x = merge b1 x1 2;
+tel
+
+node test_tuple() returns (x : int; y : int);
+let
+  (x, y) = (41, x+1);
+tel
+  
+node test_tuple2() returns (x : int; y : int);
+let
+  (x, y) = (0 fby y, x+1);
 tel

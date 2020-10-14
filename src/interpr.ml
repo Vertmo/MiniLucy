@@ -4,7 +4,7 @@ open Asttypes
 open Kernelizer.CMinils
 
 exception InterpreterError of string
-exception NotYetCalculated of ident
+(* exception NotYetCalculated of ident *)
 exception CausalityError of ident
 
 (** Value of the interpreter *)
@@ -15,6 +15,10 @@ type value =
 type sync_value =
   | Present of value
   | Absent
+
+type bottom_or_value =
+  | Bottom
+  | Val of sync_value
 
 let string_of_value = function
   | Int i -> string_of_int i
@@ -67,8 +71,11 @@ let apply_unary op v =
 
 let lift_unary op v =
   match v with
-  | Absent -> Absent
-  | Present v -> Present (apply_unary op v)
+  | Val v ->
+    Val (match v with
+        | Absent -> Absent
+        | Present v -> Present (apply_unary op v))
+  | _ -> Bottom
 
 (** Apply comparator *)
 let apply_comp comp vl vr =
@@ -117,12 +124,15 @@ let apply_binary op v1 v2 =
 
 let lift_binary op v1 v2 =
   match (v1, v2) with
-  | (Absent, Absent) -> Absent
-  | (Present v1, Present v2) ->
-    Present (apply_binary op v1 v2)
-  | _ -> invalid_arg
-           (Printf.sprintf "lift_binary: %s %s %s"
-              (string_of_op op) (string_of_sync_value v1) (string_of_sync_value v2))
+  | Val v1, Val v2 ->
+    Val (match (v1, v2) with
+        | (Absent, Absent) -> Absent
+        | (Present v1, Present v2) ->
+          Present (apply_binary op v1 v2)
+        | _ -> invalid_arg
+                 (Printf.sprintf "lift_binary: %s %s %s"
+                    (string_of_op op) (string_of_sync_value v1) (string_of_sync_value v2)))
+  | _ -> Bottom
 
 (** Get the initial state for an expression *)
 let rec expr_init_state nodes (e : k_expr) : state =
@@ -167,8 +177,8 @@ and node_init_state nodes n : node_state =
 type node_trans = sync_value list -> node_state -> (sync_value list * node_state)
 
 let get_val_in_env env id =
-  try IdentMap.find id env
-  with _ -> raise (NotYetCalculated id)
+  try Val (IdentMap.find id env)
+  with _ -> Bottom
 
 let get_st_tuple = function
   | StTuple (st1, st2) -> (st1, st2)
@@ -206,19 +216,29 @@ let check_constr constr = function
   | _ -> invalid_arg "check_constr"
 
 let find_branch v n vs =
-  let rec aux = function
-    | [] -> invalid_arg "find_branch"
-    | (c, vs)::tl ->
-      if check_constr c v then vs else aux tl
-  in match v with
-  | Absent -> List.init n (fun _ -> Absent) (* If v is absent, all the values are also absent *)
-  | _ -> aux vs
+  match v with
+  | Bottom -> List.init n (fun _ -> Bottom)
+  | Val v ->
+    let rec aux = function
+      | [] -> invalid_arg "find_branch"
+      | (c, vs)::tl ->
+        if check_constr c v then vs else aux tl
+    in match v with
+    | Absent -> List.init n (fun _ -> Val Absent) (* If v is absent, all the values are also absent *)
+    | _ -> aux vs
+
+let rec extract_vals vs =
+  match vs with
+  | [] -> Some []
+  | Val v::tl ->
+    Option.bind (extract_vals tl) (fun vs -> Some (v::vs))
+  | Bottom::_ -> None
 
 (** Get the values for an expression *)
-let rec interp_expr nodes (e : k_expr) : env -> state -> (sync_value list * state) =
+let rec interp_expr nodes (e : k_expr) : env -> state -> (bottom_or_value list * state) =
   let numstreams = List.length e.kexpr_annot in
   match e.kexpr_desc with
-  | KE_const c -> fun _ st -> [Present (value_of_const c)], st
+  | KE_const c -> fun _ st -> [Val (Present (value_of_const c))], st
   | KE_ident id -> fun env st -> [get_val_in_env env id], st
   | KE_unop (op, e1) ->
     let tr1 = interp_expr nodes e1 in
@@ -238,9 +258,10 @@ let rec interp_expr nodes (e : k_expr) : env -> state -> (sync_value list * stat
       let (v0s, st0, st) = get_st_fby st in
       let (v0s', st0') = do_interp_exprs env tr0s st0 in
       List.map2 (fun v v0 -> match (v, v0) with
-          | Absent, _ -> Absent
-          | Present _, Some v -> Present v
-          | Present v, _ -> Present v) v0s' v0s,
+          | Bottom, _ -> Bottom
+          | Val Absent, _ -> Val Absent
+          | Val Present _, Some v -> Val (Present v)
+          | Val Present v, _ -> Val (Present v)) v0s' v0s,
       StFby (v0s, st0', st)
   | KE_arrow (e0s, es) ->
     let tr0s = interp_exprs nodes e0s
@@ -250,7 +271,8 @@ let rec interp_expr nodes (e : k_expr) : env -> state -> (sync_value list * stat
       let (v0s', st0') = do_interp_exprs env tr0s st0
       and (vs', st') = do_interp_exprs env trs st in
       List.map2 (fun b (v0, v) -> if b then v0 else v) bs (List.combine v0s' vs'),
-      let bs' = List.map2 (fun b v -> match v with Present _ -> false | Absent -> b) bs v0s' in
+      let bs' = List.map2 (fun b v -> match v with Val (Present _) -> false
+                                                 | Val Absent | Bottom -> b) bs v0s' in
       StArrow (bs', st0', st')
   | KE_match (e, brs) ->
     let tr = interp_expr nodes e in
@@ -266,7 +288,10 @@ let rec interp_expr nodes (e : k_expr) : env -> state -> (sync_value list * stat
       let sts = get_st_when st in
       let (vs', sts') = do_interp_exprs env trs sts in
       let b = get_val_in_env env ckid in
-      List.map (fun v -> if check_constr cstr b then v else Absent) vs', StWhen sts'
+      List.map (fun v ->
+          match b with
+          | Bottom -> Bottom
+          | Val b -> if check_constr cstr b then v else Val Absent) vs', StWhen sts'
   | KE_merge (ckid, brs) ->
     let trs = interp_branches nodes brs in
     fun env st ->
@@ -275,6 +300,8 @@ let rec interp_expr nodes (e : k_expr) : env -> state -> (sync_value list * stat
       and (vss', stss') = do_interp_brs env trs stss in
       find_branch v numstreams vss', StMerge stss'
   | KE_app (f, es, er) ->
+    (** For now app evaluation does not calculate fixpoints.
+        All the values must be calculated before entering a node *)
     let n = List.assoc f nodes in
     let trs = interp_exprs nodes es
     and trr = interp_expr nodes er in
@@ -282,16 +309,20 @@ let rec interp_expr nodes (e : k_expr) : env -> state -> (sync_value list * stat
       let (st, sts, str) = get_st_app st in
       let (vs, sts') = do_interp_exprs env trs sts
       and (vr, str') = trr env str in
-      (* Treat reset *)
-      let st = (match vr with
-        | [Present (Bool true)] -> node_init_state nodes n
-        | _ -> st) in
-      (* Only execute the node when at least one input is present *)
-      let b = List.exists (fun v -> match v with Present _ -> true | Absent -> false) vs in
-      let (vs, st') =
-        if b then (interp_node nodes n vs st)
-        else (List.map (fun _ -> Absent) e.kexpr_annot, st) in
-      vs, StApp (st', sts', str')
+      (match (vr, extract_vals vs) with
+       | [Val vr], Some vs ->
+         (* Treat reset *)
+         let st = (match vr with
+             | Present (Bool true) -> node_init_state nodes n
+             | _ -> st) in
+         (* Only execute the node when at least one input is present *)
+         let b = List.exists (fun v -> match v with Present _ -> true | Absent -> false) vs in
+         let (vs, st') =
+           if b then (interp_node nodes n vs st)
+           else (List.map (fun _ -> Absent) e.kexpr_annot, st) in
+         List.map (fun v -> Val v) vs, StApp (st', sts', str')
+       | _, _ ->
+         List.init numstreams (fun _ -> Bottom), StApp (st, sts', str'))
   | KE_last _ -> invalid_arg "interp_expr"
 and interp_exprs nodes = List.map (interp_expr nodes)
 and interp_branches nodes =
@@ -309,7 +340,10 @@ and interp_eq nodes (e : k_equation) : env -> eq_state -> (env * eq_state) =
   let trans = interp_exprs nodes e.keq_expr in
   fun env st ->
     let (vals, st') = do_interp_exprs env trans st in
-    let env' = List.fold_left (fun env (id, v) -> IdentMap.add id v env) env (List.combine e.keq_patt vals) in
+    let env' = List.fold_left (fun env (id, v) ->
+        match v with
+        | Bottom -> env
+        | Val v -> IdentMap.add id v env) env (List.combine e.keq_patt vals) in
     env', st'
 
 (** Update the delays for an expression *)
@@ -336,8 +370,9 @@ and next_for_expr nodes (e : k_expr) : env -> state -> state =
       and st' = do_next_for_exprs env n st' in
       let v0s' =
         List.map2 (fun v0 v -> match v with
-            | Absent -> v0
-            | Present v -> Some v) v0s vs in
+            | Bottom -> raise (InterpreterError "Should not get Bottom in next_for_expr")
+            | Val Absent -> v0
+            | Val (Present v) -> Some v) v0s vs in
       StFby (v0s', st0', st')
   | KE_arrow (e0s, es) ->
     let n0 = next_for_exprs nodes e0s
@@ -407,10 +442,8 @@ and interp_node nodes (n : k_node) : node_trans =
     let rec compute_eqs env =
       let (env', st) =
         List.fold_left (fun (env, sts) (tr, st) ->
-            try
-              let (env', st') = tr env st in
-              env', st'::sts
-            with NotYetCalculated _ -> (env, sts)
+            let (env', st') = tr env st in
+            env', st'::sts
           ) (env, []) interpfuns
       in if IdentMap.cardinal env' = List.length (n.kn_input@n.kn_local@n.kn_output)
       then (env', List.rev st)

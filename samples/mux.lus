@@ -1,0 +1,16 @@
+node f(x : int) returns (y : int)
+let y = x + 1;
+tel
+
+node g(x : int) returns (y : int)
+let y = x * 2;
+tel
+  
+(* Not schedulable *) 
+node mux(c : bool; i : int) returns (z : int)
+var x, y : int;
+let
+  x = f(if c then i else y);
+  z = if c then y else x;
+  y = g(if c then x else i);
+tel

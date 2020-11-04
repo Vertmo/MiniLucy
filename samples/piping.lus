@@ -1,0 +1,8 @@
+node piping(x, y : int) returns (z, t : int)
+let (z, t) = (x, y);
+tel
+  
+node main(x : int) returns (z : int)
+var y : int;
+let (y, z) = piping(x, y);
+tel

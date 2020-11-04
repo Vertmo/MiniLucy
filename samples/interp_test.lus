@@ -32,7 +32,7 @@ tel
   
 node test_fby(xinit : int) returns (x : int);
 let
-  x = xinit fby (x + (1 fby x));
+  x = 0 fby (x + (1 fby x));
 tel
   
 node test_arrow() returns (x : int);

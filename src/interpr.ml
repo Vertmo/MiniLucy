@@ -342,9 +342,9 @@ let rec interp_clock env = function
     let v = IdentMap.find ckid env in
     b && check_constr constr v
 
-let generate_rd_input (cls : Asttypes.clockdec list) (node : k_node) =
+let generate_rd_input (cls : Asttypes.clockdec list) inputs =
   let rec aux n ins =
-    let env = adds_in_env (List.map fst node.kn_input) ins IdentMap.empty in
+    let env = adds_in_env (List.map fst inputs) ins IdentMap.empty in
     match n with
     | 0 -> ins
     | _ ->
@@ -356,9 +356,9 @@ let generate_rd_input (cls : Asttypes.clockdec list) (node : k_node) =
                  let b = interp_clock env ck in
                  Val (if b then Present (rd_value_of_ty cls ty) else Absent)
                with _ -> Bottom)
-            | Val v -> Val v) node.kn_input ins
+            | Val v -> Val v) inputs ins
       in aux (n-1) ins'
-  in aux (List.length node.kn_input) (List.map (fun _ -> Bottom) node.kn_input)
+  in aux (List.length inputs) (List.map (fun _ -> Bottom) inputs)
 
 (** Run a node, for testing purposes *)
 let run_node (f : k_file) (name : ident) k =
@@ -370,7 +370,7 @@ let run_node (f : k_file) (name : ident) k =
     match n with
     | 0 -> vs
     | n ->
-      let ins = generate_rd_input f.kf_clocks node in
+      let ins = generate_rd_input f.kf_clocks node.kn_input in
       let (outs, st') = interp_node ins st in
       let vs' = List.fold_left
           (fun vs ((id, _), v) ->
@@ -386,6 +386,3 @@ let run_node (f : k_file) (name : ident) k =
       print_endline (Printf.sprintf "(%s, [%s])"
                        id (String.concat ";"
                              (List.map string_of_bottom_or_value (List.rev vs))))) vs
-
-let run_file (f : k_file) =
-  List.iter (fun n -> run_node f n.kn_name 10) f.kf_nodes

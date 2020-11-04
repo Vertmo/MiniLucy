@@ -87,24 +87,32 @@ let _ =
     exit 0
   );
 
+  (* Let's interpr this a bit ! *)
+  match (!interpret_name) with
+  | Some name ->
+    (* Interpr.run_file file; *)
+    Pinterpr.run_node cfile name !interpret_k;
+    exit 0;
+  | None -> ();
+
   (* Kernelize *)
   let file = Kernelizer.kernelize_file cfile in
 
   (* Run the nodes from both files, checking they give the same result *)
-  (* if !asserts then Pinterpr.run_files p_file file; *)
+  if !asserts then Pinterpr.compare_files cfile file;
 
   if (step = Kernelize) then (
     print_endline (Kernelizer.CMinils.string_of_file file);
     exit 0
   );
 
-  (* Let's interpr this a bit ! *)
-  match (!interpret_name) with
-  | Some name ->
-    (* Interpr.run_file file; *)
-    Interpr.run_node file name !interpret_k;
-    exit 0;
-  | None -> ();
+  (* (\* Let's interpr this a bit ! *\)
+   * match (!interpret_name) with
+   * | Some name ->
+   *   (\* Interpr.run_file file; *\)
+   *   Interpr.run_node file name !interpret_k;
+   *   exit 0;
+   * | None -> (); *)
 
   (* Normalize *)
   let nfile = Normalizer.norm_file file in

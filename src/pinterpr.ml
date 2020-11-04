@@ -1,397 +1,355 @@
-(*             Stream based interpreter for automata language                *)
+(*                  Coiterative semantics based interpreter                   *)
 
 open Asttypes
-open Minils.KMinils
-open PMinils
 open Interpr
-
-exception InterpreterError of string
-exception CausalityError of ident
-exception StreamError of ident * string
-
-(** Used to store the state of automatons
-    current state, should reset, (state id, local bindings, recursive trees) for every state *)
-type auto_state =
-  Node of (constr * (bool * ((constr * (assoc_str * auto_state)) list))) list
+open Clockchecker.CPMinils
 
 (** Node state *)
-type state = St of assoc_str * instance list * auto_state
+type exp_st =
+  | StConst of const
+  | StIdent of ident
+  | StUnop of op * exp_st
+  | StBinop of op * exp_st * exp_st
+  | StFby of exp_st list * exp_st list * (value option) list
+  | StArrow of exp_st list * exp_st list * bool list
+  | StMatch of exp_st * (ident * exp_st list) list
+  | StWhen of exp_st list * constr * ident
+  | StMerge of ident * (ident * exp_st list) list
+  | StApp of node_st * exp_st list * exp_st * node_st
 
-(** Instance of a node *)
-and instance = ((ident * location) * state)
+and eq_st =
+  ident list * exp_st list
 
-(** Get the initial state for an instances in an expression *)
-let rec expr_init_instances nodes (e : p_expr) : instance list =
-  match e.pexpr_desc with
-  | PE_const c -> [] | PE_ident x -> []
-  | PE_op (op, es) ->
-    let is = List.map (expr_init_instances nodes) es in
-    List.flatten is
-  | PE_app (fid, es, e) ->
-    let is = List.map (expr_init_instances nodes) es
-    and ie = expr_init_instances nodes e in
-    let n = List.assoc fid nodes in
-    let st = get_node_init nodes n in
-    (((fid, e.pexpr_loc), st)::ie@(List.concat is))
-  | PE_fby (_, e) -> expr_init_instances nodes e
-  | PE_arrow (e1, e2) ->
-    (expr_init_instances nodes e1)@(expr_init_instances nodes e2)
-  | PE_pre e -> expr_init_instances nodes e
-  | PE_tuple es ->
-    let is = List.map (expr_init_instances nodes) es in
-    List.flatten is
-  | PE_when (e, _, _) -> expr_init_instances nodes e
-  | PE_merge (clid, brs) ->
-    List.flatten (List.map (fun (_, e) -> expr_init_instances nodes e) brs)
+and instr_st =
+  | StEq of eq_st
+  (* TODO *)
+
+and node_st =
+  ident list * ident list * ident list * instr_st list
+
+let value_of_const = function
+  | Cbool b -> Bool b
+  | Cint i -> Int i
+  | Creal r -> Real r
+  | Cconstr (c, _) -> Constr c
+
+(** Apply a unary operator *)
+let apply_unary op v =
+  match (op, v) with
+  | Op_not, Bool b -> Bool (not b)
+  | Op_not, Int i -> Int (lnot i)
+  | Op_sub, Int i -> Int (-i)
+  | Op_sub, Real r -> Real (-.r)
+  | _,_ -> failwith "Invalid unary op"
+
+let lift_unary op v =
+  match v with
+  | Val v ->
+    Val (match v with
+        | Absent -> Absent
+        | Present v -> Present (apply_unary op v))
+  | _ -> Bottom
+
+(** Apply comparator *)
+let apply_comp comp vl vr =
+  match comp with
+  | Op_eq -> vl = vr
+  | Op_neq -> vl <> vr
+  | Op_lt -> vl < vr
+  | Op_le -> vl <= vr
+  | Op_gt -> vl > vr
+  | Op_ge -> vl >= vr
+  | _ -> invalid_arg "apply_comp"
+
+(** Apply arithmetic operator *)
+let apply_arith fint ffloat el er =
+  match el, er with
+  | Int il, Int ir -> Int (fint il ir)
+  | Real fl, Real fr -> Real (ffloat fl fr)
+  | _, _ -> invalid_arg "apply_arith"
+
+(** Apply logic operator *)
+let apply_logic fbool fint el er =
+  match el, er with
+  | Bool bl, Bool br -> Bool (fbool bl br)
+  | Int il, Int ir -> Int (fint il ir)
+  | _, _ -> invalid_arg "apply_logic"
+
+(** Apply a binary operator *)
+let apply_binary op v1 v2 =
+  match op with
+  | Op_add -> apply_arith (+) (+.) v1 v2
+  | Op_sub -> apply_arith (-) (-.) v1 v2
+  | Op_mul -> apply_arith ( * ) ( *. ) v1 v2
+  | Op_div -> apply_arith (/) (/.) v1 v2
+  | Op_mod -> apply_arith (mod) (mod_float) v1 v2
+  | Op_and -> apply_logic (&&) (land) v1 v2
+  | Op_or -> apply_logic (||) (lor) v1 v2
+  | Op_xor ->
+    apply_logic (fun b1 b2 -> (b1 && not b2 || not b1 && b2)) (lxor) v1 v2
+  | Op_eq | Op_neq | Op_lt | Op_le | Op_gt | Op_ge ->
+    (match v1, v2 with
+     | Bool b1, Bool b2 -> Bool (apply_comp op b1 b2)
+     | Int i1, Int i2 -> Bool (apply_comp op i1 i2)
+     | Real f1, Real f2 -> Bool (apply_comp op f1 f2)
+     | _, _ -> invalid_arg "apply_binary")
+  | _ -> invalid_arg "apply_binary"
+
+let lift_binary op v1 v2 =
+  match (v1, v2) with
+  | Val v1, Val v2 ->
+    Val (match (v1, v2) with
+        | (Absent, Absent) -> Absent
+        | (Present v1, Present v2) ->
+          Present (apply_binary op v1 v2)
+        | _ -> invalid_arg
+                 (Printf.sprintf "lift_binary: %s %s %s"
+                    (string_of_op op) (string_of_sync_value v1) (string_of_sync_value v2)))
+  | _ -> Bottom
+
+(** Get the initial state for an expression *)
+let rec expr_init_state nodes (e : k_expr) : exp_st =
+  let numstreams = List.length e.kexpr_annot in
+  match e.kexpr_desc with
+  | KE_const c -> StConst c
+  | KE_ident x -> StIdent x
+  | KE_unop (op, e1) -> StUnop (op, expr_init_state nodes e1)
+  | KE_binop (op, e1, e2) ->
+    StBinop (op, expr_init_state nodes e1, expr_init_state nodes e2)
+  | KE_fby (e0s, es) ->
+    let st0 = exprs_init_state nodes e0s
+    and st = exprs_init_state nodes es in
+    StFby (st0, st, List.init numstreams (fun _ -> None))
+  | KE_arrow (e0s, es) ->
+    let st0 = exprs_init_state nodes e0s
+    and st = exprs_init_state nodes es in
+    StArrow (st0, st, List.init numstreams (fun _ -> true))
+  | KE_match (e, brs) ->
+    StMatch (expr_init_state nodes e, brs_init_state nodes brs)
+  | KE_when (es, cons, id) ->
+    let sts = exprs_init_state nodes es in
+    StWhen (sts, cons, id)
+  | KE_merge (id, brs) ->
+    StMerge (id, brs_init_state nodes brs)
+  | KE_app (f, es, er) ->
+    let init = node_init_state nodes (List.assoc f nodes) in
+    StApp (init,
+           exprs_init_state nodes es, expr_init_state nodes er,
+           init)
+  | KE_last _ -> invalid_arg "expr_init_state"
+and exprs_init_state nodes = List.map (expr_init_state nodes)
+and brs_init_state nodes = List.map (fun (id, es) -> (id, exprs_init_state nodes es))
 
 (** Get the initial states for an equation *)
-and get_eq_init nodes (e : p_equation) : (assoc_str * instance list) =
-  let is = expr_init_instances nodes e.peq_expr in
-  match e.peq_patt.ppatt_desc with
-  | PP_ident id -> [(id, [])], is
-  | PP_tuple ids -> List.map (fun id -> (id, [])) ids, is
+and eq_init_state nodes (e : k_equation) : eq_st =
+  (e.keq_patt, exprs_init_state nodes e.keq_expr)
 
-(** Get the initial state for an instruction *)
-and get_instr_init nodes i : (assoc_str * instance list * auto_state) =
-  match i with
-  | Eq eq ->
-    let (strs, is) = get_eq_init nodes eq in (strs, is, Node [])
-  | Automaton brs ->
-    let brs' = List.map (fun (id, lets, instrs, untils) ->
-        let vis = List.map (get_instr_init nodes) instrs in
-        let vs = List.flatten (List.map (fun (v, _, _) -> v) vis)
-        and is = List.flatten (List.map (fun (_, i, _) -> i) vis)
-        and ils = List.flatten
-            (List.map (fun (_, _, e) -> expr_init_instances nodes e) lets)
-        and ius = List.flatten
-            (List.map (fun (e, _, _) -> expr_init_instances nodes e) untils)
-        and sts = Node (List.flatten
-                         (List.map (fun (_, _, Node brs) -> brs) vis)) in
-        vs, is@ils@ius, (id, (List.map (fun (id, _, _) -> (id, [])) lets, sts))
-      ) brs in
-    let strs = List.flatten (List.map (fun (strs, _, _) -> strs) brs')
-    and is = List.flatten (List.map (fun (_, is, _) -> is) brs')
-    and auts = List.map (fun (_, _, aut) -> aut) brs' in
-    strs, is, Node [List.hd (List.map fst auts), (true, auts)]
+and instr_init_state nodes (ins : p_instr) : instr_st =
+  match ins.pinstr_desc with
+  | Eq eq -> StEq (eq_init_state nodes eq)
+  | _ -> failwith "TODO"
 
 (** Get the initial state for a node *)
-and get_node_init nodes n : state =
-  let vis = List.map (get_instr_init nodes) n.pn_instrs in
-  let vs = List.sort_uniq (fun (id1, _) (id2, _) -> String.compare id1 id2)
-      (List.flatten (List.map (fun (v, _, _) -> v) vis))
-  and is = List.flatten (List.map (fun (_, i, _) -> i) vis)
-  and st = Node (List.flatten (List.map (fun (_, _, Node brs) -> brs) vis)) in
-  St (vs, is, st)
+and node_init_state nodes (n : p_node) : node_st =
+  let ins = List.map (instr_init_state nodes) n.pn_instrs in
+  (List.map fst n.pn_input, List.map fst n.pn_output, List.map (fun (id, _, _) -> id) n.pn_local, ins)
 
-(** Get the instances used in an expression *)
-let rec get_instances insts (e : p_expr) =
-  match e.pexpr_desc with
-  | PE_const _ -> []
-  | PE_ident _ -> []
-  | PE_op (op, es) ->
-    List.flatten (List.map (get_instances insts) es)
-  | PE_app (fid, es, e) ->
-    let is = List.flatten (List.map (get_instances insts) es)
-    and i = get_instances insts e in
-    ((fid, e.pexpr_loc),
-     (List.assoc (fid, e.pexpr_loc) insts))::i@is
-  | PE_fby (_, e) -> get_instances insts e
-  | PE_arrow (e1, e2) ->
-    (get_instances insts e1)@(get_instances insts e2)
-  | PE_pre e -> get_instances insts e
-  | PE_tuple es ->
-    List.flatten (List.map (get_instances insts) es)
-  | PE_when (e, _, _) -> get_instances insts e
-  | PE_merge (_, brs) ->
-    List.flatten (List.map (fun (_, e) -> get_instances insts e) brs)
+let check_constr constr = function
+  | Absent -> false
+  | Present (Constr c) -> constr = c
+  | Present (Bool true) -> constr = "True"
+  | Present (Bool false) -> constr = "False"
+  | _ -> invalid_arg "check_constr"
 
-type trans_expr = state -> int -> (value * instance list)
-type trans_node = (assoc * state) -> (state * assoc)
+let find_branch v n vs =
+  match v with
+  | Bottom -> List.init n (fun _ -> Bottom)
+  | Val v ->
+    let rec aux = function
+      | [] -> invalid_arg "find_branch"
+      | (c, vs)::tl ->
+        if check_constr c v then vs else aux tl
+    in match v with
+    | Absent -> List.init n (fun _ -> Val Absent) (* If v is absent, all the values are also absent *)
+    | _ -> aux vs
 
-(** Replace a term with another one in an association list *)
-let replace_assoc k l r = (k, r)::(List.remove_assoc k l)
+let rec extract_vals vs =
+  match vs with
+  | [] -> Some []
+  | Val v::tl ->
+    Option.bind (extract_vals tl) (fun vs -> Some (v::vs))
+  | Bottom::_ -> None
 
-(** Get the transition function for an expression *)
-let rec get_expr_trans nodes fbys (e : p_expr) : trans_expr =
-  match e.pexpr_desc with
-  | PE_const c -> fun _ _ -> value_of_const c, []
-  | PE_ident id ->
-    (fun (St (strs, _, _)) _ ->
-       let str = List.assoc id strs in
-       match try List.nth str fbys with _ -> List.hd str with
-       | Bottom -> raise (NotYetCalculated id)
-       | v -> v, [])
-  | PE_op (op, es) ->
-    let ts = List.map (get_expr_trans nodes fbys) es in
-    fun cont tocalc ->
-      let vis = List.map (fun t -> t cont tocalc) ts in
-      let vs = List.map fst vis and is = List.map snd vis in
-      apply_op op vs, (List.flatten is)
-  | PE_app (fid, es, e) ->
-    let ts = List.map (get_expr_trans nodes fbys) es in
-    let te = get_expr_trans nodes fbys e in
-    let n = List.assoc fid nodes in
-    fun st tocalc ->
-      let vis = List.map (fun t -> t st tocalc) ts
-      and (ve, ie) = te st tocalc in
-      let vs = List.map fst vis and is = List.map snd vis in
-      let inputs = List.map2 (fun (id, _) v -> id, v) n.pn_input vs in
-      let (st, outs) = (match ve with
-          | Bool true ->
-            let init = get_node_init nodes n in
-            get_node_trans nodes n (inputs, init)
-          | _ ->
-            let st = List.assoc (fid, e.pexpr_loc)
-                (match st with St (_, ins, _) -> ins) in
-            get_node_trans nodes n (inputs, st)) in
-      let St (strs, _, _) = st in
-      (match outs with
-       | [(_, v)] -> v
-       | vs -> (Tuple (List.map snd vs))),
-      (((fid, e.pexpr_loc), st)::ie@(List.concat is))
-  | PE_fby (c, e) ->
-    let t = get_expr_trans nodes (fbys+1) e in
-    fun st tocalc -> if tocalc <= fbys
-      then (value_of_const c), get_instances (match st with St (_, i, _) -> i) e
-      else t st tocalc
-  | PE_arrow (e1, e2) ->
-    let t1 = get_expr_trans nodes fbys e1
-    and t2 = get_expr_trans nodes fbys e2 in
-    fun st tocalc -> if tocalc <= fbys
-      then let (strs, i) = (t1 st tocalc) in
-        (strs, i@(get_instances (match st with St (_, i, _) -> i) e2))
-      else let (strs, i) = (t2 st tocalc) in
-        (strs, i@(get_instances (match st with St (_, i, _) -> i) e1))
-  | PE_pre e ->
-    let t = get_expr_trans nodes (fbys+1) e in
-    fun st tocalc -> if tocalc <= fbys
-      then Nil, get_instances (match st with St (_, i, _) -> i) e
-      else t st tocalc
-  | PE_tuple es ->
-    let ts = List.map (get_expr_trans nodes fbys) es in
-    fun st tocalc ->
-      let vis = List.map (fun t -> t st tocalc) ts in
-      let vs = List.map fst vis and is = List.map snd vis in
-      Tuple vs, (List.flatten is)
-  | PE_when (e, constr, clid) -> get_expr_trans nodes fbys e
-  | PE_merge (clid, brs) ->
-    fun st tocalc ->
-      let St (strs, insts, _) = st in
-      let c = (match List.nth (List.assoc clid strs) fbys with
-          | Bottom -> raise (NotYetCalculated clid)
-          | c -> c) in
-      let c = (match c with
-          | Bool true -> "True" | Bool false -> "False"
-          | Constr c -> c
-          | _ -> failwith "merge expects either bool or constr") in
-      let e = (match (List.assoc_opt c brs) with
-          | None -> failwith "constructor not found in merge branches"
-          | Some e -> e) in
-      let insts = (match st with St (_, i, _) -> i) in
-      let (v, ins) = get_expr_trans nodes fbys e st tocalc in
-      v, ins@(List.flatten (List.map (fun (_, e) -> get_instances insts e)
-                              (List.remove_assoc c brs)))
+let hd l =
+  match l with
+  | hd::_ -> hd
+  | _ -> Bottom
 
-(** Get the transitions for an equation *)
-and get_eq_trans nodes (e : p_equation) types =
-  let trans = get_expr_trans nodes 0 e.peq_expr in
-  let defs = defined_of_equation e in
-  let tys = List.map (fun d -> d, List.assoc d types) defs in
-  fun st ->
-    let St (strs, insts, aut) = st in
-    (match e.peq_patt.ppatt_desc with
-     | PP_ident id ->
-       let cl = clock_of_ty (List.assoc id types) in
-       if check_clock_value strs cl
-       then
-         let (v, is) =
-           trans st (List.length (List.assoc (List.hd defs) strs)-1) in
-         St (fill_val tys strs id v, is@insts, aut)
-       else St (fill_val tys strs id Bottom, insts, aut)
-     | PP_tuple ids ->
-       let cls = List.map (fun id ->
-           clock_of_ty (List.assoc id types)) ids in
-       if (List.exists (check_clock_value strs) cls) then
-         let (v, is) =
-           trans st (List.length (List.assoc (List.hd defs) strs)-1) in
-         (match v with
-          | Tuple vs ->
-            St(List.fold_left2 (fill_val tys) strs ids vs, is@insts, aut)
-          | _ -> failwith "Should not happen")
-       else St (List.fold_left (fun strs id ->
-           fill_val tys strs id Bottom) strs ids, insts, aut))
+(** Get the values for an expression *)
+let rec interp_expr env st : (bottom_or_value list * exp_st) =
+  match st with
+  | StConst c -> [Val (Present (value_of_const c))], StConst c
+  | StIdent id -> [get_val_in_env env id], st
+  | StUnop (op, e1) ->
+    let (v1, e1') = interp_expr env e1 in
+    [lift_unary op (hd v1)], StUnop (op, e1')
+  | StBinop (op, e1, e2) ->
+    let (v1, e1') = interp_expr env e1
+    and (v2, e2') = interp_expr env e2 in
+    [lift_binary op (hd v1) (hd v2)], StBinop (op, e1', e2')
+  | StFby (e0s, e1s, vps) ->
+    let (v0s, e0s') = interp_exprs env e0s
+    and (v1s, e1s') = interp_exprs env e1s in
+    let vs =
+      List.map2 (fun v0 vp -> match (v0, vp) with
+          | Bottom, _ -> Bottom
+          | Val Absent, _ -> Val Absent
+          | Val Present _, Some v -> Val (Present v)
+          | Val Present v, _ -> Val (Present v)) v0s vps
+    and vps' =
+      List.map2 (fun v1 vp -> match v1 with
+          | Bottom | Val Absent -> vp
+          | Val Present v -> Some v) v1s vps in
+      vs, StFby (e0s', e1s', vps')
+  | StArrow (e0s, e1s, bs) ->
+    let (v0s, e0s') = interp_exprs env e0s
+    and (v1s, e1s') = interp_exprs env e1s in
+    let vs = List.map2 (fun b (v0, v) -> if b then v0 else v) bs (List.combine v0s v1s)
+    and bs' = List.map2 (fun b v -> match v with | Val (Present _) -> false | _ -> b) bs v0s in
+    vs, StArrow (e0s', e1s', bs')
+  | StMatch (e, brs) ->
+    let (v, e') = interp_expr env e
+    and (vss, brs') = interp_branches env brs in
+    let numstreams = List.length (snd (List.hd vss)) in
+    find_branch (List.hd v) numstreams vss, StMatch (e', brs')
+  | StWhen (es, cstr, ckid) ->
+    let (vs, es') = interp_exprs env es in
+    let b = get_val_in_env env ckid in
+    List.map (fun v ->
+        match b with
+        | Bottom -> Bottom
+        | Val b -> if check_constr cstr b then v else Val Absent) vs, StWhen (es', cstr, ckid)
+  | StMerge (ckid, brs) ->
+    let v = get_val_in_env env ckid
+    and (vss, brs') = interp_branches env brs in
+    let numstreams = List.length (snd (List.hd vss)) in
+    find_branch v numstreams vss, StMerge (ckid, brs')
+  | StApp (init_st, es, er, st) ->
+    let (xs, es') = interp_exprs env es
+    and (r, er') = interp_expr env er in
+    (* Treat reset *)
+    let st' = match (List.hd r) with
+      | Val (Present (Bool true)) -> init_st
+      | _ -> st in
+    (* Only execute the node when at least one input is present *)
+    let b = List.exists (fun v -> match v with Val (Present _) -> true | _ -> false) xs in
+    let numstreams = List.length (match st with (_, outs, _, _) -> outs) in
+    let (ys, st'') =
+      if b then (interp_node xs st')
+      else (List.init numstreams (fun _ -> Val Absent), st') in
+    ys, StApp (init_st, es', er', st'')
+and interp_exprs env es =
+  let vst = List.map (interp_expr env) es in
+  List.concat (List.map fst vst), List.map snd vst
+and interp_branches env brs =
+  let brs = List.map (fun (c, es) ->
+      let (vs, es') = interp_exprs env es in
+      (c, vs), (c, es')) brs in
+  List.map fst brs, List.map snd brs
 
-(** Get the transitions for an instruction *)
-and get_instr_trans nodes types (i : p_instr) =
-  match i with
-  | Eq eq -> get_eq_trans nodes eq types
-  | Automaton brs ->
-    (fun (St (strs, is, (Node autos))) ->
-       let (current, (should_be_reset, stbrs)) = List.find (fun (id, (_, _)) ->
-             List.exists (fun (id', _, _, _) -> id = id') brs) autos in
+(** Get the values for an equation *)
+and interp_eq env (xs, es) : (env * eq_st) =
+  let (vals, es') = interp_exprs env es in
+  let env' = adds_in_env xs vals env in
+  env', (xs, es')
 
-       (* Reset if necessary *)
-       let (strs', is', stbrs) =
-         if should_be_reset then (
-           let (strs', is', Node autos) = get_instr_init nodes i in
-           List.map (fun (id, _) -> id, Bottom::[]) strs',
-           is',
-           replace_assoc current stbrs
-             (List.assoc current (snd (snd (List.hd autos)))))
-         else ([], [], stbrs) in
-       let prev_strs = (List.map (fun (id, l) -> id, List.tl l) strs) in
-       let strs = List.fold_left (fun strs (id, str) ->
-           replace_assoc id strs str) strs strs' in
-       let is = List.fold_left (fun is (id, i) ->
-           replace_assoc id is i) is is' in
+and interp_instr env ins : (env * instr_st) =
+  match ins with
+  | StEq eq ->
+    let (env', eq') = interp_eq env eq in
+    env', StEq eq'
 
-       (* Current active branch (we'll evaluate it) *)
-       let (locals, stbr) = List.assoc current stbrs
-       and (_, lets, instrs, untils) =
-         List.find (fun (id', _, _, _) -> current = id') brs in
+and interp_instrs env eqs : (env * instr_st list) =
+  let (env', instrs') =
+    List.fold_left (fun (env, sts) st ->
+        let (env', st') = interp_instr env st in
+        (env', st'::sts)
+      ) (env, []) eqs
+  in (env', List.rev instrs')
 
-       (* Remove the state we're going to modify *)
-       let autos = List.remove_assoc current autos
-       and stbrs = List.remove_assoc current stbrs in
+(** Get the delays for a node *)
+and interp_node xs (st : node_st) : (bottom_or_value list * node_st) =
+  let (ins, outs, locs, instrs) = st in
+  (* Add the inputs to the env *)
+  let env = adds_in_env ins xs IdentMap.empty in
 
-       (* Calculate local values, and save them *)
-       let locals = List.map (fun (id, str) -> id, Bottom::str) locals in
-       let strs = locals@strs in
-       let lets_ty = List.map (fun (id, ty, _) -> (id, ty)) lets in
-       let types = types@lets_ty in
-       let let_equs = List.map (fun (id, ty, e) ->
-           { peq_patt = { ppatt_desc = PP_ident id; ppatt_loc = dummy_loc };
-             peq_expr = e }) lets in
-       let St (strs, is, stbr) =
-         List.fold_left (fun st eq -> get_eq_trans nodes eq types st)
-           (St (strs, is, stbr)) let_equs in
-       let locals = List.filter (fun (id, _) ->
-           List.mem_assoc id locals) strs in
-
-       (* Update state according to inner instructions *)
-       let funs = List.map (fun i ->
-           defined_of_instr i,
-           get_instr_trans nodes types i) instrs in
-       let St (strs, is, stbr) = dynamic_schedule funs (St (strs, is, stbr)) in
-
-       (* Handle state change *)
-       let (untils, is) =
-         List.fold_left (fun (us, is) (e, constr, reset) ->
-           let (v, is') = get_expr_trans nodes 0 e (St (strs, is, stbr)) 0 in
-           (v, constr, reset)::us, is'@is) ([], is) untils in
-
-       (* Remove the local streams from storage *)
-       let strs = List.fold_left (fun strs (id, _) -> List.remove_assoc id strs)
-           strs locals in
-
-       (* After the reset, we need to put some of the streams back *)
-       let strs = if should_be_reset then
-           List.fold_left (fun strs (id, str) ->
-               match (List.assoc id strs) with
-               | [v] -> replace_assoc id strs (v::str)
-               | _ -> strs) strs prev_strs
-         else strs in
-
-       (* Prepare for the next step *)
-       let newcurrent, should_be_reset =
-         match (List.find_opt (fun (c, _, _) -> c = Bool true) untils) with
-         | Some (_, c, reset) -> c, reset
-         | None -> current, false in
-       let stbrs = (current, (locals, stbr))::stbrs in
-       St (strs, is, Node ((newcurrent, (should_be_reset, stbrs))::autos)))
-
-(** Evaluation with dynamic scheduling of a set of instructions *)
-and dynamic_schedule instrs st : state =
-  let rec dyn_aux instrs stack st =
-    if (instrs = [] && stack = []) then st
-    else (match stack with
-        | [] -> dyn_aux (List.tl instrs) [List.hd instrs] st
-        | hd::tl ->
-          (* Try to compute an equation *)
-          (try dyn_aux instrs tl ((snd hd) st)
-           (* If we're missing something, we need to add
-              it to the compute stack *)
-           with NotYetCalculated id ->
-             let eqmis =
-               (try List.find (fun (decs, _) -> List.mem id decs) instrs
-                with _ -> raise (CausalityError id)) in
-             dyn_aux (List.remove_assoc (fst eqmis) instrs)
-               (eqmis::stack) st)) in
-  dyn_aux instrs [] st
-
-(** Get transition functions for a node *)
-and get_node_trans nodes (n : p_node) : trans_node =
-  (* Transition functions for all the equations *)
-  let transfuns = List.map (fun i ->
-      defined_of_instr i,
-      get_instr_trans nodes (n.pn_local@n.pn_output) i) n.pn_instrs in
-  fun (inputs, St (strs, insts, aut)) ->
-    (* Add the new inputs to the relevant streams *)
-    let strs = List.fold_left (fun strs (x, v) ->
-        add_val strs x v) strs inputs in
-  (* Add Bottom in front of everything to calculate *)
-    let locouts = List.map (fun (id, _) -> id) (n.pn_local@n.pn_output) in
-    let strs = List.fold_left
-        (fun strs x -> add_val strs x Bottom) strs locouts in
-    let St (strs, insts, aut) =
-      dynamic_schedule transfuns (St (strs, insts, aut)) in
-    St (strs, insts, aut),
-    List.map (fun (id, l) -> id, try List.hd l with _ -> Nil)
-      (List.filter (fun (id, _) -> List.mem_assoc id n.pn_output) strs)
+  (* Turn the crank until the env is filled, or we cant progress anymore
+     Not efficient ! *)
+  let rec compute_instrs env =
+    let (env', instrs') = interp_instrs env instrs in
+    if IdentMap.cardinal env' = List.length (ins@locs@outs)
+    then interp_instrs env' instrs
+    else if env' = env
+    then (env', instrs')
+    else compute_instrs env'
+  in
+  let (env, eqs') = compute_instrs env in
+  List.map (fun id -> get_val_in_env env id) outs,
+  (ins, outs, locs, eqs')
 
 (*                          Running the interpreter                          *)
 
-(** Create random inputs of the right type for a node *)
-let generate_rd_input (cls : Asttypes.clockdec list) (n : p_node) =
-  List.map (fun (id, ty) ->
-      id, match (base_ty_of_ty ty) with
-      | Tint -> Int (Random.int 100)
-      | Treal -> Real (Random.float 100.)
-      | Tbool -> Bool (Random.bool ())
-      | Tclock id ->
-        let constrs = List.assoc id cls in
-        let n = List.length constrs in
-        Constr (List.nth constrs (Random.int n))
-      | Ttuple _ -> invalid_arg "generate_rd_input"
-    ) n.pn_input
+(** Run a node, for testing purposes *)
+let run_node (f : p_file) (name : ident) k =
+  Random.self_init ();
+  let ns = List.map (fun n -> (n.pn_name, n)) f.pf_nodes in
+  let node = List.assoc name ns in
+  let init = node_init_state ns node in
+  let rec aux n st vs =
+    match n with
+    | 0 -> vs
+    | n ->
+      let ins = generate_rd_input f.pf_clocks node.pn_input in
+      let (outs, st') = interp_node ins st in
+      let vs' = List.fold_left
+          (fun vs ((id, _), v) ->
+             IdentMap.update id (fun vs -> match vs with
+                 | None -> Some [v]
+                 | Some vs -> Some (v::vs)) vs)
+          vs (List.combine (node.pn_input@node.pn_output) (ins@outs)) in
+      aux (n-1) st' vs'
+  in
+  let vs = (aux k init (IdentMap.empty)) in
+  print_endline (Printf.sprintf "First %d iterations:" k);
+  IdentMap.iter (fun id vs ->
+      print_endline (Printf.sprintf "(%s, [%s])"
+                       id (String.concat ";"
+                             (List.map string_of_bottom_or_value (List.rev vs))))) vs
 
 (*                          Comparing nodes                                   *)
 
+open Kernelizer.CMinils
+
 (** Run the p_node and the k_node, and compare their outputs and local streams *)
-let run_nodes (fp : p_file) (fk : k_file) (name : ident) k =
+let compare_nodes (fp : p_file) (fk : k_file) (name : ident) k =
   Random.self_init ();
   let nps = List.map (fun n -> (n.pn_name, n)) fp.pf_nodes
   and nks = List.map (fun n -> (n.kn_name, n)) fk.kf_nodes in
   let np = List.assoc name nps and nk = List.assoc name nks in
-  let initp = get_node_init nps np
-  and initk = Interpr.get_node_init nks nk in
-  let transp = get_node_trans nps np
-  and transk = Interpr.get_node_trans nks nk in
+  let initp = node_init_state nps np
+  and initk = Interpr.node_init_state nks nk in
   let rec aux n (sp, sk) =
     match n with
-    | 0 -> sp, sk
+    | 0 -> ()
     | n ->
-      let inputs = generate_rd_input fp.pf_clocks np in
-      aux (n-1)
-             (fst (transp (inputs, sp)),
-              fst (transk (inputs, sk)))
-  in
-  let (St (sp, _, _), St (sk, _)) = (aux k (initp, initk)) in
-  List.iter (fun (id, strp) ->
-      let strk = List.assoc id sk in
-      if (strp <> strk) then (
-        Printf.printf "Error in bisimulation of node %s, stream %s:\n" name id;
-        List.iter (fun (id, strp) ->
-            let strk = List.assoc id sk in
-            print_endline (Printf.sprintf "(%s, p:[%s], k:[%s])" id
-                             (String.concat ";"
-                                   (List.map string_of_value (List.rev strp)))
-                             (String.concat ";"
-                                (List.map string_of_value (List.rev strk)))))
-          sp;
-        exit 1;
-      )) sp
+      let ins = generate_rd_input fp.pf_clocks np.pn_input in
+      let (pouts, sp') = interp_node ins sp
+      and (kouts, sk') = Interpr.interp_node ins sk in
+      if pouts <> kouts
+      then (Printf.eprintf "Error in bisimulation of node %s\n" name; exit 1)
+      else aux (n-1) (sp', sk')
+  in aux k (initp, initk)
 
-(** Run all the nodes in p_file and k_file *)
-let run_files (fp : p_file) (fk : k_file) =
-  List.iter (fun n -> run_nodes fp fk n.pn_name 20) fp.pf_nodes
+(** Compare all the nodes in p_file and k_file *)
+let compare_files (fp : p_file) (fk : k_file) =
+  List.iter (fun n -> compare_nodes fp fk n.pn_name 20) fp.pf_nodes

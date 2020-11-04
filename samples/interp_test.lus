@@ -88,3 +88,9 @@ node test_tuple2() returns (x : int; y : int);
 let
   (x, y) = (0 fby y, x+1);
 tel
+  
+node clocked_input(y : bool when x; x : bool; z : int when y)
+returns (t : bool when y)
+let
+  t = z < 50;
+tel

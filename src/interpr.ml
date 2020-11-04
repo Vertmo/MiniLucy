@@ -3,10 +3,6 @@
 open Asttypes
 open Kernelizer.CMinils
 
-exception InterpreterError of string
-(* exception NotYetCalculated of ident *)
-exception CausalityError of ident
-
 (** Value of the interpreter *)
 type value =
   | Int of int | Bool of bool | Real of float
@@ -37,6 +33,16 @@ let string_of_bottom_or_value = function
 (** Association from name to value (inputs and outputs) *)
 module IdentMap = Map.Make(String)
 type env = sync_value IdentMap.t
+
+let get_val_in_env env id =
+  try Val (IdentMap.find id env)
+  with _ -> Bottom
+
+let adds_in_env (xs : ident list) (vals : bottom_or_value list) env =
+  List.fold_left (fun env (id, v) ->
+      match v with
+      | Bottom -> env
+      | Val v -> IdentMap.add id v env) env (List.combine xs vals)
 
 (** Node state *)
 type exp_st =
@@ -179,19 +185,6 @@ and node_init_state nodes n : node_st =
   let eqs = List.map (eq_init_state nodes) n.kn_equs in
   (List.map fst n.kn_input, List.map fst n.kn_output, List.map fst n.kn_local, eqs)
 
-(** Transition function for nodes (input, st) -> (st, output) *)
-type node_trans = sync_value list -> node_st -> (sync_value list * node_st)
-
-let get_val_in_env env id =
-  try Val (IdentMap.find id env)
-  with _ -> Bottom
-
-let adds_in_env (xs : ident list) (vals : bottom_or_value list) env =
-  List.fold_left (fun env (id, v) ->
-      match v with
-      | Bottom -> env
-      | Val v -> IdentMap.add id v env) env (List.combine xs vals)
-
 let check_constr constr = function
   | Absent -> false
   | Present (Constr c) -> constr = c
@@ -331,19 +324,41 @@ and interp_node xs (st : node_st) : (bottom_or_value list * node_st) =
 
 (*                          Running the interpreter                          *)
 
-(** Create random inputs of the right type for a node
-    TODO : correctly generate clocked inputs *)
-let generate_rd_input (cls : Asttypes.clockdec list) (n : k_node) =
-  List.map (fun (_, (ty, _)) ->
-      Val (match ty with
-          | Tint -> Present (Int (Random.int 100))
-          | Treal -> Present (Real (Random.float 100.))
-          | Tbool -> Present(Bool (Random.bool ()))
-          | Tclock id ->
-            let constrs = List.assoc id cls in
-            let n = List.length constrs in
-            Present (Constr (List.nth constrs (Random.int n))))
-    ) n.kn_input
+(** Create random inputs of the right type for a node *)
+
+let rd_value_of_ty (cls : Asttypes.clockdec list) = function
+  | Tint -> Int (Random.int 100)
+  | Treal -> Real (Random.float 100.)
+  | Tbool -> Bool (Random.bool ())
+  | Tclock id ->
+    let constrs = List.assoc id cls in
+    let n = List.length constrs in
+    Constr (List.nth constrs (Random.int n))
+
+let rec interp_clock env = function
+  | Cbase -> true
+  | Con (constr, ckid, ck') ->
+    let b = interp_clock env ck' in
+    let v = IdentMap.find ckid env in
+    b && check_constr constr v
+
+let generate_rd_input (cls : Asttypes.clockdec list) (node : k_node) =
+  let rec aux n ins =
+    let env = adds_in_env (List.map fst node.kn_input) ins IdentMap.empty in
+    match n with
+    | 0 -> ins
+    | _ ->
+      let ins' =
+        List.map2 (fun (_, (ty, ck)) v ->
+            match v with
+            | Bottom ->
+              (try
+                 let b = interp_clock env ck in
+                 Val (if b then Present (rd_value_of_ty cls ty) else Absent)
+               with _ -> Bottom)
+            | Val v -> Val v) node.kn_input ins
+      in aux (n-1) ins'
+  in aux (List.length node.kn_input) (List.map (fun _ -> Bottom) node.kn_input)
 
 (** Run a node, for testing purposes *)
 let run_node (f : k_file) (name : ident) k =

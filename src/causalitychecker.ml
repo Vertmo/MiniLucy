@@ -8,7 +8,7 @@ exception CausalityError of (string * ident * location)
 (** Get the variables defined by an equation *)
 let def_vars = function
   | NQ_ident (id, _) -> [id]
-  | NQ_fby (id, _, _) -> [id]
+  | NQ_fby (id, _, _, _, _) -> [id]
   | NQ_app (ids, _, _, _, _, _) -> ids
 
 (** Get the variables used by an expression *)
@@ -32,7 +32,7 @@ let rec cexpr_vars (e : n_cexpr) =
 (** Get the variables used by an equation *)
 let used_vars = function
   | NQ_ident (_, e) -> (clock_vars e.ncexpr_clock)@(cexpr_vars e)
-  | NQ_fby (_, _, e) -> clock_vars (e.nexpr_clock)
+  | NQ_fby (_, _, e, r, ckr) -> r::(clock_vars (e.nexpr_clock))@(clock_vars ckr)
   | NQ_app (_, _, es, evid, bck, ckr) ->
     evid::(clock_vars bck)@(clock_vars ckr)@(List.flatten (List.map expr_vars es))
 

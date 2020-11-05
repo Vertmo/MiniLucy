@@ -47,7 +47,7 @@ tel
   
 node test_reset() returns (x : int);
 let
-  x = test_fby(0) every ((0 fby x) > 10);
+  x = test_fby(0) every (x > 10);
 tel
   
 node test_when() returns (b : bool; x : int when b);

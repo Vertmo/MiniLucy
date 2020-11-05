@@ -24,8 +24,8 @@ module MINILS(A : Annotations) = struct
     | KE_unop of op * k_expr
     | KE_binop of op * k_expr * k_expr
     | KE_app of ident * k_expr list * k_expr
-    | KE_fby of k_expr list * k_expr list
-    | KE_arrow of k_expr list * k_expr list
+    | KE_fby of k_expr list * k_expr list * k_expr (* last expr is the reset bit *)
+    | KE_arrow of k_expr list * k_expr list * k_expr
     | KE_match of k_expr * (constr * k_expr list) list
     | KE_when of k_expr list * constr * ident
     | KE_merge of ident * (constr * k_expr list) list
@@ -57,9 +57,9 @@ module MINILS(A : Annotations) = struct
     | KE_app (id, es, ever) ->
       Printf.sprintf "(%s(%s) every %s)" id
         (string_of_exprs es) (string_of_expr ever)
-    | KE_fby (e0, e) ->
+    | KE_fby (e0, e, _) ->
       Printf.sprintf "(%s fby %s)" (string_of_exprs e0) (string_of_exprs e)
-    | KE_arrow (e0, e) ->
+    | KE_arrow (e0, e, _) ->
       Printf.sprintf "(%s -> %s)" (string_of_exprs e0) (string_of_exprs e)
     | KE_match (e, es) ->
       Printf.sprintf "match %s with %s"

@@ -243,9 +243,11 @@ expr:
 | NOT expr
     { mk_expr (KE_unop (Op_not, $2)) $startpos $endpos }
 | expr_list ARROW expr_list
-    { mk_expr (KE_arrow ($1, $3)) $startpos $endpos }
+    { mk_expr (KE_arrow ($1, $3, mk_expr (KE_const (Cbool false)) $startpos $endpos))
+      $startpos $endpos }
 | expr_list FBY expr_list
-    { mk_expr (KE_fby ($1, $3)) $startpos $endpos }
+    { mk_expr (KE_fby ($1, $3, mk_expr (KE_const (Cbool false)) $startpos $endpos))
+      $startpos $endpos }
 (* | PRE expr
  *     { mk_expr (KE_pre ($2)) $startpos $endpos } *)
 | expr_list WHEN constr_ckid

@@ -12,6 +12,17 @@ let
   every false;
 tel;
   
+node fibo(dummy : bool) returns (z : int);
+let z = 0 fby (z + (1 fby z));
+tel
+  
+node test_app(b : bool) returns (y : int);
+let
+  reset
+    y = fibo(true);
+  every b;
+tel;
+  
 node test3(b : bool) returns (y : int);
 let
   reset
@@ -25,5 +36,12 @@ let
     reset
       y = 0 fby (y + 1);
     every b;
-  every false; (* TODO if (false when b) bad compilation *)
+  every (false when True(b));
+tel
+  
+node test5(b : bool) returns (y : int when b);
+let
+  reset
+    y = 0 fby (y + 1);
+  every true;
 tel

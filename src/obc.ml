@@ -52,13 +52,14 @@ and string_of_instrs level instrs =
 type p = (ident * ty) list
 
 (** Check if the instruction assigns the state *)
-let rec assign_state = function
+let rec updates_state = function
   | Assign _ -> false
+  | StAssign (_, Const _) -> false
   | StAssign _ -> true
   | Reset _ -> false
   | StepAssign _ -> false
   | Case (_, _, instrs) ->
-    List.exists (fun (_, ins) -> List.exists assign_state ins) instrs
+    List.exists (fun (_, ins) -> List.exists updates_state ins) instrs
 
 let string_of_p p =
   String.concat "; " (List.map (fun (id, t) ->

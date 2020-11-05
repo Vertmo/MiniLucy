@@ -27,14 +27,14 @@ let dist_make_eqs ids es =
       { keq_patt = [id]; keq_expr = [e]; keq_loc = dummy_loc }
     ) (List.combine ids es)
 
-let dist_fby e0s es anns =
+let dist_fby e0s es er anns =
   List.map (fun ((e0, e), a) ->
-      { kexpr_desc = KE_fby ([e0], [e]); kexpr_annot = [a]; kexpr_loc = dummy_loc }
+      { kexpr_desc = KE_fby ([e0], [e], er); kexpr_annot = [a]; kexpr_loc = dummy_loc }
     ) (List.combine (List.combine e0s es) anns)
 
-let dist_arrow e0s es anns =
+let dist_arrow e0s es er anns =
   List.map (fun ((e0, e), a) ->
-      { kexpr_desc = KE_arrow ([e0], [e]); kexpr_annot = [a]; kexpr_loc = dummy_loc }
+      { kexpr_desc = KE_arrow ([e0], [e], er); kexpr_annot = [a]; kexpr_loc = dummy_loc }
     ) (List.combine (List.combine e0s es) anns)
 
 let dist_match e branches anns =
@@ -69,22 +69,24 @@ let rec dist_expr (is_rhs : bool) (is_control : bool) (e : k_expr) :
     and e2', eqs2, vs2 = dist_expr false false e2 in
     let e1' = List.hd e1' and e2' = List.hd e2' in
     [{ e with kexpr_desc = KE_binop (op, e1', e2') }], eqs1@eqs2, vs1@vs2
-  | KE_fby (e0s, es) ->
+  | KE_fby (e0s, es, er) ->
     let e0s', eqs1, vs1 = dist_exprs false false e0s
-    and es', eqs2, vs2 = dist_exprs false false es in
-    let fbys = dist_fby e0s' es' anns in
+    and es', eqs2, vs2 = dist_exprs false false es
+    and er', eqs3, vs3 = dist_and_var_expr er in
+    let fbys = dist_fby e0s' es' er' anns in
     let ids = idents_for_anns anns in
     dist_make_vars ids,
-    (dist_make_eqs ids fbys)@eqs1@eqs2,
-    vs1@vs2@ids
-  | KE_arrow (e0s, es) ->
+    (dist_make_eqs ids fbys)@eqs1@eqs2@eqs3,
+    vs1@vs2@vs3@ids
+  | KE_arrow (e0s, es, er) ->
     let e0s', eqs1, vs1 = dist_exprs false false e0s
-    and es', eqs2, vs2 = dist_exprs false false es in
-    let arrows = dist_arrow e0s' es' anns in
+    and es', eqs2, vs2 = dist_exprs false false es
+    and er', eqs3, vs3 = dist_and_var_expr er in
+    let arrows = dist_arrow e0s' es' er' anns in
     let ids = idents_for_anns anns in
     dist_make_vars ids,
-    (dist_make_eqs ids arrows)@eqs1@eqs2,
-    vs1@vs2@ids
+    (dist_make_eqs ids arrows)@eqs1@eqs2@eqs3,
+    vs1@vs2@vs3@ids
   | KE_match (e, branches) ->
     let e', eqs1, vs1 = dist_expr false false e
     and branches', eqs2, vs2 = dist_branches branches in
@@ -109,8 +111,8 @@ let rec dist_expr (is_rhs : bool) (is_control : bool) (e : k_expr) :
       vs1@ids
   | KE_app (fid, es, er) ->
     let es', eqs1, vs1 = dist_exprs false false es
-    and er', eqs2, vs2 = dist_expr false false er in
-    let app = {  kexpr_desc = KE_app (fid, es', List.hd er');
+    and er', eqs2, vs2 = dist_and_var_expr er in
+    let app = {  kexpr_desc = KE_app (fid, es', er');
                  kexpr_annot = anns; kexpr_loc = dummy_loc } in
     if is_rhs then
       [app], eqs1@eqs2, vs1@vs2
@@ -128,6 +130,18 @@ and dist_exprs (is_rhs : bool) (is_control : bool) (es : k_expr list) =
   (List.concat (List.map (fun (e, _, _) -> e) res),
    List.concat (List.map (fun (_, eq, _) -> eq) res),
    List.concat (List.map (fun (_, _, v) -> v) res))
+
+and dist_and_var_expr (e : k_expr) =
+  let e', eqs, vs = dist_expr true true e in
+  match (List.hd e') with
+  | { kexpr_desc = KE_ident _ } as e' -> e', eqs, vs
+  | e' ->
+    let y = Atom.fresh "_" and (ty, (ck, _)) = List.hd e'.kexpr_annot in
+    { kexpr_desc = KE_ident y;
+      kexpr_annot = [(ty, (ck, Some y))];
+      kexpr_loc = e'.kexpr_loc },
+    { keq_patt = [y]; keq_expr = [e']; keq_loc = dummy_loc }::eqs,
+    (y, (ty, ck))::vs
 
 and dist_branches (branches : (constr * k_expr list) list) =
   let res = List.map (fun (cstr, es) ->
@@ -168,28 +182,7 @@ let dist_eqs (eqs : k_equation list) =
   (List.concat (List.map fst res),
    List.concat (List.map snd res))
 
-(** Second pass : put reset expressions aside *)
-
-let norm_reset_eq (eq : k_equation) : (k_equation list * (ident * ann) list) =
-  match eq.keq_expr with
-  | [{ kexpr_desc = KE_app (f, es, { kexpr_desc = KE_ident _}) }] -> [eq], []
-  | [{ kexpr_desc = KE_app (f, es, er) } as e] ->
-    let y = Atom.fresh "_"
-    and (ty, (ck, _)) = List.hd er.kexpr_annot in
-    [{ keq_patt = [y]; keq_expr = [er]; keq_loc = dummy_loc };
-     { eq with keq_expr = [{ e with
-                             kexpr_desc = KE_app (f, es, { kexpr_desc = KE_ident y;
-                                                           kexpr_annot = er.kexpr_annot;
-                                                           kexpr_loc = dummy_loc })}]}],
-    [(y, (ty, ck))]
-  | _ -> [eq], []
-
-let norm_reset_eqs (eqs : k_equation list) =
-  let res = List.map norm_reset_eq eqs in
-  (List.concat (List.map fst res),
-   List.concat (List.map snd res))
-
-(** Third pass : initialize fbys with constant only, eliminate arrows *)
+(** Second pass : initialize fbys with constant only, eliminate arrows *)
 
 let rec is_constant e =
   match e.kexpr_desc with
@@ -203,31 +196,32 @@ let rec extract_constant e =
   | KE_when ([e], _, _) -> extract_constant e
   | _ -> failwith "Should not happen"
 
-let init_expr ck : k_expr =
+let init_expr er ck : k_expr =
   let annot = [(Tbool, (Cbase, None))] in
   { kexpr_desc = KE_fby
         ([Clockchecker.add_whens Tbool ck { kexpr_desc = KE_const (Cbool true);
                                             kexpr_annot = annot; kexpr_loc = dummy_loc }],
          [Clockchecker.add_whens Tbool ck { kexpr_desc = KE_const (Cbool false);
-                                            kexpr_annot = annot; kexpr_loc = dummy_loc }]);
+                                            kexpr_annot = annot; kexpr_loc = dummy_loc }],
+         er);
     kexpr_loc = dummy_loc; kexpr_annot = [(Tbool, (ck, None))] }
 
-let delay_expr e ty ck : k_expr =
+let delay_expr e er ty ck : k_expr =
   { kexpr_desc = KE_fby
         ([Clockchecker.add_whens Tbool ck { kexpr_desc = KE_const (Cint 0);
                                             kexpr_annot = [(ty, (Cbase, None))];
                                             kexpr_loc = dummy_loc }],
-         [e]);
+         [e], er);
     kexpr_annot = [(Tbool, (ck, None))]; kexpr_loc = dummy_loc }
 
 let norm_fby_eq (eq : k_equation) : (k_equation list * (ident * ann) list) =
   match eq.keq_expr with
-  | [{ kexpr_desc = KE_fby ([e0], [e1]) }] when is_constant e0 -> [eq], []
-  | [{ kexpr_desc = KE_fby ([e0], [e1]) } as e] ->
+  | [{ kexpr_desc = KE_fby ([e0], [e1], er) }] when is_constant e0 -> [eq], []
+  | [{ kexpr_desc = KE_fby ([e0], [e1], er) } as e] ->
     let (ty, (ck, _)) = List.hd e.kexpr_annot in
     let xinit = Atom.fresh "_" and px = Atom.fresh "_" in
-    [{ keq_patt = [xinit]; keq_expr = [init_expr ck]; keq_loc = dummy_loc };
-     { keq_patt = [px]; keq_expr = [delay_expr e1 ty ck]; keq_loc = dummy_loc };
+    [{ keq_patt = [xinit]; keq_expr = [init_expr er ck]; keq_loc = dummy_loc };
+     { keq_patt = [px]; keq_expr = [delay_expr e1 er ty ck]; keq_loc = dummy_loc };
      { eq with keq_expr = [{ kexpr_desc = KE_match ({ kexpr_desc = KE_ident xinit;
                                                       kexpr_annot = [(Tbool, (ck, None))];
                                                       kexpr_loc = dummy_loc },
@@ -238,10 +232,10 @@ let norm_fby_eq (eq : k_equation) : (k_equation list * (ident * ann) list) =
                              kexpr_annot = [(ty, (ck, None))];
                              kexpr_loc = dummy_loc }] }],
     [ (xinit, (Tbool, ck)); (px, (ty, ck)) ]
-  | [{ kexpr_desc = KE_arrow ([e0], [e1]) } as e] ->
+  | [{ kexpr_desc = KE_arrow ([e0], [e1], er) } as e] ->
     let (ty, (ck, _)) = List.hd e.kexpr_annot in
     let xinit = Atom.fresh "_" in
-    [{ keq_patt = [xinit]; keq_expr = [init_expr ck]; keq_loc = dummy_loc };
+    [{ keq_patt = [xinit]; keq_expr = [init_expr er ck]; keq_loc = dummy_loc };
      { eq with keq_expr = [{ kexpr_desc = KE_match ({ kexpr_desc = KE_ident xinit;
                                                       kexpr_annot = [(Tbool, (ck, None))];
                                                       kexpr_loc = dummy_loc },
@@ -323,8 +317,8 @@ let rec tr_cexp (e : k_expr) : n_cexpr =
 
 let tr_eq (e : k_equation) : n_equation =
   match e.keq_patt, (List.hd e.keq_expr).kexpr_desc with
-    | [x], KE_fby ([e0], [e]) when is_constant e0 ->
-      NQ_fby (x, extract_constant e0, tr_lexp e)
+    | [x], KE_fby ([e0], [e], { kexpr_desc = KE_ident r; kexpr_annot = [(_, (ckr, _))]}) when is_constant e0 ->
+      NQ_fby (x, extract_constant e0, tr_lexp e, r, ckr)
     | xs, KE_app (f, es, { kexpr_desc = KE_ident i; kexpr_annot = [(_, (ckr, _))] }) ->
       NQ_app (xs, f, tr_lexps es, i, (find_base_clock (clocks_of es)), ckr)
     | [x], _ ->
@@ -337,13 +331,12 @@ let tr_eqs = List.map tr_eq
 
 let norm_node (n : k_node) =
   let (eqs, vs1) = dist_eqs n.kn_equs in
-  let (eqs, vs2) = norm_reset_eqs eqs in
-  let (eqs, vs3) = norm_fby_eqs eqs in
+  let (eqs, vs2) = norm_fby_eqs eqs in
   let eqs = tr_eqs eqs in
   { nn_name = n.kn_name;
     nn_input = n.kn_input;
     nn_output = n.kn_output;
-    nn_local = n.kn_local@vs1@vs2@vs3;
+    nn_local = n.kn_local@vs1@vs2;
     nn_equs = eqs;
     nn_loc = n.kn_loc }
 

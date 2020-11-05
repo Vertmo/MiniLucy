@@ -178,18 +178,20 @@ let rec elab_expr ?(is_top=false) (nodes : (ident * CPMinils.p_node) list) vars 
     unify_sclock loc ck1 ck2;
     { kexpr_desc = KE_binop (op, e1', e2'); kexpr_annot = [(List.hd ty, (ck1, None))];
       kexpr_loc = loc }
-  | KE_fby (e0s, es) ->
-    let e0s' = elab_exprs nodes vars e0s and es' = elab_exprs nodes vars es in
+  | KE_fby (e0s, es, er) ->
+    let e0s' = elab_exprs nodes vars e0s and es' = elab_exprs nodes vars es
+    and er' = elab_expr nodes vars er in
     let ck0s = sclocks_of e0s' and cks = sclocks_of es' in
     List.iter2 (unify_sclock loc) ck0s cks;
-    { kexpr_desc = KE_fby (e0s', es');
+    { kexpr_desc = KE_fby (e0s', es', er');
       kexpr_annot = List.combine ty (List.map (fun ck -> (ck, None)) ck0s);
       kexpr_loc = loc }
-  | KE_arrow (e0s, es) ->
-    let e0s' = elab_exprs nodes vars e0s and es' = elab_exprs nodes vars es in
+  | KE_arrow (e0s, es, er) ->
+    let e0s' = elab_exprs nodes vars e0s and es' = elab_exprs nodes vars es
+    and er' = elab_expr nodes vars er in
     let ck0s = sclocks_of e0s' and cks = sclocks_of es' in
     List.iter2 (unify_sclock loc) ck0s cks;
-    { kexpr_desc = KE_arrow (e0s', es');
+    { kexpr_desc = KE_arrow (e0s', es', er');
       kexpr_annot = List.combine ty (List.map (fun ck -> (ck, None)) ck0s);
       kexpr_loc = loc }
   | KE_match (e, branches) ->
@@ -290,8 +292,10 @@ let rec freeze_expr vars (e : CEPMinils.k_expr) : CPMinils.k_expr =
     | KE_ident i -> KE_ident i
     | KE_unop (op, e1) -> KE_unop (op, freeze_expr vars e1)
     | KE_binop (op, e1, e2) -> KE_binop (op, freeze_expr vars e1, freeze_expr vars e2)
-    | KE_fby (e0s, es) -> KE_fby (freeze_exprs vars e0s, freeze_exprs vars es)
-    | KE_arrow (e0s, es) -> KE_arrow (freeze_exprs vars e0s, freeze_exprs vars es)
+    | KE_fby (e0s, es, er) ->
+      KE_fby (freeze_exprs vars e0s, freeze_exprs vars es, freeze_expr vars er)
+    | KE_arrow (e0s, es, er) ->
+      KE_arrow (freeze_exprs vars e0s, freeze_exprs vars es, freeze_expr vars er)
     | KE_match (e, branches) -> KE_match (freeze_expr vars e, freeze_branches vars branches)
     | KE_when (es, constr, ckid) -> KE_when (freeze_exprs vars es, constr, ckid)
     | KE_merge (ckid, branches) -> KE_merge (ckid, freeze_branches vars branches)

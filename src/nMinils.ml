@@ -59,15 +59,15 @@ and string_of_cexpr_desc = function
 
 type n_equation =
   | NQ_ident of ident * n_cexpr
-  | NQ_fby of ident * const * n_expr
+  | NQ_fby of ident * const * n_expr * ident * clock
   | NQ_app of ident list * ident * n_expr list * ident * clock * clock
 
 let string_of_equation = function
   | NQ_ident (id, e) ->
     Printf.sprintf "%s = %s" id (string_of_cexpr e)
-  | NQ_fby (id, c, e) ->
-    Printf.sprintf "%s = %s fby %s"
-      id (string_of_const c) (string_of_expr e)
+  | NQ_fby (id, c, e, r, _) ->
+    Printf.sprintf "%s = %s fby %s every %s"
+      id (string_of_const c) (string_of_expr e) r
   | NQ_app (ids, f, es, ever, _, _) ->
     Printf.sprintf "(%s) = %s(%s) every %s"
       (String.concat ", " ids) f

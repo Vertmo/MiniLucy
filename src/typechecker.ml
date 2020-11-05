@@ -22,8 +22,8 @@ let rec sort_expr (e : k_expr) : k_expr =
     | KE_ident id -> KE_ident id
     | KE_unop (op, e1) -> KE_unop (op, sort_expr e1)
     | KE_binop (op, e1, e2) -> KE_binop (op, sort_expr e1, sort_expr e2)
-    | KE_fby (e0, e) -> KE_fby (sort_exprs e0, sort_exprs e)
-    | KE_arrow (e0, e) -> KE_arrow (sort_exprs e0, sort_exprs e)
+    | KE_fby (e0, e, er) -> KE_fby (sort_exprs e0, sort_exprs e, sort_expr er)
+    | KE_arrow (e0, e, er) -> KE_arrow (sort_exprs e0, sort_exprs e, sort_expr er)
     (* | KE_pre e -> KE_fby (Cnil, sort_expr e) *)
     | KE_when (e, constr, clid) -> KE_when (sort_exprs e, constr, clid)
     | KE_match (e, es) ->
@@ -176,9 +176,10 @@ let rec elab_expr (nodes : (ident * TPMinils.p_node) list)
     { kexpr_desc = KE_binop (op, e1', e2');
       kexpr_annot = [type_op op [ty1;ty2] loc];
       kexpr_loc = loc }
-  | KE_fby (e0s, es) ->
+  | KE_fby (e0s, es, er) ->
     let e0s' = List.map (elab_expr nodes vars clocks) e0s
-    and es' = List.map (elab_expr nodes vars clocks) es in
+    and es' = List.map (elab_expr nodes vars clocks) es
+    and er' = elab_expr nodes vars clocks er in
 
     let tys0 = types_of e0s' and tys = types_of es' in
     if (tys0 <> tys)
@@ -188,10 +189,19 @@ let rec elab_expr (nodes : (ident * TPMinils.p_node) list)
               "Both sides of fby should have the same type, found %s and %s"
               (string_of_tys tys0) (string_of_tys tys),
             e.kexpr_loc));
-    { kexpr_desc = KE_fby(e0s', es'); kexpr_annot = tys0; kexpr_loc = loc }
-  | KE_arrow (e0s, es) ->
+    let tyr = er'.kexpr_annot in
+    if (tyr <> [Tbool])
+    then raise
+        (TypeError
+           (Printf.sprintf
+              "Reset expression of fby should have type bool, found %s"
+              (string_of_tys tyr),
+            e.kexpr_loc));
+    { kexpr_desc = KE_fby(e0s', es', er'); kexpr_annot = tys0; kexpr_loc = loc }
+  | KE_arrow (e0s, es, er) ->
     let e0s' = List.map (elab_expr nodes vars clocks) e0s
-    and es' = List.map (elab_expr nodes vars clocks) es in
+    and es' = List.map (elab_expr nodes vars clocks) es
+    and er' = elab_expr nodes vars clocks er in
 
     let tys0 = types_of e0s' and tys = types_of es' in
     if (tys0 <> tys)
@@ -201,7 +211,15 @@ let rec elab_expr (nodes : (ident * TPMinils.p_node) list)
               "Both sides of fby should have the same type, found %s and %s"
               (string_of_tys tys0) (string_of_tys tys),
             e.kexpr_loc));
-    { kexpr_desc = KE_arrow(e0s', es'); kexpr_annot = tys0; kexpr_loc = loc }
+    let tyr = er'.kexpr_annot in
+    if (tyr <> [Tbool])
+    then raise
+        (TypeError
+           (Printf.sprintf
+              "Reset expression of fby should have type bool, found %s"
+              (string_of_tys tyr),
+            e.kexpr_loc));
+    { kexpr_desc = KE_arrow(e0s', es', er'); kexpr_annot = tys0; kexpr_loc = loc }
   | KE_match (e, branches) ->
     let e' = elab_expr nodes vars clocks e in
     let clt = get_unary_type e'.kexpr_annot e.kexpr_loc in

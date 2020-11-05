@@ -91,28 +91,35 @@ let fusion clocks instrs =
 (** Translate an equation *)
 let translate_eq tys env = function
   | NQ_ident (id, e) ->
-    { env with s = (control tys env e.ncexpr_clock (translate_cexpr tys env id e))::env.s; }
-  | NQ_fby (x, c, e) ->
+    { env with s = env.s@[control tys env e.ncexpr_clock (translate_cexpr tys env id e)]; }
+  | NQ_fby (x, c, e, r, ckr) ->
     let e' = translate_expr env e in
     { env with si = (StAssign (x, Const c))::env.si;
-               s = (control tys env e.nexpr_clock (StAssign (x, e')))::env.s}
-  | NQ_app (ids, fid, es, everid, bck, ckr) ->
+               s = env.s@
+                   [control tys env ckr
+                      (Case
+                         (translate_ident env r,
+                          List.assoc r tys,
+                          [("True"), [StAssign (x, Const c)]]));
+                     control tys env e.nexpr_clock (StAssign (x, e'))] }
+  | NQ_app (ids, fid, es, r, bck, ckr) ->
     let es' = List.map (translate_expr env) es in
     let o = Atom.fresh ("_"^fid) in
     { env with si = (Reset o)::env.si;
                j = (o, fid)::env.j;
-               s = (control tys env bck (StepAssign (ids, o, es')))::
-                   (control tys env ckr
+               s = env.s@
+                   [control tys env ckr
                       (Case
-                         (translate_ident env everid,
-                          List.assoc everid tys,
-                          [("True", [Reset o])])))::env.s }
+                         (translate_ident env r,
+                          List.assoc r tys,
+                          [("True", [Reset o])]));
+                    control tys env bck (StepAssign (ids, o, es'))] }
 
 (** Collect the list of variables that need to be stored into memory
     They are the one declared using fby equations *)
 let collect_mem env = function
   | NQ_ident _ -> env
-  | NQ_fby (x, _, e) ->
+  | NQ_fby (x, _, e, _, _) ->
     { env with m = (x, e.nexpr_ty)::env.m;
                d = List.remove_assoc x env.d }
   | NQ_app _ -> env
@@ -134,9 +141,9 @@ let translate_node clocks outputs (n : n_node) : machine =
              List.sort_uniq (fun (v1, _) (v2, _) -> String.compare v1 v2) env.d,
              fusion clocks
                (List.stable_sort (fun i1 i2 ->
-                   let b1 = assign_state i1 and b2 = assign_state i2 in
+                   let b1 = updates_state i1 and b2 = updates_state i2 in
                    if b1 && not b2 then 1
-                   else if not b1 && b2 then -1 else 0) (List.rev env.s)); }
+                   else if not b1 && b2 then -1 else 0) env.s); }
 
 (** Translate the full file *)
 let translate_file (f : n_file) =

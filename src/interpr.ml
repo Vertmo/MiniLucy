@@ -31,18 +31,18 @@ let string_of_bottom_or_value = function
   | Val v -> string_of_sync_value v
 
 (** Association from name to value (inputs and outputs) *)
-module IdentMap = Map.Make(String)
-type env = sync_value IdentMap.t
+module Env = Map.Make(String)
+type env = sync_value Env.t
 
 let get_val_in_env env id =
-  try Val (IdentMap.find id env)
+  try Val (Env.find id env)
   with _ -> Bottom
 
 let adds_in_env (xs : ident list) (vals : bottom_or_value list) env =
   List.fold_left (fun env (id, v) ->
       match v with
       | Bottom -> env
-      | Val v -> IdentMap.add id v env) env (List.combine xs vals)
+      | Val v -> Env.add id v env) env (List.combine xs vals)
 
 (** Node state *)
 type exp_st =
@@ -306,13 +306,13 @@ and interp_eqs env eqs : (env * eq_st list) =
 and interp_node xs (st : node_st) : (bottom_or_value list * node_st) =
   let (ins, outs, locs, eqs) = st in
   (* Add the inputs to the env *)
-  let env = adds_in_env ins xs IdentMap.empty in
+  let env = adds_in_env ins xs Env.empty in
 
   (* Turn the crank until the env is filled, or we cant progress anymore
      Not efficient ! *)
   let rec compute_eqs env =
     let (env', eqs') = interp_eqs env eqs in
-    if IdentMap.cardinal env' = List.length (ins@locs@outs)
+    if Env.cardinal env' = List.length (ins@locs@outs)
     then interp_eqs env' eqs
     else if env' = env
     then (env', eqs')
@@ -339,12 +339,12 @@ let rec interp_clock env = function
   | Cbase -> true
   | Con (constr, ckid, ck') ->
     let b = interp_clock env ck' in
-    let v = IdentMap.find ckid env in
+    let v = Env.find ckid env in
     b && check_constr constr v
 
 let generate_rd_input (cls : Asttypes.clockdec list) inputs =
   let rec aux n ins =
-    let env = adds_in_env (List.map fst inputs) ins IdentMap.empty in
+    let env = adds_in_env (List.map fst inputs) ins Env.empty in
     match n with
     | 0 -> ins
     | _ ->
@@ -374,15 +374,15 @@ let run_node (f : k_file) (name : ident) k =
       let (outs, st') = interp_node ins st in
       let vs' = List.fold_left
           (fun vs ((id, _), v) ->
-             IdentMap.update id (fun vs -> match vs with
+             Env.update id (fun vs -> match vs with
                  | None -> Some [v]
                  | Some vs -> Some (v::vs)) vs)
           vs (List.combine (node.kn_input@node.kn_output) (ins@outs)) in
       aux (n-1) st' vs'
   in
-  let vs = (aux k init (IdentMap.empty)) in
+  let vs = (aux k init (Env.empty)) in
   print_endline (Printf.sprintf "First %d iterations:" k);
-  IdentMap.iter (fun id vs ->
+  Env.iter (fun id vs ->
       print_endline (Printf.sprintf "(%s, [%s])"
                        id (String.concat ";"
                              (List.map string_of_bottom_or_value (List.rev vs))))) vs

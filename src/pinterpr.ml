@@ -22,6 +22,7 @@ and eq_st =
 
 and instr_st =
   | StEq of eq_st
+  | StLet of (ident * exp_st * instr_st list)
   (* TODO *)
 
 and node_st =
@@ -147,11 +148,15 @@ and eq_init_state nodes (e : k_equation) : eq_st =
 and instr_init_state nodes (ins : p_instr) : instr_st =
   match ins.pinstr_desc with
   | Eq eq -> StEq (eq_init_state nodes eq)
+  | Let (id, _, e, instrs) ->
+    StLet (id, expr_init_state nodes e, instrs_init_state nodes instrs)
   | _ -> failwith "TODO"
+and instrs_init_state nodes =
+  List.map (instr_init_state nodes)
 
 (** Get the initial state for a node *)
 and node_init_state nodes (n : p_node) : node_st =
-  let ins = List.map (instr_init_state nodes) n.pn_instrs in
+  let ins = instrs_init_state nodes n.pn_instrs in
   (List.map fst n.pn_input, List.map fst n.pn_output, List.map (fun (id, _, _) -> id) n.pn_local, ins)
 
 let check_constr constr = function
@@ -268,6 +273,14 @@ and interp_instr env ins : (env * instr_st) =
   | StEq eq ->
     let (env', eq') = interp_eq env eq in
     env', StEq eq'
+  | StLet (id, e, instrs) ->
+    let (v, e') = interp_expr env e in
+    let env' = adds_in_env [id] [hd v] env in
+    let (env'', instrs') = interp_instrs env' instrs in
+    (* The bound variable should be removed from the env afterwards.
+       Typing should garantee that there is no issue (hopefully) *)
+    let env''' = Env.remove id env'' in
+    (env''', StLet (id, e', instrs'))
 
 and interp_instrs env eqs : (env * instr_st list) =
   let (env', instrs') =
@@ -281,13 +294,13 @@ and interp_instrs env eqs : (env * instr_st list) =
 and interp_node xs (st : node_st) : (bottom_or_value list * node_st) =
   let (ins, outs, locs, instrs) = st in
   (* Add the inputs to the env *)
-  let env = adds_in_env ins xs IdentMap.empty in
+  let env = adds_in_env ins xs Env.empty in
 
   (* Turn the crank until the env is filled, or we cant progress anymore
      Not efficient ! *)
   let rec compute_instrs env =
     let (env', instrs') = interp_instrs env instrs in
-    if IdentMap.cardinal env' = List.length (ins@locs@outs)
+    if Env.cardinal env' = List.length (ins@locs@outs)
     then interp_instrs env' instrs
     else if env' = env
     then (env', instrs')
@@ -313,15 +326,15 @@ let run_node (f : p_file) (name : ident) k =
       let (outs, st') = interp_node ins st in
       let vs' = List.fold_left
           (fun vs ((id, _), v) ->
-             IdentMap.update id (fun vs -> match vs with
+             Env.update id (fun vs -> match vs with
                  | None -> Some [v]
                  | Some vs -> Some (v::vs)) vs)
           vs (List.combine (node.pn_input@node.pn_output) (ins@outs)) in
       aux (n-1) st' vs'
   in
-  let vs = (aux k init (IdentMap.empty)) in
+  let vs = (aux k init (Env.empty)) in
   print_endline (Printf.sprintf "First %d iterations:" k);
-  IdentMap.iter (fun id vs ->
+  Env.iter (fun id vs ->
       print_endline (Printf.sprintf "(%s, [%s])"
                        id (String.concat ";"
                              (List.map string_of_bottom_or_value (List.rev vs))))) vs

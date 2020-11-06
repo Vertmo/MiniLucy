@@ -23,12 +23,12 @@ let
   z = if test_node(y,x) then 1 else 0;
 tel;
   
-node test_fby() returns (z : int);
+node test_fby(dummy : bool) returns (z : int);
 let
   z = 0 fby (z + (1 fby z));
 tel;
   
-node test_tuple() returns (i:int; b:bool; r:real);
+node test_tuple(dummy : bool) returns (i:int; b:bool; r:real);
 let
   (r, b, i) = (1.0, true, 42);
 tel;
@@ -45,11 +45,11 @@ tel;
   
 node test_every(b : bool) returns (e : int);
 let
-  e = test_fby() every b;
+  e = test_fby(false) every b;
 tel;
   
 node test_app() returns (i : int);
 var r:real; b:bool;
 let
-  (i, b, r) = test_tuple();
+  (i, b, r) = test_tuple(false);
 tel;

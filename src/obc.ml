@@ -23,7 +23,7 @@ type instr =
   | StepAssign of (ident list * ident * expr list)
   | Case of expr * ty * (constr * instr list) list
 
-let rec string_of_instr level ins = 
+let rec string_of_instr level ins =
   let indent = String.make (level*2) ' ' in
   match ins with
   | Assign (id, e) ->

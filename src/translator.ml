@@ -9,7 +9,9 @@ type compil_env =
     si : instr list; (* reset *)
     j : (ident * ident) list; (* instances *)
     d : p; (* local variables *)
-    s : instr list; (* step *) }
+    s : instr list; (* step *)
+    su : instr list; (* step, state update *)
+  }
 
 let translate_ident env id =
   if List.mem_assoc id env.m then StIdent id else Ident id
@@ -100,8 +102,8 @@ let translate_eq tys env = function
                       (Case
                          (translate_ident env r,
                           List.assoc r tys,
-                          [("True"), [StAssign (x, Const c)]]));
-                     control tys env e.nexpr_clock (StAssign (x, e'))] }
+                          [("True"), [StAssign (x, Const c)]]))];
+               su = env.su@[control tys env e.nexpr_clock (StAssign (x, e'))] }
   | NQ_app (ids, fid, es, r, bck, ckr) ->
     let es' = List.map (translate_expr env) es in
     let o = Atom.fresh ("_"^fid) in
@@ -129,7 +131,7 @@ let translate_node clocks outputs (n : n_node) : machine =
   let input = List.map (fun (id, (ty, _)) -> (id, ty)) n.nn_input
   and local = List.map (fun (id, (ty, _)) -> (id, ty)) n.nn_local
   and output = List.map (fun (id, (ty, _)) -> (id, ty)) n.nn_output in
-  let env = { m = []; si = []; j = []; d = local; s = [] } in
+  let env = { m = []; si = []; j = []; d = local; s = []; su = [] } in
   let env = List.fold_left collect_mem env n.nn_equs in
   let env = List.fold_left (translate_eq (input@local@output)) env n.nn_equs in
   { m_name = n.nn_name;
@@ -139,11 +141,8 @@ let translate_node clocks outputs (n : n_node) : machine =
     m_reset = env.si;
     m_step = input, output,
              List.sort_uniq (fun (v1, _) (v2, _) -> String.compare v1 v2) env.d,
-             fusion clocks
-               (List.stable_sort (fun i1 i2 ->
-                   let b1 = updates_state i1 and b2 = updates_state i2 in
-                   if b1 && not b2 then 1
-                   else if not b1 && b2 then -1 else 0) env.s); }
+             fusion clocks env.s@fusion clocks env.su;
+  }
 
 (** Translate the full file *)
 let translate_file (f : n_file) =

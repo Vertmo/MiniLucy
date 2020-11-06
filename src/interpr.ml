@@ -257,7 +257,7 @@ let rec interp_expr env st : (bottom_or_value list * exp_st) =
        and vps' =
          List.map2 (fun v1 vp -> match v1 with
              | Bottom | Val Absent -> vp
-            | Val Present v -> Some v) v1s vps in
+             | Val Present v -> Some v) v1s vps in
        vs, StFby (e0s', e1s', er', vps'))
   | StArrow (e0s, e1s, er, bs) ->
     let (v0s, e0s') = interp_exprs e0s

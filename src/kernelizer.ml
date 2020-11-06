@@ -332,7 +332,7 @@ let rec merge_reset_to_base (ctx : ctx) (e : k_expr) : k_expr =
                         kexpr_annot = [(Tbool, (Cbase, None))];
                         kexpr_loc = dummy_loc }])) constrs in
       let e' = { kexpr_desc = KE_merge (ckid, brs);
-                 kexpr_annot = [(Tbool, (ck, None))];
+                 kexpr_annot = [(Tbool, (ck', None))];
                  kexpr_loc = dummy_loc }
       in aux e' ck'
   in aux e ck

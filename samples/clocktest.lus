@@ -89,10 +89,10 @@ tel;
 --   (b2, z) = test_when(b1, c1) every b1;
 -- tel;
 
-node test_nary1(a : c1) returns (x : int when A(a));
-let
-  x = 1;
-tel;
+-- node test_nary1(a : c1) returns (x : int when A(a));
+-- let
+--   x = 1;
+-- tel;
 
 node test_merge_nary(a : c3) returns (x : int);
 let

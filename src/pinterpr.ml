@@ -371,6 +371,14 @@ let run_node (f : p_file) (name : ident) k =
 
 (*                          Comparing nodes                                   *)
 
+let string_of_ins ins =
+  Printf.sprintf "(%s)"
+    (String.concat ", " (List.map string_of_bottom_or_value ins))
+
+let string_of_ins_outs ins outs =
+  Printf.sprintf "%s -> %s"
+    (string_of_ins ins) (string_of_ins outs)
+
 open Kernelizer.CMinils
 
 (** Run the p_node and the k_node, and compare their outputs and local streams *)
@@ -389,10 +397,12 @@ let compare_nodes (fp : p_file) (fk : k_file) (name : ident) k =
       let (pouts, sp') = interp_node ins sp
       and (kouts, sk') = Interpr.interp_node ins sk in
       if pouts <> kouts
-      then (Printf.eprintf "Error in bisimulation of node %s\n" name; exit 1)
+      then (Printf.eprintf "Error in bisimulation of machine %s:\npnode:%s\nknode:%s\n"
+              name (string_of_ins_outs ins pouts) (string_of_ins_outs ins kouts);
+            exit 1)
       else aux (n-1) (sp', sk')
   in aux k (initp, initk)
 
 (** Compare all the nodes in p_file and k_file *)
 let compare_files (fp : p_file) (fk : k_file) =
-  List.iter (fun n -> compare_nodes fp fk n.pn_name 20) fp.pf_nodes
+  List.iter (fun n -> compare_nodes fp fk n.pn_name 50) fp.pf_nodes

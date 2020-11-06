@@ -106,14 +106,6 @@ let _ =
     exit 0
   );
 
-  (* (\* Let's interpr this a bit ! *\)
-   * match (!interpret_name) with
-   * | Some name ->
-   *   (\* Interpr.run_file file; *\)
-   *   Interpr.run_node file name !interpret_k;
-   *   exit 0;
-   * | None -> (); *)
-
   (* Normalize *)
   let nfile = Normalizer.norm_file file in
 
@@ -133,6 +125,10 @@ let _ =
 
   (* Translate *)
   let mfile = Translator.translate_file nfile in
+
+  (* We can check the translation against the original node *)
+  if !asserts then Obcinterpr.compare_files cfile mfile;
+
   if (step = Translate) then (
     print_endline (Obc.string_of_file mfile);
     exit 0

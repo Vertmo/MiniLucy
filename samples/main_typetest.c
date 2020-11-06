@@ -8,7 +8,7 @@ int main() {
   test_fby_reset(&mem1);
 
   for(int i = 0; i < 10; i++) {
-    test_fby_step(&mem1, &out1);
+    test_fby_step(0, &mem1, &out1);
     printf("%d\n", out1.z);
   }
   return 0;

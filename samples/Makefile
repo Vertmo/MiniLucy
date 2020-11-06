@@ -3,7 +3,7 @@ MINILUCY := ../minilucy.byte
 TARGETS := \
 	fulladder.elf bananas.elf heat.elf abro.elf \
 	clocktest.elf typetest.elf \
-	causalitytest.c translationtest.c uselib.elf \
+	causalitytest.c uselib.elf \
 	lettest.c resettest.elf switchtest.elf \
   automatatest.elf \
 	iotest.hex disptest.hex chrono.hex
@@ -16,8 +16,8 @@ all: $(TARGETS)
 uselib.c : lib.lus uselib.lus
 	$(MINILUCY) -asserts -o $@ $^
 
-%.c: %.lus
-	$(MINILUCY) -asserts -o $@ $^
+%.c: %.lus $(MINILUCY)
+	$(MINILUCY) -asserts -o $@ $<
 
 %.hex: %.lus
 	$(MINILUCY) -asserts -avr -o $@ $^

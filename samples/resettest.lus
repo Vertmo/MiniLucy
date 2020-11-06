@@ -5,7 +5,7 @@ let
   every r;
 tel;
   
-node test2() returns (y : int);
+node test2(dummy : bool) returns (y : int);
 let
   reset
     y = 0 fby (y + 1);
@@ -26,7 +26,7 @@ tel;
 node test3(b : bool) returns (y : int);
 let
   reset
-    y = test2();
+    y = test2(false);
   every (true when True(b));
 tel;
   

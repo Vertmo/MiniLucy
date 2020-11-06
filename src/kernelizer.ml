@@ -401,7 +401,7 @@ let rec reset_instr ctx (ins : p_instr) : p_instr =
         let id = Option.get (fst ckid) in
         let ctx' = { ctx with ckenv = Env.add id (List.map fst brs) ctx.ckenv } in
         Switch (reset_expr ctx x ck e,
-                List.map (fun (c, ins) -> (c, List.map (reset_instr' ctx' x ck) ins)) brs,
+                List.map (fun (c, ins) -> (c, List.map (reset_instr' ctx' x (Con (c, id, ck))) ins)) brs,
                 ckid)
       | _ -> invalid_arg "reset_instr'"
     in { ins with pinstr_desc = desc }
@@ -480,7 +480,7 @@ let rec switch_instr vars (ins : p_instr) : (p_instr list * (ident * ann) list) 
   match ins.pinstr_desc with
   | Eq eq -> [ins], []
   | Let (id, ann, e, instrs) ->
-    let (instrs', ys) = switch_instrs vars instrs in
+    let (instrs', ys) = switch_instrs ((id, ann)::vars) instrs in
     [{ ins with pinstr_desc = Let (id, ann, e, instrs')}], ys
   | Switch (e, brs, (ckid, defs)) ->
     let (ty, (ck, _)) = List.hd e.kexpr_annot in

@@ -1,3 +1,13 @@
+node auto_weird(b : bool) returns (x : int);
+let
+  let (u : int) = 1 in
+    automaton
+    | INC -> x = if b then 1 else 0;
+    | DEC -> x = -u;
+    end;
+  end;
+tel;
+
 node auto_simpl() returns (x : int);
 let
   automaton
@@ -81,16 +91,16 @@ let
   end;
 tel;
   
-node auto_last() returns (y : int);
-var last x : int = 0;
-let
-  automaton
-  | INC ->
-    x = (last x) + 1;
-    until x > 5 then DEC;
-  | DEC ->
-    x = (last x) - 1;
-    until x < -5 then INC;
-  end;
-  y = x;
-tel;
+-- node auto_last() returns (y : int);
+-- var last x : int = 0;
+-- let
+--   automaton
+--   | INC ->
+--     x = (last x) + 1;
+--     until x > 5 then DEC;
+--   | DEC ->
+--     x = (last x) - 1;
+--     until x < -5 then INC;
+--   end;
+--   y = x;
+-- tel;

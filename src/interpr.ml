@@ -44,6 +44,8 @@ let adds_in_env (xs : ident list) (vals : bottom_or_value list) env =
       | Bottom -> env
       | Val v -> Env.add id v env) env (List.combine xs vals)
 
+let env_of_list l = Env.of_seq (List.to_seq l)
+
 (** Node state *)
 type exp_st =
   | StConst of const
@@ -80,10 +82,8 @@ let apply_unary op v =
 
 let lift_unary op v =
   match v with
-  | Val v ->
-    Val (match v with
-        | Absent -> Absent
-        | Present v -> Present (apply_unary op v))
+  | Val Absent -> Val Absent
+  | Val (Present v) -> Val (Present (apply_unary op v))
   | _ -> Bottom
 
 (** Apply comparator *)
@@ -133,14 +133,9 @@ let apply_binary op v1 v2 =
 
 let lift_binary op v1 v2 =
   match (v1, v2) with
-  | Val v1, Val v2 ->
-    Val (match (v1, v2) with
-        | (Absent, Absent) -> Absent
-        | (Present v1, Present v2) ->
-          Present (apply_binary op v1 v2)
-        | _ -> invalid_arg
-                 (Printf.sprintf "lift_binary: %s %s %s"
-                    (string_of_op op) (string_of_sync_value v1) (string_of_sync_value v2)))
+  | Val Absent, Val Absent -> Val Absent
+  | Val (Present v1), Val (Present v2) ->
+    Val (Present (apply_binary op v1 v2))
   | _ -> Bottom
 
 (** Get the initial state for an expression *)

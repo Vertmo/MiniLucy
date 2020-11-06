@@ -20,95 +20,18 @@ type exp_st =
 and eq_st =
   ident list * exp_st list
 
+and unless_st = exp_st * constr * bool
+and until_st = exp_st * constr * bool
+
 and instr_st =
   | StEq of eq_st
   | StLet of (ident * exp_st * instr_st list)
   | StReset of (instr_st list * exp_st)
   | StSwitch of (exp_st * (constr * instr_st list) list * ident)
-  (* TODO *)
+  | StAutomaton of (ident * (unless_st list * instr_st list * until_st list) Env.t * ident * (ident * bool))
 
 and node_st =
   ident list * ident list * ident list * instr_st list
-
-let value_of_const = function
-  | Cbool b -> Bool b
-  | Cint i -> Int i
-  | Creal r -> Real r
-  | Cconstr (c, _) -> Constr c
-
-(** Apply a unary operator *)
-let apply_unary op v =
-  match (op, v) with
-  | Op_not, Bool b -> Bool (not b)
-  | Op_not, Int i -> Int (lnot i)
-  | Op_sub, Int i -> Int (-i)
-  | Op_sub, Real r -> Real (-.r)
-  | _,_ -> failwith "Invalid unary op"
-
-let lift_unary op v =
-  match v with
-  | Val v ->
-    Val (match v with
-        | Absent -> Absent
-        | Present v -> Present (apply_unary op v))
-  | _ -> Bottom
-
-(** Apply comparator *)
-let apply_comp comp vl vr =
-  match comp with
-  | Op_eq -> vl = vr
-  | Op_neq -> vl <> vr
-  | Op_lt -> vl < vr
-  | Op_le -> vl <= vr
-  | Op_gt -> vl > vr
-  | Op_ge -> vl >= vr
-  | _ -> invalid_arg "apply_comp"
-
-(** Apply arithmetic operator *)
-let apply_arith fint ffloat el er =
-  match el, er with
-  | Int il, Int ir -> Int (fint il ir)
-  | Real fl, Real fr -> Real (ffloat fl fr)
-  | _, _ -> invalid_arg "apply_arith"
-
-(** Apply logic operator *)
-let apply_logic fbool fint el er =
-  match el, er with
-  | Bool bl, Bool br -> Bool (fbool bl br)
-  | Int il, Int ir -> Int (fint il ir)
-  | _, _ -> invalid_arg "apply_logic"
-
-(** Apply a binary operator *)
-let apply_binary op v1 v2 =
-  match op with
-  | Op_add -> apply_arith (+) (+.) v1 v2
-  | Op_sub -> apply_arith (-) (-.) v1 v2
-  | Op_mul -> apply_arith ( * ) ( *. ) v1 v2
-  | Op_div -> apply_arith (/) (/.) v1 v2
-  | Op_mod -> apply_arith (mod) (mod_float) v1 v2
-  | Op_and -> apply_logic (&&) (land) v1 v2
-  | Op_or -> apply_logic (||) (lor) v1 v2
-  | Op_xor ->
-    apply_logic (fun b1 b2 -> (b1 && not b2 || not b1 && b2)) (lxor) v1 v2
-  | Op_eq | Op_neq | Op_lt | Op_le | Op_gt | Op_ge ->
-    (match v1, v2 with
-     | Bool b1, Bool b2 -> Bool (apply_comp op b1 b2)
-     | Int i1, Int i2 -> Bool (apply_comp op i1 i2)
-     | Real f1, Real f2 -> Bool (apply_comp op f1 f2)
-     | _, _ -> invalid_arg "apply_binary")
-  | _ -> invalid_arg "apply_binary"
-
-let lift_binary op v1 v2 =
-  match (v1, v2) with
-  | Val v1, Val v2 ->
-    Val (match (v1, v2) with
-        | (Absent, Absent) -> Absent
-        | (Present v1, Present v2) ->
-          Present (apply_binary op v1 v2)
-        | _ -> invalid_arg
-                 (Printf.sprintf "lift_binary: %s %s %s"
-                    (string_of_op op) (string_of_sync_value v1) (string_of_sync_value v2)))
-  | _ -> Bottom
 
 (** Get the initial state for an expression *)
 let rec expr_init_state nodes (e : k_expr) : exp_st =
@@ -160,11 +83,23 @@ and instr_init_state nodes (ins : p_instr) : instr_st =
     StSwitch (expr_init_state nodes e,
               insbrs_init_state nodes brs,
               Option.get ckid)
-  | _ -> failwith "TODO"
+  | Automaton (brs, (ckid, _, _)) ->
+    let (initid, _ ,_ ,_) = List.hd brs in
+    StAutomaton
+      (initid,
+       env_of_list
+         (List.map (fun (c, unl, ins, unt) ->
+              (c,
+               (un_init_state nodes unl,
+                instrs_init_state nodes ins,
+                un_init_state nodes unt))) brs),
+       Option.get ckid,
+       (initid, false))
 and instrs_init_state nodes =
   List.map (instr_init_state nodes)
 and insbrs_init_state nodes =
   List.map (fun (c, instrs) -> (c, instrs_init_state nodes instrs))
+and un_init_state nodes = List.map (fun (e, c, b) -> (expr_init_state nodes e, c, b))
 
 (** Get the initial state for a node *)
 and node_init_state nodes (n : p_node) : node_st =
@@ -301,8 +236,9 @@ and interp_instr env rst ins : (env * instr_st) =
     let (env', eq') = interp_eq env rst eq in
     env', StEq eq'
   | StLet (id, e, instrs) ->
-    let (v, e') = interp_expr env rst e in
+    let (v, _) = interp_expr env rst e in
     let env' = adds_in_env [id] [hd v] env in
+    let (v, e') = interp_expr env' rst e in (* needed because a def could be recursive *)
     let (env'', instrs') = interp_instrs env' rst instrs in
     (* The bound variable should be removed from the env afterwards.
        Typing should garantee that there is no issue (hopefully) *)
@@ -320,11 +256,41 @@ and interp_instr env rst ins : (env * instr_st) =
      | _ -> env, StReset (instrs, e)) (* propagation of bottom or type error *)
   | StSwitch (e, brs, ckid) ->
     let (v, e') = interp_expr env rst e in
-    match (hd v) with
-    | Val (Present v) when is_constr v ->
-      let (env', brs') = interp_brs (Env.add ckid (Present v) env) rst brs v in
-      env', StSwitch (e', brs', ckid)
-    | v -> env, StSwitch (e', brs, ckid)
+    (match (hd v) with
+     | Val (Present v) when is_constr v ->
+       let (env', brs') = interp_brs (Env.add ckid (Present v) env) rst brs v in
+       env', StSwitch (e', brs', ckid)
+     | v -> env, StSwitch (e', brs, ckid))
+  | StAutomaton (initid, brs, autid, (brid, doreset)) ->
+    (* Maybe the automaton itself is reset *)
+    let (brid, doreset) =
+      if rst
+      then (initid, true)
+      else (brid, doreset) in
+
+    (* First, interpret unless to see if there is a strong preemption *)
+    let (unl, ins, unt) = Env.find brid brs in
+    let env = Env.add autid (Present (Constr brid)) env in
+    let (newbr, unl') = interp_un env (rst||doreset) (brid, doreset) unl in
+    let brs = Env.add brid (unl', ins, unt) brs in
+
+    match newbr with
+    | None ->
+      env, StAutomaton (initid, brs, autid, (brid, doreset))
+    | Some (brid, doreset) ->
+      (* Now, actually interpret the branch *)
+      let (unl, ins, unt) = Env.find brid brs in
+      let env = Env.add autid (Present (Constr brid)) env in
+      let env, ins' = interp_instrs env (rst||doreset) ins in
+
+      (* Weak preemptions *)
+      let (newbr, unt') = interp_un env (rst||doreset) (brid, false) unt in
+      let brs = Env.add brid (unl, ins', unt') brs in
+      let env = Env.remove autid env in
+      match newbr with
+      | None -> env, StAutomaton (initid, brs, autid, (brid, doreset))
+      | Some (brid, doreset) ->
+        env, StAutomaton (initid, brs, autid, (brid, doreset))
 
 and interp_instrs env rst eqs : (env * instr_st list) =
   let (env', instrs') =
@@ -343,6 +309,19 @@ and interp_brs env rst brs constr : (env * (constr * instr_st list) list) =
         aux (env', (c, ins')::brs') tl
       else aux (env, (c, ins)::brs') tl
   in aux (env, []) brs
+
+and interp_un env rst def un =
+  let rec aux = function
+    | [] -> (Some def, [])
+    | (e, c, b)::tl ->
+      let (res, tl') = aux tl in
+      let (v, e') = interp_expr env rst e in
+      let un' = (e', c, b)::tl' in
+      match (bot_or_value_to_bool (hd v)) with
+      | None -> (None, un')
+      | Some true -> (Some (c, b), un')
+      | Some false -> (res, un')
+  in aux un
 
 (** Get the delays for a node *)
 and interp_node xs (st : node_st) : (bottom_or_value list * node_st) =

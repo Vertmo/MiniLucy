@@ -24,6 +24,7 @@ and instr_st =
   | StEq of eq_st
   | StLet of (ident * exp_st * instr_st list)
   | StReset of (instr_st list * exp_st)
+  | StSwitch of (exp_st * (constr * instr_st list) list * ident)
   (* TODO *)
 
 and node_st =
@@ -155,9 +156,15 @@ and instr_init_state nodes (ins : p_instr) : instr_st =
     StLet (id, expr_init_state nodes e, instrs_init_state nodes instrs)
   | Reset (instrs, e) ->
     StReset (instrs_init_state nodes instrs, expr_init_state nodes e)
+  | Switch (e, brs, (ckid, _)) ->
+    StSwitch (expr_init_state nodes e,
+              insbrs_init_state nodes brs,
+              Option.get ckid)
   | _ -> failwith "TODO"
 and instrs_init_state nodes =
   List.map (instr_init_state nodes)
+and insbrs_init_state nodes =
+  List.map (fun (c, instrs) -> (c, instrs_init_state nodes instrs))
 
 (** Get the initial state for a node *)
 and node_init_state nodes (n : p_node) : node_st =
@@ -303,14 +310,21 @@ and interp_instr env rst ins : (env * instr_st) =
     (env''', StLet (id, e', instrs'))
   | StReset (instrs, e) ->
     let (v, e') = interp_expr env rst e in
-    match hd v with
-    | Val Absent | Val (Present (Bool false)) ->
-      let (env', instrs') = interp_instrs env rst instrs in
-      env', StReset (instrs', e')
-    | Val (Present (Bool true)) ->
-      let (env', instrs') = interp_instrs env true instrs in
-      env', StReset (instrs', e')
-    | _ -> env, StReset (instrs, e) (* propagation of bottom or type error *)
+    (match hd v with
+     | Val Absent | Val (Present (Bool false)) ->
+       let (env', instrs') = interp_instrs env rst instrs in
+       env', StReset (instrs', e')
+     | Val (Present (Bool true)) ->
+       let (env', instrs') = interp_instrs env true instrs in
+       env', StReset (instrs', e')
+     | _ -> env, StReset (instrs, e)) (* propagation of bottom or type error *)
+  | StSwitch (e, brs, ckid) ->
+    let (v, e') = interp_expr env rst e in
+    match (hd v) with
+    | Val (Present v) when is_constr v ->
+      let (env', brs') = interp_brs (Env.add ckid (Present v) env) rst brs v in
+      env', StSwitch (e', brs', ckid)
+    | v -> env, StSwitch (e', brs, ckid)
 
 and interp_instrs env rst eqs : (env * instr_st list) =
   let (env', instrs') =
@@ -319,6 +333,16 @@ and interp_instrs env rst eqs : (env * instr_st list) =
         (env', st'::sts)
       ) (env, []) eqs
   in (env', List.rev instrs')
+
+and interp_brs env rst brs constr : (env * (constr * instr_st list) list) =
+  let rec aux (env, brs') = function
+    | [] -> env, List.rev brs'
+    | (c, ins)::tl ->
+      if check_constr c (Present constr) then
+        let (env', ins') = interp_instrs env rst ins in
+        aux (env', (c, ins')::brs') tl
+      else aux (env, (c, ins)::brs') tl
+  in aux (env, []) brs
 
 (** Get the delays for a node *)
 and interp_node xs (st : node_st) : (bottom_or_value list * node_st) =

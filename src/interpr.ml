@@ -194,6 +194,10 @@ let check_constr constr = function
   | Present (Bool false) -> constr = "False"
   | _ -> invalid_arg "check_constr"
 
+let is_constr = function
+  | Constr _ | Bool _ -> true
+  | _ -> false
+
 let find_branch v n vs =
   match v with
   | Bottom -> List.init n (fun _ -> Bottom)

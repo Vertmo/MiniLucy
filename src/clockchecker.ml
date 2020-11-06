@@ -455,9 +455,8 @@ let elab_node (nodes : (ident * CPMinils.p_node) list) (n : p_node) : CPMinils.p
                         n.pn_loc)) in
 
   (* elab instructions *)
-  let vars' = List.map (fun (id, ck) -> (id, sclock_of_clock ck)) vars
-  and bck = Svar (ref (UnknownCk (Atom.fresh "_"))) in
-  let instrs' = elab_instrs nodes vars' bck false n.pn_instrs in
+  let vars' = List.map (fun (id, ck) -> (id, sclock_of_clock ck)) vars in
+  let instrs' = elab_instrs nodes vars' Sbase false n.pn_instrs in
 
   { pn_name = n.pn_name;
     pn_input = (List.map (fun (id, (ty, _)) -> (id, (ty, List.assoc id vars))) n.pn_input);

@@ -16,6 +16,7 @@ type exp_st =
   | StWhen of exp_st list * constr * ident
   | StMerge of ident * (ident * exp_st list) list
   | StApp of node_st * exp_st list * exp_st * node_st
+  | StLast of ident
 
 and eq_st =
   ident list * exp_st list
@@ -31,7 +32,7 @@ and instr_st =
   | StAutomaton of (ident * (unless_st list * instr_st list * until_st list) Env.t * ident * (ident * bool))
 
 and node_st =
-  ident list * ident list * ident list * instr_st list
+  ident list * ident list * ident list * instr_st list * (ident * value) list
 
 (** Get the initial state for an expression *)
 let rec expr_init_state nodes (e : k_expr) : exp_st =
@@ -64,7 +65,7 @@ let rec expr_init_state nodes (e : k_expr) : exp_st =
     StApp (init,
            exprs_init_state nodes es, expr_init_state nodes er,
            init)
-  | KE_last _ -> invalid_arg "expr_init_state"
+  | KE_last id -> StLast id
 and exprs_init_state nodes = List.map (expr_init_state nodes)
 and brs_init_state nodes = List.map (fun (id, es) -> (id, exprs_init_state nodes es))
 
@@ -104,7 +105,15 @@ and un_init_state nodes = List.map (fun (e, c, b) -> (expr_init_state nodes e, c
 (** Get the initial state for a node *)
 and node_init_state nodes (n : p_node) : node_st =
   let ins = instrs_init_state nodes n.pn_instrs in
-  (List.map fst n.pn_input, List.map fst n.pn_output, List.map (fun (id, _, _) -> id) n.pn_local, ins)
+  (List.map fst n.pn_input,
+   List.map fst n.pn_output,
+   List.map (fun (id, _, _) -> id) n.pn_local,
+   ins,
+   List.filter_map
+     (fun (id, _, init) ->
+        match init with
+        | None -> None
+        | Some c -> Some (id, value_of_const c)) n.pn_local)
 
 let check_constr constr = function
   | Absent -> false
@@ -138,10 +147,10 @@ let hd l =
   | _ -> Bottom
 
 (** Get the values for an expression *)
-let rec interp_expr env rst st : (bottom_or_value list * exp_st) =
-  let interp_expr = interp_expr env rst
-  and interp_exprs = interp_exprs env rst
-  and interp_branches = interp_branches env rst in
+let rec interp_expr lasts env rst st : (bottom_or_value list * exp_st) =
+  let interp_expr = interp_expr lasts env rst
+  and interp_exprs = interp_exprs lasts env rst
+  and interp_branches = interp_branches lasts env rst in
   match st with
   | StConst c -> [Val (Present (value_of_const c))], StConst c
   | StIdent id -> [get_val_in_env env id], st
@@ -203,62 +212,66 @@ let rec interp_expr env rst st : (bottom_or_value list * exp_st) =
   | StApp (init_st, es, er, st) ->
     let (xs, es') = interp_exprs es
     and (r, er') = interp_expr er in
-    let numstreams = List.length (match st with (_, outs, _, _) -> outs) in
-    match (bot_or_value_to_bool (hd r)) with (* reset must be calculated for us to compute the node *)
-    | None -> (List.init numstreams (fun _ -> Bottom), StApp (init_st, es', er', st))
-    | Some b ->
-      (* Treat reset *)
-      let st' = if b || rst then init_st else st in
-      (* Only execute the node when at least one input is present *)
-      let b = List.exists (fun v -> match v with Val (Present _) -> true | _ -> false) xs in
-      let (ys, st'') =
-        if b then (interp_node xs st')
-        else (List.init numstreams (fun _ -> Val Absent), st') in
-      ys, StApp (init_st, es', er', st'')
-and interp_exprs env rst es =
-  let vst = List.map (interp_expr env rst) es in
+    let numstreams = List.length (match st with (_, outs, _, _, _) -> outs) in
+    (match (bot_or_value_to_bool (hd r)) with (* reset must be calculated for us to compute the node *)
+     | None -> (List.init numstreams (fun _ -> Bottom), StApp (init_st, es', er', st))
+     | Some b ->
+       (* Treat reset *)
+       let st' = if b || rst then init_st else st in
+       (* Only execute the node when at least one input is present *)
+       let b = List.exists (fun v -> match v with Val (Present _) -> true | _ -> false) xs in
+       let (ys, st'') =
+         if b then (interp_node xs st')
+         else (List.init numstreams (fun _ -> Val Absent), st') in
+       ys, StApp (init_st, es', er', st''))
+  | StLast id ->
+    let v = Env.find id lasts in (* this only works if all lasts are clocked on base *)
+    [Val (Present v)], StLast id
+
+and interp_exprs lasts env rst es =
+  let vst = List.map (interp_expr lasts env rst) es in
   List.concat (List.map fst vst), List.map snd vst
-and interp_branches env rst brs =
+and interp_branches lasts env rst brs =
   let brs = List.map (fun (c, es) ->
-      let (vs, es') = interp_exprs env rst es in
+      let (vs, es') = interp_exprs lasts env rst es in
       (c, vs), (c, es')) brs in
   List.map fst brs, List.map snd brs
 
 (** Get the values for an equation *)
-and interp_eq env rst (xs, es) : (env * eq_st) =
-  let (vals, es') = interp_exprs env rst es in
+and interp_eq lasts env rst (xs, es) : (env * eq_st) =
+  let (vals, es') = interp_exprs lasts env rst es in
   let env' = adds_in_env xs vals env in
   env', (xs, es')
 
-and interp_instr env rst ins : (env * instr_st) =
+and interp_instr lasts env rst ins : (env * instr_st) =
   match ins with
   | StEq eq ->
-    let (env', eq') = interp_eq env rst eq in
+    let (env', eq') = interp_eq lasts env rst eq in
     env', StEq eq'
   | StLet (id, e, instrs) ->
-    let (v, _) = interp_expr env rst e in
+    let (v, _) = interp_expr lasts env rst e in
     let env' = adds_in_env [id] [hd v] env in
-    let (v, e') = interp_expr env' rst e in (* needed because a def could be recursive *)
-    let (env'', instrs') = interp_instrs env' rst instrs in
+    let (v, e') = interp_expr lasts env' rst e in (* needed because a def could be recursive *)
+    let (env'', instrs') = interp_instrs lasts env' rst instrs in
     (* The bound variable should be removed from the env afterwards.
        Typing should garantee that there is no issue (hopefully) *)
     let env''' = Env.remove id env'' in
     (env''', StLet (id, e', instrs'))
   | StReset (instrs, e) ->
-    let (v, e') = interp_expr env rst e in
+    let (v, e') = interp_expr lasts env rst e in
     (match hd v with
      | Val Absent | Val (Present (Bool false)) ->
-       let (env', instrs') = interp_instrs env rst instrs in
+       let (env', instrs') = interp_instrs lasts env rst instrs in
        env', StReset (instrs', e')
      | Val (Present (Bool true)) ->
-       let (env', instrs') = interp_instrs env true instrs in
+       let (env', instrs') = interp_instrs lasts env true instrs in
        env', StReset (instrs', e')
      | _ -> env, StReset (instrs, e)) (* propagation of bottom or type error *)
   | StSwitch (e, brs, ckid) ->
-    let (v, e') = interp_expr env rst e in
+    let (v, e') = interp_expr lasts env rst e in
     (match (hd v) with
      | Val (Present v) when is_constr v ->
-       let (env', brs') = interp_brs (Env.add ckid (Present v) env) rst brs v in
+       let (env', brs') = interp_brs lasts (Env.add ckid (Present v) env) rst brs v in
        env', StSwitch (e', brs', ckid)
      | v -> env, StSwitch (e', brs, ckid))
   | StAutomaton (initid, brs, autid, (brid, doreset)) ->
@@ -271,7 +284,7 @@ and interp_instr env rst ins : (env * instr_st) =
     (* First, interpret unless to see if there is a strong preemption *)
     let (unl, ins, unt) = Env.find brid brs in
     let env = Env.add autid (Present (Constr brid)) env in
-    let (newbr, unl') = interp_un env (rst||doreset) (brid, doreset) unl in
+    let (newbr, unl') = interp_un lasts env (rst||doreset) (brid, doreset) unl in
     let brs = Env.add brid (unl', ins, unt) brs in
 
     match newbr with
@@ -281,10 +294,10 @@ and interp_instr env rst ins : (env * instr_st) =
       (* Now, actually interpret the branch *)
       let (unl, ins, unt) = Env.find brid brs in
       let env = Env.add autid (Present (Constr brid)) env in
-      let env, ins' = interp_instrs env (rst||doreset) ins in
+      let env, ins' = interp_instrs lasts env (rst||doreset) ins in
 
       (* Weak preemptions *)
-      let (newbr, unt') = interp_un env (rst||doreset) (brid, false) unt in
+      let (newbr, unt') = interp_un lasts env (rst||doreset) (brid, false) unt in
       let brs = Env.add brid (unl, ins', unt') brs in
       let env = Env.remove autid env in
       match newbr with
@@ -292,30 +305,30 @@ and interp_instr env rst ins : (env * instr_st) =
       | Some (brid, doreset) ->
         env, StAutomaton (initid, brs, autid, (brid, doreset))
 
-and interp_instrs env rst eqs : (env * instr_st list) =
+and interp_instrs lasts env rst eqs : (env * instr_st list) =
   let (env', instrs') =
     List.fold_left (fun (env, sts) st ->
-        let (env', st') = interp_instr env rst st in
+        let (env', st') = interp_instr lasts env rst st in
         (env', st'::sts)
       ) (env, []) eqs
   in (env', List.rev instrs')
 
-and interp_brs env rst brs constr : (env * (constr * instr_st list) list) =
+and interp_brs lasts env rst brs constr : (env * (constr * instr_st list) list) =
   let rec aux (env, brs') = function
     | [] -> env, List.rev brs'
     | (c, ins)::tl ->
       if check_constr c (Present constr) then
-        let (env', ins') = interp_instrs env rst ins in
+        let (env', ins') = interp_instrs lasts env rst ins in
         aux (env', (c, ins')::brs') tl
       else aux (env, (c, ins)::brs') tl
   in aux (env, []) brs
 
-and interp_un env rst def un =
+and interp_un lasts env rst def un =
   let rec aux = function
     | [] -> (Some def, [])
     | (e, c, b)::tl ->
       let (res, tl') = aux tl in
-      let (v, e') = interp_expr env rst e in
+      let (v, e') = interp_expr lasts env rst e in
       let un' = (e', c, b)::tl' in
       match (bot_or_value_to_bool (hd v)) with
       | None -> (None, un')
@@ -325,23 +338,29 @@ and interp_un env rst def un =
 
 (** Get the delays for a node *)
 and interp_node xs (st : node_st) : (bottom_or_value list * node_st) =
-  let (ins, outs, locs, instrs) = st in
+  let (ins, outs, locs, instrs, lasts) = st in
+  let lenv = env_of_list lasts in
   (* Add the inputs to the env *)
   let env = adds_in_env ins xs Env.empty in
 
   (* Turn the crank until the env is filled, or we cant progress anymore
      Not efficient ! *)
   let rec compute_instrs env =
-    let (env', instrs') = interp_instrs env false instrs in
+    let (env', instrs') = interp_instrs lenv env false instrs in
     if Env.cardinal env' = List.length (ins@locs@outs)
-    then interp_instrs env' false instrs
+    then interp_instrs lenv env' false instrs
     else if env' = env
     then (env', instrs')
     else compute_instrs env'
   in
   let (env, eqs') = compute_instrs env in
   List.map (fun id -> get_val_in_env env id) outs,
-  (ins, outs, locs, eqs')
+  let lasts = List.map
+      (fun (id, v) ->
+         match get_val_in_env env id with
+         | Val (Present v) -> (id, v)
+         | _ -> (id, v)) lasts in
+  (ins, outs, locs, eqs', lasts)
 
 (*                          Running the interpreter                          *)
 

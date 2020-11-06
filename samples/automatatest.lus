@@ -91,16 +91,16 @@ let
   end;
 tel;
   
--- node auto_last() returns (y : int);
--- var last x : int = 0;
--- let
---   automaton
---   | INC ->
---     x = (last x) + 1;
---     until x > 5 then DEC;
---   | DEC ->
---     x = (last x) - 1;
---     until x < -5 then INC;
---   end;
---   y = x;
--- tel;
+node auto_last() returns (y : int);
+var last x : int = 0;
+let
+  automaton
+  | INC ->
+    x = (last x) + 1;
+    until x > 5 then DEC;
+  | DEC ->
+    x = (last x) - 1;
+    until x < -5 then INC;
+  end;
+  y = x;
+tel;

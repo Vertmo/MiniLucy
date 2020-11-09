@@ -3,38 +3,60 @@ let
   rising = e and (not (true fby e));
 tel;
 
-node main(StSt : bool; Rst : bool) returns (disp_1 : int; disp_2 : int);
-var s : int; m : int; run : bool;
+node chrono(StSt : bool; Rst : bool) returns (disp_1 : int; disp_2 : int);
+var last s : int = 0; last m : int = 0; run : bool;
 let
   automaton
   | CHRONO ->
     automaton
     | STOP ->
-      unless rising_edge(StSt) continue STOP;
-      s = 0 fby s;
-      m = 0 fby m;
+      unless StSt continue START;
+      s = last s;
+      m = last m;
       run = false;
     | START ->
-      unless rising_edge(StSt) continue STOP;
+      unless StSt continue STOP;
       let (d : int) = ((0 fby d) + 1) mod 100 in
         s = if (d < (0 fby d)) 
-            then (((0 fby s) + 1) mod 60)
-            else (0 fby s);
-        m = if (s < (0 fby s))
-            then (((0 fby m) + 1) mod 60)
-            else (0 fby m);
+            then ((last s + 1) mod 60)
+            else (last s);
+        m = if (s < (last s))
+            then ((last m + 1) mod 60)
+            else (last m);
         run = true;
       end;
     end;
+    until Rst then CHRONO;
   end;
   automaton
   | TIME ->
     disp_1 = s;
     disp_2 = m;
-    until rising_edge(Rst) and run then LAP;
+    until Rst and run then LAP;
   | LAP ->
     disp_1 = s fby disp_1;
     disp_2 = m fby disp_2;
-    until rising_edge(Rst) then TIME;
+    until Rst then TIME;
   end;
 tel;
+
+(* AVR compilation *)
+node main(StSt : bool; Rst : bool) returns (disp_1, disp_2 : int);
+let (disp_1, disp_2) = chrono(rising_edge(StSt), rising_edge(Rst));
+tel
+
+(* Test *)
+node counter(n : int) returns (c : bool)
+var cpt : int;
+let
+  cpt = 0 fby (cpt + 1);
+  c = (cpt >= n);
+tel
+  
+node test(d : bool) returns (disp_1, disp_2 : int)
+var StSt, Rst : bool;
+let
+  StSt = true -> counter(200) every (false fby StSt);
+  Rst = false -> counter(500) every (false fby Rst);
+  (disp_1, disp_2) = chrono(StSt, Rst);
+tel

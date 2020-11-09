@@ -1,0 +1,39 @@
+node and_gate(x, y : bool) returns (z : bool)
+let z = if x then y else false;
+tel
+  
+node or_gate(x, y : bool) returns (z : bool)
+let z = if x then true else y;
+tel
+  
+node arbiter(request, pass_in, token_in : bool)
+returns (grant, pass_out, token_out : bool)
+var o : bool;
+let
+  grant = and_gate(request, o);
+  pass_out = and_gate(not request, o);
+  o = or_gate(pass_in, token_in);
+  token_out = false fby token_in;
+tel
+  
+node arbiter_three(request1, request2, request3 : bool) returns (grant1, grant2, grant3 : bool)
+var pass_out1,
+    pass_out2,
+    pass_out3,
+    token_out1,
+    token_out2,
+    token_out3 : bool;
+let 
+  grant1, pass_out1, token_out1 = arbiter(request1, pass_out3, token_out3);
+  grant2, pass_out2, token_out2 = arbiter(request2, pass_out1, token_out1);
+  grant3, pass_out3, token_out3 = arbiter(request3, pass_out2, token_out2);
+tel
+  
+node main(dummy : bool) returns (grant1, grant2, grant3 : bool) 
+var request1, request2, request3 : bool;
+let
+  request1 = true;
+  request2 = true;
+  request3 = true;
+  grant1, grant2, grant3 = arbiter_three(request1, request2, request3);
+tel

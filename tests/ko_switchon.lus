@@ -1,0 +1,9 @@
+type mode = A | B
+
+node smallswitch(m : mode; b : bool) returns (y : int when b);
+let
+  switch m
+  | A do y = 0
+  | B do y = 1
+  end;
+tel

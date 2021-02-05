@@ -1,0 +1,11 @@
+node smallauto(b : bool) returns (y : int when b);
+let
+  automaton
+    state Up
+      do y = (0 when b) fby (y + 1); -- Pas étonnant
+      until y >= 10 then Down
+    state Down
+      do y = 0 fby (y - 1);
+      until y <= -10 then Up
+  end;
+tel

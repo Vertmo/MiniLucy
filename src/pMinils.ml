@@ -58,8 +58,10 @@ module PMINILS(A : Annotations) = struct
       Printf.sprintf "%sreset\n%s\n%severy %s;" (indent level)
         (string_of_instrs ~print_anns (level + 1) ins)
         (indent level) (string_of_expr er)
-    | Switch (e, branches, _) ->
-      Printf.sprintf "%sswitch %s\n%s\n%send;" (indent level) (string_of_expr e)
+    | Switch (e, branches, (ckid, _)) ->
+      Printf.sprintf "%sswitch%s %s\n%s\n%send;" (indent level)
+        (match ckid with Some ckid -> Printf.sprintf "(%s)" ckid | None -> "")
+        (string_of_expr e)
         (String.concat "\n" (List.map (fun (c, ins) ->
              Printf.sprintf "%s| %s -> \n%s" (indent level) c
                (string_of_instrs ~print_anns (level+1) ins))

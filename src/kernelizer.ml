@@ -485,6 +485,7 @@ let rec switch_instr vars (ins : p_instr) : (p_instr list * (ident * ann) list) 
   | Switch (e, brs, (ckid, defs)) ->
     let (ty, (ck, _)) = List.hd e.kexpr_annot in
     let ckid = Option.get ckid in
+    print_endline ckid;
     let (brs', ys) = switch_branches vars ckid brs in
     let brs' = List.map (fun (c, ins) -> (c, switch_proj (vars@ys) ck c ckid defs ins)) brs' in
     let (_, (_, ndefs)) = List.hd brs' in

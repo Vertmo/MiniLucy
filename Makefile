@@ -1,6 +1,6 @@
 include Makefile.conf
 
-all: minilucy.native src/avrlib.o src/liquidCrystal.o tests
+all: minilucy.native src/avrlib.o src/liquidCrystal.o
 
 src/config.ml:
 	make -C src config.ml

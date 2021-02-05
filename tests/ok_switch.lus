@@ -8,24 +8,6 @@ let
   | C -> y = 2;
   end;
 tel
-  
--- node test1(x : t1) returns (y : int);
--- let
---   a = 42;
---   y1 = a when A(x); -- insert y1 [a;x] y
---   y2 = 1 when B(x);
---   y3 = 2 when C(x);
---   y = merge x (A -> y1) (B -> y2) (C -> y3);
--- tel
-  
--- node test2(b : bool; x : t1 when b) returns (y : int when b);
--- let
---   switch x
---   | A -> y = 0;
---   | B -> y = 1;
---   | C -> y = 2;
---   end;
--- tel (* TODO should this be well clocked ? *)
 
 node test3(b : bool; x : t1) returns (y : int);
 let
@@ -48,7 +30,7 @@ node test5() returns (z : int);
 let
   switch (1 < 2)
   | True -> switch ((0 fby z) > 3)
-            | True -> switch ((1 < 2) fby false) 
+            | True -> switch (1 < 2) 
                       | True -> z = 1;
                       | False -> z = 2;
                       end;

@@ -42,7 +42,7 @@ let rec clock_vars = function
 type ann = (ty * clock)
 
 let string_of_ann (ty, ck) =
-  Printf.sprintf "(%s when %s)" (string_of_ty ty) (string_of_clock ck)
+  Printf.sprintf "%s :: %s" (string_of_ty ty) (string_of_clock ck)
 
 type const =
   | Cbool of bool
@@ -73,7 +73,7 @@ let string_of_op = function
 
 let string_of_ident_ann_list l =
   String.concat "; " (List.map (fun (id, ann) ->
-      Printf.sprintf "%s:%s" id (string_of_ann ann)) l)
+      Printf.sprintf "%s : %s" id (string_of_ann ann)) l)
 
 (** Clock declaration *)
 type clockdec = ident * constr list

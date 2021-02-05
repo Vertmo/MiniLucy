@@ -1,0 +1,6 @@
+node test_multiple() returns (x : int; y : int; z : int);
+let
+  z = y;
+  y = x;
+  x = z;
+tel;

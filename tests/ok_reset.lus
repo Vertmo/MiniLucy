@@ -36,12 +36,22 @@ let
     reset
       y = 0 fby (y + 1);
     every b;
-  every (false when True(b));
+  every (true when True(b));
 tel
   
-node test5(b : bool) returns (y : int when b);
+node test5(b : bool) returns (y : int);
 let
   reset
-    y = 0 fby (y + 1);
+    y = merge b (True -> (0 when b) fby (y when b + (1 when b)))
+                (False -> 0 when not b);
   every true;
+tel
+
+node test_fast_reset(r : bool) returns (y : int);
+var t1 : int when r;
+let
+  reset
+    t1 = 0 fby (t1 + 1);
+    y = merge r (True -> t1) (False -> 42);
+  every (not r);
 tel

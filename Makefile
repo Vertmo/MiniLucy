@@ -1,6 +1,6 @@
 include Makefile.conf
 
-all: minilucy.native src/avrlib.o src/liquidCrystal.o samples
+all: minilucy.native src/avrlib.o src/liquidCrystal.o tests
 
 src/config.ml:
 	make -C src config.ml
@@ -23,6 +23,9 @@ src/liquidCrystal.o: src/liquidCrystal.c src/liquidCrystal.h
           -mmcu=atmega328p -DF_CPU=16000000 \
 	        -c $< -o $@
 
+tests: minilucy.native
+	cd tests && ./runtests.sh
+
 samples: minilucy.native
 	make -C samples
 
@@ -33,3 +36,5 @@ clean:
 	rm -f *.native
 	make -C src clean
 	make -C samples clean
+
+.PHONY: all tests samples clean

@@ -9,6 +9,15 @@ let
   end;
 tel
   
+-- node test1(x : t1) returns (y : int);
+-- let
+--   a = 42;
+--   y1 = a when A(x); -- insert y1 [a;x] y
+--   y2 = 1 when B(x);
+--   y3 = 2 when C(x);
+--   y = merge x (A -> y1) (B -> y2) (C -> y3);
+-- tel
+  
 -- node test2(b : bool; x : t1 when b) returns (y : int when b);
 -- let
 --   switch x
@@ -57,4 +66,14 @@ let
             end;
   | False -> z = 2;
   end;
+tel
+
+node test_reset_switch(b, r : bool) returns (y : int);
+let
+  reset
+    switch b
+    | True -> y = 0 fby (y + 1);
+    | False -> y = 0 fby (y - 1);
+    end;
+  every r;
 tel

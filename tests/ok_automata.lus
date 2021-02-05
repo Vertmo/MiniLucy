@@ -104,3 +104,14 @@ let
   end;
   y = x;
 tel;
+
+node auto_last_reset() returns (y : int);
+var last x : int = 0;
+let
+  automaton
+  | AUT ->
+    x = (last x) + 1;
+    until x > 5 then AUT;
+  end;
+  y = x;
+tel;

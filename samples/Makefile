@@ -2,10 +2,7 @@ MINILUCY := ../minilucy.native
 
 TARGETS := \
 	fulladder.elf bananas.elf heat.elf abro.elf \
-	clocktest.elf typetest.elf \
-	causalitytest.c uselib.elf \
-	lettest.c resettest.elf switchtest.elf \
-  automatatest.elf \
+	uselib.elf \
 	iotest.hex disptest.hex chrono.hex
 
 all: $(TARGETS)

@@ -20,6 +20,7 @@
 %token <int> CONST_INT
 %token <float> CONST_REAL
 %token DIV
+%token DO
 %token ELSE
 %token END
 %token EOF
@@ -52,6 +53,7 @@
 %token SEMICOL
 %token SLASH
 %token STAR
+%token STATE
 %token SWITCH
 %token TEL
 %token THEN CONTINUE
@@ -90,7 +92,7 @@ clock_decs:
 ;
 
 clock_dec:
-| TYPE IDENT EQUAL constr_list SEMICOL
+| TYPE IDENT EQUAL constr_list SEMICOL?
   { ($2, $4) }
 ;
 
@@ -98,6 +100,9 @@ constr_list:
 | IDENT
   { [$1] }
 | IDENT PLUS constr_list
+{ $1 :: $3 }
+(* Heptagon syntax *)
+| IDENT PIPE constr_list
 { $1 :: $3 }
 ;
 
@@ -157,22 +162,26 @@ local_param:
 instr:
 | eq
     { mk_instr (Eq $1) $startpos $endpos }
-| RESET instr+ EVERY expr SEMICOL
+| RESET instr+ EVERY expr SEMICOL?
     { mk_instr (Reset ($2, $4)) $startpos $endpos }
-| AUTOMATON auto_branch+ END SEMICOL
+| AUTOMATON auto_branch+ END SEMICOL?
     { mk_instr (Automaton ($2, (None, None, []))) $startpos $endpos }
-| SWITCH expr instr_branch+ END SEMICOL
+| SWITCH expr instr_branch+ END SEMICOL?
     { mk_instr (Switch ($2, $3, (None, []))) $startpos $endpos }
-| LET LPAREN IDENT COLON annot RPAREN EQUAL expr IN instr+ END SEMICOL
+| LET LPAREN IDENT COLON annot RPAREN EQUAL expr IN instr+ END SEMICOL?
     { mk_instr (Let ($3, $5, $8, $10)) $startpos $endpos }
 ;
 
 auto_branch:
 | PIPE IDENT ARROW unless* instr+ until* { ($2, $4, $5, $6) }
+(* Heptagon syntax *)
+| STATE IDENT DO instr+ unless* until* { ($2, $5, $4, $6) }
 ;
 
 instr_branch:
 | PIPE IDENT ARROW instr+ { ($2, $4) }
+(* Heptagon syntax *)
+| PIPE IDENT DO instr+ { ($2, $4) }
 ;
 
 let_list:
@@ -182,18 +191,18 @@ let_list:
 ;
 
 until:
-| UNTIL expr THEN IDENT SEMICOL { ($2, $4, true) }
-| UNTIL expr CONTINUE IDENT SEMICOL { ($2, $4, false) }
+| UNTIL expr THEN IDENT SEMICOL? { ($2, $4, true) }
+| UNTIL expr CONTINUE IDENT SEMICOL? { ($2, $4, false) }
 ;
 
 unless:
-| UNLESS expr THEN IDENT SEMICOL { ($2, $4, true) }
-| UNLESS expr CONTINUE IDENT SEMICOL { ($2, $4, false) }
+| UNLESS expr THEN IDENT SEMICOL? { ($2, $4, true) }
+| UNLESS expr CONTINUE IDENT SEMICOL? { ($2, $4, false) }
 ;
 
 
 eq:
-| pattern EQUAL expr_list SEMICOL
+| pattern EQUAL expr_list SEMICOL?
     { mk_eq $1 $3 $startpos $endpos }
 ;
 

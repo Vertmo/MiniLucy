@@ -14,6 +14,7 @@
 	"bool", BOOL;
   "continue", CONTINUE;
   "div", DIV;
+  "do", DO;
   "end", END;
 	"else", ELSE;
   "every", EVERY;
@@ -36,6 +37,7 @@
 	"returns", RETURNS;
   "reset", RESET;
   "switch", SWITCH;
+  "state", STATE;
 	"tel", TEL;
 	"then", THEN;
   "type", TYPE;

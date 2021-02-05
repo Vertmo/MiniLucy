@@ -28,7 +28,7 @@ and instr_st =
   | StEq of eq_st
   | StLet of (ident * exp_st * instr_st list)
   | StReset of (instr_st list * exp_st)
-  | StSwitch of (exp_st * (constr * instr_st list) list * ident)
+  | StSwitch of (exp_st * (constr * instr_st list) list * (ident * ident list))
   | StAutomaton of (ident * (unless_st list * instr_st list * until_st list) Env.t * ident * (ident * bool))
 
 and node_st =
@@ -80,10 +80,10 @@ and instr_init_state nodes (ins : p_instr) : instr_st =
     StLet (id, expr_init_state nodes e, instrs_init_state nodes instrs)
   | Reset (instrs, e) ->
     StReset (instrs_init_state nodes instrs, expr_init_state nodes e)
-  | Switch (e, brs, (ckid, _)) ->
+  | Switch (e, brs, (ckid, defs)) ->
     StSwitch (expr_init_state nodes e,
               insbrs_init_state nodes brs,
-              Option.get ckid)
+              (Option.get ckid, defs))
   | Automaton (brs, (ckid, _, _)) ->
     let (initid, _ ,_ ,_) = List.hd brs in
     StAutomaton
@@ -267,13 +267,16 @@ and interp_instr lasts env rst ins : (env * instr_st) =
        let (env', instrs') = interp_instrs lasts env true instrs in
        env', StReset (instrs', e')
      | _ -> env, StReset (instrs, e)) (* propagation of bottom or type error *)
-  | StSwitch (e, brs, ckid) ->
+  | StSwitch (e, brs, (ckid, defs)) ->
     let (v, e') = interp_expr lasts env rst e in
     (match (hd v) with
      | Val (Present v) when is_constr v ->
        let (env', brs') = interp_brs lasts (Env.add ckid (Present v) env) rst brs v in
-       env', StSwitch (e', brs', ckid)
-     | v -> env, StSwitch (e', brs, ckid))
+       env', StSwitch (e', brs', (ckid, defs))
+     | Val Absent ->
+       adds_in_env defs (List.map (fun _ -> Val Absent) defs) env,
+       StSwitch (e', brs, (ckid, defs))
+     | v -> env, StSwitch (e', brs, (ckid, defs)))
   | StAutomaton (initid, brs, autid, (brid, doreset)) ->
     (* Maybe the automaton itself is reset *)
     let (brid, doreset) =

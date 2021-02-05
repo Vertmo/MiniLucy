@@ -1,13 +1,13 @@
 include Makefile.conf
 
-all: minilucy.byte src/avrlib.o src/liquidCrystal.o samples
+all: minilucy.native src/avrlib.o src/liquidCrystal.o samples
 
 src/config.ml:
 	make -C src config.ml
 
-minilucy.byte: $(addprefix src/,$(SRC))
-	make -C src minilucy.byte
-	cp src/minilucy.byte .
+minilucy.native: $(addprefix src/,$(SRC))
+	make -C src minilucy.native
+	cp src/minilucy.native .
 
 src/avrlib.o: src/avrlib.c src/avrlib.h
 	avr-gcc -g -fno-exceptions -Wall \
@@ -23,13 +23,13 @@ src/liquidCrystal.o: src/liquidCrystal.c src/liquidCrystal.h
           -mmcu=atmega328p -DF_CPU=16000000 \
 	        -c $< -o $@
 
-samples: minilucy.byte
+samples: minilucy.native
 	make -C samples
 
 rapport.pdf: rapport.tex
 	pdflatex rapport.tex
 
 clean:
-	rm -f *.byte
+	rm -f *.native
 	make -C src clean
 	make -C samples clean

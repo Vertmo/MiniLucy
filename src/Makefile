@@ -2,7 +2,7 @@ include ../Makefile.conf
 
 PWD = $(shell pwd)
 
-all: minilucy.byte
+all: minilucy.native
 
 config.ml:
 	$(shell echo "let libdir = \"$(PWD)\"" > config.ml)
@@ -13,8 +13,8 @@ parser.ml parser.mli: parser.mly
 lexer.ml: lexer.mll
 	ocamllex $^
 
-minilucy.byte: $(MLS)
-	ocamlc -o $@ $^
+minilucy.native: $(MLS)
+	ocamlopt -o $@ $^
 
 clean:
-	rm -f parser.ml parser.mli lexer.ml config.ml *.cmi *.cmo *.byte *.o
+	rm -f parser.ml parser.mli lexer.ml config.ml *.cmi *.cmo *.native *.o

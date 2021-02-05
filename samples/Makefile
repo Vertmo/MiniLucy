@@ -1,4 +1,4 @@
-MINILUCY := ../minilucy.byte
+MINILUCY := ../minilucy.native
 
 TARGETS := \
 	fulladder.elf bananas.elf heat.elf abro.elf \

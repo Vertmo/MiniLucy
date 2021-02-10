@@ -337,10 +337,26 @@ let rec merge_reset_to_base (ctx : ctx) (e : k_expr) : k_expr =
       in aux e' ck'
   in aux e ck
 
-let rec reset_expr ctx (x : ident) (ck : clock) (e : k_expr) =
-  let reset_expr = reset_expr ctx x ck
-  and reset_exprs = reset_exprs ctx x ck
-  and reset_branches = reset_branches ctx x ck in
+let or_resets ctx e1 e2 =
+  { kexpr_desc = KE_binop (Op_or, merge_reset_to_base ctx e1, merge_reset_to_base ctx e2);
+    kexpr_annot = [(Tbool, (Cbase, None))];
+    kexpr_loc = dummy_loc }
+
+let or_resets_opt (ctx : ctx) e1 e2 =
+  match e1, e2 with
+  | None, e | e, None -> e
+  | Some e1, Some e2 -> Some (or_resets ctx e1 e2)
+
+let when_reset constr ckid = function
+  | None -> None
+  | Some ({ kexpr_annot = [(Tbool, (ck, None))] } as e) ->
+    Some { e with kexpr_annot = [(Tbool, (Con (constr, ckid, ck), None))]}
+  | _ -> invalid_arg "when_reset"
+
+let rec reset_expr ctx res (e : k_expr) =
+  let reset_expr = reset_expr ctx res
+  and reset_exprs = reset_exprs ctx res
+  and reset_branches = reset_branches ctx res in
   let desc = match e.kexpr_desc with
     | KE_const c -> KE_const c
     | KE_ident id -> KE_ident id
@@ -354,78 +370,49 @@ let rec reset_expr ctx (x : ident) (ck : clock) (e : k_expr) =
     | KE_fby (e0, e1, er) ->
       let e0' = reset_exprs e0 and e1' = reset_exprs e1
       and er' = reset_expr er in
-      let er'' = merge_reset_to_base ctx er'
-      and ex = merge_reset_to_base ctx { kexpr_desc = KE_ident x;
-                                         kexpr_annot = [(Tbool, (ck, Some x))];
-                                         kexpr_loc = dummy_loc } in
-      KE_fby (e0', e1', { kexpr_desc = KE_binop (Op_or, er'', ex);
-                          kexpr_annot = [(Tbool, (Cbase, None))];
-                          kexpr_loc = dummy_loc })
+      let er'' = or_resets ctx er' res in
+      KE_fby (e0', e1', er'')
     | KE_arrow (e0, e1, er) ->
       let e0' = reset_exprs e0 and e1' = reset_exprs e1
       and er' = reset_expr er in
-      let er'' = merge_reset_to_base ctx er'
-      and ex = merge_reset_to_base ctx { kexpr_desc = KE_ident x;
-                                         kexpr_annot = [(Tbool, (ck, Some x))];
-                                         kexpr_loc = dummy_loc } in
-      KE_arrow (e0', e1', { kexpr_desc = KE_binop (Op_or, er'', ex);
-                            kexpr_annot = [(Tbool, (Cbase, None))];
-                            kexpr_loc = dummy_loc })
+      let er'' = or_resets ctx er' res in
+      KE_arrow (e0', e1', er'')
     | KE_app (f, es, er) ->
       let es' = reset_exprs es and er' = reset_expr er in
-      let er'' = merge_reset_to_base ctx er'
-      and ex = merge_reset_to_base ctx { kexpr_desc = KE_ident x;
-                                         kexpr_annot = [(Tbool, (ck, Some x))];
-                                         kexpr_loc = dummy_loc } in
-      KE_app (f, es', { kexpr_desc = KE_binop (Op_or, er'', ex);
-                        kexpr_annot = [(Tbool, (Cbase, None))];
-                        kexpr_loc = dummy_loc })
+      let er'' = or_resets ctx er' res in
+      KE_app (f, es', er'')
     | KE_last _ -> invalid_arg "reset_expr"
   in { e with kexpr_desc = desc }
-and reset_exprs ctx (x : ident) (ck : clock) es = List.map (reset_expr ctx x ck) es
-and reset_branches ctx (x : ident) (ck : clock) brs =
-  List.map (fun (constr, es) -> (constr, reset_exprs ctx x ck es)) brs
+and reset_exprs ctx res es = List.map (reset_expr ctx res) es
+and reset_branches ctx res brs =
+  List.map (fun (constr, es) -> (constr, reset_exprs ctx res es)) brs
 
-let reset_eq ctx (x : ident) (ck : clock) (eq : k_equation) : k_equation =
-  { eq with keq_expr = reset_exprs ctx x ck eq.keq_expr }
+let reset_eq ctx res (eq : k_equation) : k_equation =
+  { eq with keq_expr = reset_exprs ctx res eq.keq_expr }
 
-let rec reset_instr ctx (ins : p_instr) : p_instr =
-  let rec reset_instr' ctx (x : ident) (ck : clock) (ins : p_instr) : p_instr =
-    let desc =
-      match ins.pinstr_desc with
-      | Eq eq -> Eq (reset_eq ctx x ck eq)
-      | Let (id, ann, e, instrs) ->
-        let ctx' = add_constrs_of_ty ctx id (fst ann) in
-        Let (id, ann, reset_expr ctx' x ck e, reset_instrs' ctx' x ck instrs)
-      | Switch (e, brs, ckid) ->
-        let id = Option.get (fst ckid) in
-        let ctx' = { ctx with ckenv = Env.add id (List.map fst brs) ctx.ckenv } in
-        Switch (reset_expr ctx x ck e,
-                List.map (fun (c, ins) -> (c, List.map (reset_instr' ctx' x (Con (c, id, ck))) ins)) brs,
-                ckid)
-      | _ -> invalid_arg "reset_instr'"
-    in { ins with pinstr_desc = desc }
-  and reset_instrs' ctx (x : ident) (ck : clock) =
-    List.map (reset_instr' ctx x ck) in
+let rec reset_instr ctx res (ins : p_instr) : p_instr =
   let desc =
     match ins.pinstr_desc with
-    | Eq eq -> Eq eq
+    | Eq eq -> Eq (match res with Some res -> reset_eq ctx res eq | None -> eq)
     | Let (id, ann, e, instrs) ->
       let ctx' = add_constrs_of_ty ctx id (fst ann) in
-      Let (id, ann, e, reset_instrs ctx' instrs)
+      let e' = match res with Some res -> reset_expr ctx res e | None -> e in
+      Let (id, ann, e', reset_instrs ctx' res instrs)
     | Switch (e, brs, ckid) ->
       let id = Option.get (fst ckid) in
       let ctx' = { ctx with ckenv = Env.add id (List.map fst brs) ctx.ckenv } in
-      Switch (e, reset_branches ctx' brs, ckid)
+      Switch (e, reset_branches ctx' res id brs, ckid)
     | Reset (instrs, er) ->
-      let instrs' = reset_instrs ctx instrs in
       let y = Atom.fresh "_" and (ty, (ckr, _)) = List.hd er.kexpr_annot in
-      let instrs' = List.map (reset_instr' ctx y ckr) instrs' in
+      let res' = or_resets_opt ctx res (Some { kexpr_desc = KE_ident y;
+                                               kexpr_annot = [(Tbool, (ckr, None))];
+                                               kexpr_loc = dummy_loc }) in
+      let instrs' = reset_instrs ctx res' instrs in
       Let (y, (ty, ckr), er, instrs')
     | _ -> invalid_arg "reset_instr"
   in { ins with pinstr_desc = desc }
-and reset_instrs ctx instrs = List.map (reset_instr ctx) instrs
-and reset_branches ctx brs = List.map (fun (c, ins) -> (c, reset_instrs ctx ins)) brs
+and reset_instrs ctx res = List.map (reset_instr ctx res)
+and reset_branches ctx res ckid = List.map (fun (c, ins) -> (c, reset_instrs ctx (when_reset c ckid res) ins))
 
 let idty = List.map (fun (id, (ty, _)) -> (id, ty))
 let idty' = List.map (fun (id, (ty, _), _) -> (id, ty))
@@ -434,7 +421,7 @@ let reset_node cks (n : p_node) : p_node =
   let ctx = { cks; ckenv = Env.empty } in
   let ctx = List.fold_left (fun ctx (id, ty) -> add_constrs_of_ty ctx id ty)
       ctx ((idty n.pn_input)@(idty n.pn_output)@(idty' n.pn_local))
-  in { n with pn_instrs = reset_instrs ctx n.pn_instrs }
+  in { n with pn_instrs = reset_instrs ctx None n.pn_instrs }
 
 let reset_file (f : p_file) : p_file =
   { f with pf_nodes = List.map (reset_node f.pf_clocks) f.pf_nodes }
@@ -485,7 +472,6 @@ let rec switch_instr vars (ins : p_instr) : (p_instr list * (ident * ann) list) 
   | Switch (e, brs, (ckid, defs)) ->
     let (ty, (ck, _)) = List.hd e.kexpr_annot in
     let ckid = Option.get ckid in
-    print_endline ckid;
     let (brs', ys) = switch_branches vars ckid brs in
     let brs' = List.map (fun (c, ins) -> (c, switch_proj (vars@ys) ck c ckid defs ins)) brs' in
     let (_, (_, ndefs)) = List.hd brs' in

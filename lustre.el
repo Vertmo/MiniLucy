@@ -233,13 +233,12 @@
 				"returns" "tel" "type" "var" "if" "with"
         "package" "model" "body" "uses" "provides"
 				"then" "else" "and" "or" "xor" "assert" "with" "struct"
-				"pre" "fby" "not" "when" "match"
+				"pre" "fby" "not" "when" "merge" "match"
         "in"
         "reset" "every"
         "switch" "end"
         "automaton" "state" "do" "until" "unless" "continue"
-        "last"
-				"current") 'words))		0 ,kw t)
+        "last") 'words)) 0 ,kw t)
 
 	;; NB: we need to do this 'cause keywords may be highlighted in comments
 	;; and strings otherwise (in some circumstances).

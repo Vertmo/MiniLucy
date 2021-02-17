@@ -403,12 +403,13 @@ let rec reset_instr ctx res (ins : p_instr) : p_instr =
       let ctx' = { ctx with ckenv = Env.add id (List.map fst brs) ctx.ckenv } in
       Switch (e, reset_branches ctx' res id brs, ckid)
     | Reset (instrs, er) ->
-      let y = Atom.fresh "_" and (ty, (ckr, _)) = List.hd er.kexpr_annot in
+      let er' = match res with Some res -> reset_expr ctx res er | None -> er in
+      let y = Atom.fresh "_" and (ty, (ckr, _)) = List.hd er'.kexpr_annot in
       let res' = or_resets_opt ctx res (Some { kexpr_desc = KE_ident y;
                                                kexpr_annot = [(Tbool, (ckr, None))];
                                                kexpr_loc = dummy_loc }) in
       let instrs' = reset_instrs ctx res' instrs in
-      Let (y, (ty, ckr), er, instrs')
+      Let (y, (ty, ckr), er', instrs')
     | _ -> invalid_arg "reset_instr"
   in { ins with pinstr_desc = desc }
 and reset_instrs ctx res = List.map (reset_instr ctx res)

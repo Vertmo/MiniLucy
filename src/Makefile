@@ -16,5 +16,8 @@ lexer.ml: lexer.mll
 minilucy.native: $(MLS)
 	ocamlopt -o $@ $^
 
+minilucy.cma: $(MLS_PRE) parser.mli parser.ml lexer.ml
+	ocamlc -o $@ -a $^
+
 clean:
-	rm -f parser.ml parser.mli lexer.ml config.ml *.cmi *.cmo *.native *.o
+	rm -f parser.ml parser.mli lexer.ml config.ml *.cmi *.cmo *.cma *.native *.o

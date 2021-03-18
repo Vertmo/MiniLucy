@@ -1,10 +1,10 @@
 node auto_weird(b : bool) returns (x : int);
+var u : int;
 let
-  let (u : int) = 1 in
-    automaton
-    | INC -> x = if b then 1 else 0;
-    | DEC -> x = -u;
-    end;
+  u = 1;
+  automaton
+  | INC -> x = if b then 1 else 0;
+  | DEC -> x = -u;
   end;
 tel;
 
@@ -12,14 +12,18 @@ node auto_simpl() returns (x : int);
 let
   automaton
   | INC ->
-    let (u1 : int) = (1 + (0 fby u1)) in
+    var u1 : int;
+    let
+      u1 = 1 + (0 fby u1);
       x = 0 fby x + u1;
-    end;
+    tel
     until x > 5 then DEC;
   | DEC ->
-    let (u2 : int) = 2 in
+    var u2 : int;
+    let
+      u2 = 2;
       x = (0 fby x) - u2;
-    end;
+    tel
     until x < -10 continue INC;
   end;
 tel;
@@ -44,7 +48,9 @@ node auto_mult() returns (x : int; y : int);
 let
   automaton
   | A ->
-    let (l : int) = 1 in
+    var l : int;
+    let
+      l = 1;
       automaton
       | A1 ->
         x = 0 fby x + l;
@@ -53,7 +59,7 @@ let
         x = 0 fby x + (2 * l);
         until x > 7 then A1;
       end;
-    end;
+    tel;
     y = 0 fby y + 1;
     until y > 4 then B;
   | B ->
@@ -72,9 +78,11 @@ node auto_app() returns (x : int);
 let
   automaton
   | APP1 ->
-    let (v : int) = cumulative_sum(1) in
+    var v : int;
+    let
+      v = cumulative_sum(1);
       x = 0 fby v;
-    end;
+    tel;
     until x > 4 then APP2;
   | APP2 ->
     x = cumulative_sum(-2);

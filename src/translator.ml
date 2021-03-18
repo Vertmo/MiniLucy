@@ -1,6 +1,6 @@
 (** Translate Normalized AST to Object representation *)
 
-open Asttypes
+open Common
 open NMinils
 open Obc
 

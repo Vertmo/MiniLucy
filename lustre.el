@@ -698,6 +698,8 @@
 
 ;;;###autoload
 (add-to-list 'auto-mode-alist '("\\.lus$" . lustre-mode))
+(add-to-list 'auto-mode-alist '("\\.ls$" . lustre-mode))
+(add-to-list 'auto-mode-alist '("\\.ept$" . lustre-mode))
 
 ;;;###autoload
 (defun lustre-mode ()
@@ -727,7 +729,7 @@
   (interactive)
   (kill-all-local-variables)
   (setq major-mode 'lustre-mode
-	mode-name "Lustre")
+	      mode-name "Lustre")
   (use-local-map lustre-mode-map)
 
   (set (make-local-variable 'indent-line-function) 'electric-lustre-tab)

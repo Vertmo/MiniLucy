@@ -1,6 +1,6 @@
 (* Object code AST *)
 
-open Asttypes
+open Common
 
 type expr =
   | Const of const

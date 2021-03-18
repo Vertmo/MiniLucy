@@ -1,31 +1,14 @@
 (** Parsed AST *)
 
-open Asttypes
+open Common
 open Minils
+open Format
 
 module PMINILS(A : Annotations) = struct
   include MINILS(A)
 
-  let indent level = String.make (level*2) ' '
-
-  type p_let = ident * ty * k_expr
-
-  let string_of_let ?(print_anns=false) level (id, ty, e) =
-    Printf.sprintf "%slet %s : %s = %s in"
-      (indent level) id (string_of_ty ty) (string_of_expr ~print_anns e)
-
   type p_unless = k_expr * constr * bool
   type p_until = k_expr * constr * bool
-
-  let string_of_unless ?(print_anns=false) level (e, c, r) =
-    Printf.sprintf "%sunless %s %s %s;"
-      (indent level) (string_of_expr ~print_anns e)
-      (if r then "then" else "continue") c
-
-  let string_of_until ?(print_anns=false) level (e, c, r) =
-    Printf.sprintf "%suntil %s %s %s;"
-      (indent level) (string_of_expr ~print_anns e)
-      (if r then "then" else "continue") c
 
   type p_instr =
     { pinstr_desc: p_instr_desc;
@@ -33,77 +16,144 @@ module PMINILS(A : Annotations) = struct
 
   and p_instr_desc =
     | Eq of k_equation
-    | Let of (ident * ann * k_expr * p_instr list)
+    | Block of p_block
     | Switch of (k_expr * (constr * p_instr list) list * (ident option * ident list))
     | Reset of (p_instr list * k_expr)
     | Automaton of ((constr * p_unless list * p_instr list * p_until list) list * (ident option * clock option * ident list))
 
-  let rec string_of_instr ?(print_anns=false) level i =
-    match i.pinstr_desc with
-    | Eq eq -> Printf.sprintf "%s%s;" (indent level) (string_of_equation ~print_anns eq)
-    | Let (id, ann, e, ins) ->
-      Printf.sprintf "%slet (%s : %s) = %s in\n%s\n%send;" (indent level)
-        id (string_of_ann ann) (string_of_expr ~print_anns e)
-        (string_of_instrs ~print_anns (level+1) ins)
-        (indent level)
-    | Automaton (branches, _) ->
-      Printf.sprintf "%sautomaton\n%s" (indent level)
-        (String.concat "\n" (List.map (fun (c, unlesss, ins, untils) ->
-             Printf.sprintf "%s| %s ->\n%s\n%s\n%s" (indent level) c
-               (String.concat "\n" (List.map (string_of_unless ~print_anns (level+1)) unlesss))
-               (string_of_instrs ~print_anns (level+1) ins)
-               (String.concat "\n" (List.map (string_of_until ~print_anns (level+1)) untils)))
-             branches))
-    | Reset (ins, er) ->
-      Printf.sprintf "%sreset\n%s\n%severy %s;" (indent level)
-        (string_of_instrs ~print_anns (level + 1) ins)
-        (indent level) (string_of_expr er)
-    | Switch (e, branches, (ckid, _)) ->
-      Printf.sprintf "%sswitch%s %s\n%s\n%send;" (indent level)
-        (match ckid with Some ckid -> Printf.sprintf "(%s)" ckid | None -> "")
-        (string_of_expr e)
-        (String.concat "\n" (List.map (fun (c, ins) ->
-             Printf.sprintf "%s| %s -> \n%s" (indent level) c
-               (string_of_instrs ~print_anns (level+1) ins))
-             branches))
-        (indent level)
-  and string_of_instrs ?(print_anns=false) level ins =
-    String.concat "\n" (List.map (string_of_instr ~print_anns level) ins)
+  and p_block =
+    { pb_local: (ident * ann * const option) list;
+      pb_instrs: p_instr list;
+      pb_loc: location; }
 
   type p_node =
     { pn_name: ident;
       pn_input: (ident * ann) list;
       pn_output: (ident * ann) list;
-      pn_local: (ident * ann * const option) list;
-      pn_instrs: p_instr list;
+      pn_body: p_block;
       pn_loc: location; }
-
-  let string_of_local (id, ann, init) =
-    match init with
-    | Some init -> Printf.sprintf "last %s:%s = %s"
-                     id (string_of_ann ann) (string_of_const init)
-    | None -> Printf.sprintf "%s:%s" id (string_of_ann ann)
-
-  let string_of_node ?(print_anns=false) n =
-    Printf.sprintf "node %s(%s) returns (%s);\n\
-                    var %s;\n\
-                    let\n\
-                    %s\n\
-                    tel\n"
-      n.pn_name
-      (string_of_ident_ann_list n.pn_input)
-      (string_of_ident_ann_list n.pn_output)
-      (String.concat "; " (List.map string_of_local n.pn_local))
-      (String.concat "\n" (List.map (string_of_instr ~print_anns 1) n.pn_instrs))
 
   type p_file =
     { pf_clocks: clockdec list;
       pf_nodes: p_node list; }
 
-  let string_of_file ?(print_anns=false) f =
-    Printf.sprintf "%s\n%s"
-      (String.concat "\n" (List.map string_of_clockdec f.pf_clocks))
-      (String.concat "\n" (List.map (string_of_node ~print_anns) f.pf_nodes))
+  let print_ident = pp_print_string
+
+  let print_semicol_list p =
+    pp_print_list ~pp_sep:(fun p () -> fprintf p ";@ ") p
+
+  let print_decl fmt (id, (ty, ck)) =
+    fprintf fmt "%a@ : %s :: %s"
+      print_ident id
+      (string_of_ty ty)
+      (string_of_clock ck)
+
+  let print_decl_list = print_semicol_list print_decl
+
+  let print_local fmt (id, (ty, ck), c) =
+    fprintf fmt "%s%a@ : %s :: %s%s"
+      (match c with Some _ -> "last " | None -> "")
+      print_ident id
+      (string_of_ty ty)
+      (string_of_clock ck)
+      (match c with Some c -> " = "^(string_of_const c) | None -> "")
+
+  let print_local_list = print_semicol_list print_local
+
+  let print_locals fmt locals =
+    if locals <> [] then
+      fprintf fmt "@[<h>var @[<hov 4>%a@];@]@;" print_local_list locals
+
+  let print_unless ?(print_anns=false) fmt (e, c, r) =
+    fprintf fmt "@[<h>unless %s %s %s@]"
+      (string_of_expr ~print_anns e)
+      (if r then "then" else "continue") c
+
+  let print_unlesss ?(print_anns=false) fmt unl =
+    if unl <> [] then
+      fprintf fmt "@[<v>%a;@]@;" (print_semicol_list (print_unless ~print_anns)) unl
+
+  let print_until ?(print_anns=false) fmt (e, c, r) =
+    fprintf fmt "@[<h>until %s %s %s@]"
+      (string_of_expr ~print_anns e)
+      (if r then "then" else "continue") c
+
+  let print_untils ?(print_anns=false) fmt unt =
+    if unt <> [] then
+      fprintf fmt "@;@[<v>%a;@]" (print_semicol_list (print_until ~print_anns)) unt
+
+  let rec print_instr ?(print_anns=false) fmt i =
+    match i.pinstr_desc with
+    | Eq eq -> fprintf fmt "%s" (string_of_equation ~print_anns eq)
+    | Block bck -> print_block ~print_anns fmt bck
+    | Reset (ins, er) ->
+      fprintf fmt "@[<v 2>\
+                   reset@;\
+                   @[<v>%a@;<0 -2>@]\
+                   every %s@]\
+                  "
+        (print_instrs ~print_anns) ins
+        (string_of_expr ~print_anns er)
+    | Switch (e, branches, (ckid, _)) ->
+      fprintf fmt "@[<v 0>\
+                   switch %s@;\
+                   %a@;\
+                   end@]"
+        (string_of_expr ~print_anns e)
+        (pp_print_list (print_switch_branch ~print_anns)) branches
+    | Automaton (branches, _) ->
+      fprintf fmt "@[<v 0>\
+                   automaton@;\
+                   %a@;\
+                   end@]"
+        (pp_print_list (print_auto_branch ~print_anns)) branches
+  and print_instrs ?(print_anns=false) fmt ins =
+    print_semicol_list (print_instr ~print_anns) fmt ins
+
+  and print_switch_branch ?(print_anns=false) fmt (constr, ins) =
+    fprintf fmt "@[<hv 2>\
+                 | %s ->@;\
+                 %a@]"
+      constr
+      (print_instrs ~print_anns) ins
+
+  and print_auto_branch ?(print_anns=false) fmt (constr, unl, ins, unt) =
+    fprintf fmt "@[<v 2>\
+                 | %s ->@;\
+                 %a%a%a@]"
+      constr
+      (print_unlesss ~print_anns) unl
+      (print_instrs ~print_anns) ins
+      (print_untils ~print_anns) unt
+
+  and print_block fmt ?(print_anns=false) bck =
+    fprintf fmt "@[<v 0>%a\
+                 @[<v 2>let@;%a@;<0 -2>@]\
+                 tel@]"
+      print_locals bck.pb_local
+      (print_instrs ~print_anns) bck.pb_instrs
+
+  let print_node ?(print_anns=false) fmt n =
+    fprintf fmt "@[<v>\
+                 @[<hov 0>\
+                 @[<h>node %a (%a)@]@;\
+                 @[<h>returns (%a)@]@;\
+                 @]@;\
+                 %a\
+                 @]"
+      print_ident n.pn_name
+      print_decl_list n.pn_input
+      print_decl_list n.pn_output
+      (print_block ~print_anns) n.pn_body
+
+  let print_clock_decl fmt decl =
+    fprintf fmt "%s" (string_of_clockdec decl)
+
+  let print_file ?(print_anns=false) fmt file =
+    fprintf fmt "@[<v 0>%a%a%a@]@."
+      (pp_print_list ~pp_sep:(fun p () -> fprintf fmt "@;@;") print_clock_decl) file.pf_clocks
+      (fun fmt _ -> if file.pf_clocks <> [] then fprintf fmt "@;@;" else fprintf fmt "") ()
+      (pp_print_list ~pp_sep:(fun p () -> fprintf fmt "@;@;") (print_node ~print_anns)) file.pf_nodes
 end
 
 module PMinils = PMINILS(NoAnnot)

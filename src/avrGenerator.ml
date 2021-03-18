@@ -1,6 +1,6 @@
 (** Code generator for AVR targets *)
 
-open Asttypes
+open Common
 open Obc
 open MicroC
 open Generator

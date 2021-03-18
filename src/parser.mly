@@ -1,6 +1,6 @@
 %{
 
-  open Asttypes
+  open Common
   open PMinils.PMinils
 
   let mk_expr e startp endp = { kexpr_desc = e; kexpr_loc = (startp, endp); kexpr_annot = [] }
@@ -15,7 +15,7 @@
 %token BOOL
 %token COLON
 %token COMMA
-%token <Asttypes.op> COMP
+%token <Common.op> COMP
 %token TRUE FALSE
 %token <int> CONST_INT
 %token <float> CONST_REAL
@@ -115,14 +115,17 @@ node_decs:
 node:
 | NODE IDENT LPAREN param_list? RPAREN SEMICOL?
   RETURNS LPAREN param_list RPAREN SEMICOL?
-  local_params
-  LET instr+ TEL SEMICOL?
-    { { pn_name = $2;
-	pn_input = (match $4 with Some l -> l | None -> []);
-	pn_output = $9;
-	pn_local = $12;
-	pn_instrs = $14;
-	pn_loc = ($startpos, $endpos) } }
+  block
+  { { pn_name = $2;
+	    pn_input = (match $4 with Some l -> l | None -> []);
+	    pn_output = $9;
+	    pn_body = $12;
+	    pn_loc = ($startpos, $endpos) } }
+;
+
+block:
+| local_params LET instr+ TEL SEMICOL?
+  { { pb_local = $1; pb_instrs = $3; pb_loc = ($startpos, $endpos) } }
 ;
 
 param_list:
@@ -168,8 +171,8 @@ instr:
     { mk_instr (Automaton ($2, (None, None, []))) $startpos $endpos }
 | SWITCH expr instr_branch+ END SEMICOL?
     { mk_instr (Switch ($2, $3, (None, []))) $startpos $endpos }
-| LET LPAREN IDENT COLON annot RPAREN EQUAL expr IN instr+ END SEMICOL?
-    { mk_instr (Let ($3, $5, $8, $10)) $startpos $endpos }
+| block
+    { mk_instr (Block $1) $startpos $endpos }
 ;
 
 auto_branch:
@@ -182,12 +185,6 @@ instr_branch:
 | PIPE IDENT ARROW instr+ { ($2, $4) }
 (* Heptagon syntax *)
 | PIPE IDENT DO instr+ { ($2, $4) }
-;
-
-let_list:
-| /* empty */ { [] }
-| LET IDENT COLON typ EQUAL expr IN let_list
-  { ($2, $4, $6)::$8 }
 ;
 
 until:

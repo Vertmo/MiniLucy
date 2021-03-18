@@ -1,6 +1,6 @@
 (** Equation scheduler *)
 
-open Asttypes
+open Common
 open NMinils
 open Causalitychecker
 

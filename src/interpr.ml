@@ -1,6 +1,6 @@
 (*                  Coiterative semantics based interpreter                   *)
 
-open Asttypes
+open Common
 open Kernelizer.CMinils
 
 (** Value of the interpreter *)
@@ -348,7 +348,7 @@ and interp_node xs (st : node_st) : (bottom_or_value list * node_st) =
 
 (** Create random inputs of the right type for a node *)
 
-let rd_value_of_ty (cls : Asttypes.clockdec list) = function
+let rd_value_of_ty (cls : clockdec list) = function
   | Tint -> Int (Random.int 100)
   | Treal -> Real (Random.float 100.)
   | Tbool -> Bool (Random.bool ())
@@ -364,7 +364,7 @@ let rec interp_clock env = function
     let v = Env.find ckid env in
     b && check_constr constr v
 
-let generate_rd_input (cls : Asttypes.clockdec list) inputs =
+let generate_rd_input (cls : clockdec list) inputs =
   let rec aux n ins =
     let env = adds_in_env (List.map fst inputs) ins Env.empty in
     match n with

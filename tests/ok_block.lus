@@ -1,29 +1,31 @@
 node test1() returns (i : int);
 let
-  let (x : int) = 2 in 
+  var x : int;
+  let
+    x = 2;
     i = x + 1;
-  end;
+  tel
 tel
   
 node test2() returns (i : int);
 let
-  let (x : int) = 2 in 
-    let (y : int) = 3 in
+  var x, y : int;
+  let x = 2; y = 3;
       i = x + y;
-    end;
-  end;
+  tel
 tel
 
 node test3() returns (i : int);
 let
-  let (x : int) = 2 in 
-    i = 41 + 1;
-  end;
+  var x : int;
+  let x = 0; i = 41 + 1;
+  tel
 tel
 
 node test4() returns (i : int);
 let
-  let (x : int) = 0 fby (x + 1) in
-    i = x;
-  end;
+  var x : int;
+  let x = 0 fby (x + 1);
+      i = x;
+  tel
 tel

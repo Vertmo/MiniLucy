@@ -1,0 +1,23 @@
+node last1(b : bool) returns (o : int)
+var last x: int = 0;
+let
+  o = x;
+  switch b
+  | True do x = last x + 1
+  | False do x = last x - 1
+  end;
+tel
+
+node last2(b : bool; c : bool) returns (o : int)
+let
+  switch b
+  | True do var last y: int = 0; 
+            let switch c
+                | True do y = last y + 1
+                | False do y = last y - 1
+                end;
+                o = y;
+            tel;
+  | False do o = 0;
+  end;
+tel

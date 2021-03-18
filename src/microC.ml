@@ -1,6 +1,6 @@
 (** Representation of a subset of the C language, used for code generation *)
 
-open Asttypes
+open Common
 
 type ty =
   | Tvoid

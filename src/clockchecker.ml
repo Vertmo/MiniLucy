@@ -1,6 +1,6 @@
 (** Clock checking *)
 
-open Asttypes
+open Common
 open Minils
 open PMinils
 
@@ -393,15 +393,7 @@ let rec elab_instr nodes env (ins : p_instr) : CPMinils.p_instr =
   let (desc : CPMinils.p_instr_desc) =
     match ins.pinstr_desc with
     | Eq eq -> Eq (elab_equation nodes env eq)
-    | Let (id, (ty, ck), e, instrs) ->
-      let ck' = Svar (ref (UnknownCk (Atom.fresh "_"))) in
-      let env' = env_add id ck' env ins.pinstr_loc in
-      let e' = elab_expr nodes env' e in
-      let (_, nck') = List.hd e'.kexpr_annot in
-      unify_nsclock ins.pinstr_loc (ck', None) nck';
-      let e' = freeze_expr env e' in
-      let instrs' = elab_instrs nodes env' instrs in
-      Let (id, (ty, clock_of_sclock ck'), e', instrs')
+    | Block bck -> Block (elab_block nodes env bck)
     | Reset (ins, er) ->
       Reset (elab_instrs nodes env ins,
              freeze_expr env (elab_expr nodes env er)) (* TODO should there be a constraint ? *)
@@ -429,12 +421,21 @@ let rec elab_instr nodes env (ins : p_instr) : CPMinils.p_instr =
       Automaton (brs', (Some ckid, Some (clock_of_sclock bck), defs))
   in { pinstr_desc = desc; pinstr_loc = ins.pinstr_loc }
 and elab_instrs nodes env = List.map (elab_instr nodes env)
+
 and elab_un nodes env bck (e, s, b) =
   let e' = elab_expr nodes env e in
   let (_, (ck, _)) = List.hd e'.kexpr_annot in
   unify_sclock e.kexpr_loc bck ck;
   (freeze_expr env e', s, b)
 
+and elab_block nodes env block : CPMinils.p_block =
+  let bck = Svar (ref (UnknownCk (Atom.fresh "_"))) in
+  let locals = List.map (fun (x, (ty, ck), l) ->
+      (x, (ty, inst_clock bck (fun x -> ref (InstIdent x)) ck), l)) block.pb_local in
+  let env' = List.fold_left (fun env (x, (_, ck), _) -> env_add x ck env block.pb_loc) env locals in
+  { pb_local = List.map (fun (x, (ty, ck), l) -> (x, (ty, clock_of_sclock ck), l)) locals;
+    pb_instrs = elab_instrs nodes env' block.pb_instrs;
+    pb_loc = block.pb_loc }
 
 (** Check a clock in a clocking env *)
 let check_clock (n : p_node) env ck =
@@ -454,7 +455,7 @@ let check_clock (n : p_node) env ck =
 let inst_clocks (cks : (ident * (ty * clock)) list) : (ident * sclock) list =
   List.map (fun (id, (_, ck)) ->
       (id, inst_clock
-         (Svar (ref (UnknownCk (Atom.fresh "$"))))
+         (Svar (ref (UnknownCk (Atom.fresh "_"))))
          (fun id -> (ref (InstIdent id)))
          ck))
     cks
@@ -476,32 +477,26 @@ let freeze_clocks (cks : (ident * sclock) list) =
 
 (** Check the clocks for the node [f] *)
 let elab_node (nodes : (ident * CPMinils.p_node) list) (n : p_node) : CPMinils.p_node =
-  let local = List.map (fun (x, a, _) -> (x, a)) n.pn_local in
-
-  let in_env = inst_clocks n.pn_input
-  and out_env = inst_clocks n.pn_output
-  and loc_env = inst_clocks local in
+  let in_env = inst_clocks n.pn_input and out_env = inst_clocks n.pn_output in
 
   (* check clocks *)
   let env =
     try
       List.iter (fun (_, ck) -> elab_clock in_env ck) in_env;
       List.iter (fun (_, ck) -> elab_clock (in_env@out_env) ck) out_env;
-      List.iter (fun (_, ck) -> elab_clock (in_env@out_env@loc_env) ck) loc_env;
-      freeze_clocks (in_env@out_env@loc_env)
+      freeze_clocks (in_env@out_env)
     with _ -> raise (ClockError
                        (Printf.sprintf "Cyclic clock declarations in node %s" n.pn_name,
                         n.pn_loc)) in
 
   (* elab instructions *)
   let env' = List.map (fun (id, ck) -> (id, sclock_of_clock ck)) env in
-  let instrs' = elab_instrs nodes (EnvBase (Env.of_seq (List.to_seq env'))) n.pn_instrs in
+  let bck' = elab_block nodes (EnvBase (Env.of_seq (List.to_seq env'))) n.pn_body in
 
   { pn_name = n.pn_name;
     pn_input = (List.map (fun (id, (ty, _)) -> (id, (ty, List.assoc id env))) n.pn_input);
     pn_output = (List.map (fun (id, (ty, _)) -> (id, (ty, List.assoc id env))) n.pn_output);
-    pn_local = (List.map (fun (id, (ty, _), init) -> (id, (ty, List.assoc id env), init)) n.pn_local);
-    pn_instrs = instrs';
+    pn_body = bck';
     pn_loc = n.pn_loc }
 
 (** Check the clocks for the file [f] *)

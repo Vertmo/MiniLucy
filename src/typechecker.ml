@@ -1,6 +1,6 @@
 (** Basic typechecking, doesn't take clocks or causality into account *)
 
-open Asttypes
+open Common
 open Minils
 open PMinils
 
@@ -48,8 +48,7 @@ let rec sort_instr (ins : p_instr) : p_instr =
   let desc =
     match ins.pinstr_desc with
     | Eq eq -> Eq (sort_equation eq)
-    | Let (id, ann, e, ins) ->
-      Let (id, ann, sort_expr e, sort_instrs ins)
+    | Block bck -> Block (sort_block bck)
     | Reset (ins, er) ->
       Reset (sort_instrs ins, sort_expr er)
     | Switch (e, branches, ckid) ->
@@ -69,9 +68,10 @@ let rec sort_instr (ins : p_instr) : p_instr =
                  ckid)
   in { ins with pinstr_desc = desc }
 and sort_instrs ins = List.map sort_instr ins
+and sort_block bck = { bck with pb_instrs = sort_instrs bck.pb_instrs }
 
 let sort_node (n : p_node) : p_node =
-  { n with pn_instrs = List.map sort_instr n.pn_instrs }
+  { n with pn_body = sort_block n.pn_body }
 
 let sort_file (f : p_file) : p_file =
     { pf_clocks =
@@ -145,8 +145,8 @@ let types_of es =
   List.concat (List.map (fun (e : TPMinils.k_expr) -> e.kexpr_annot) es)
 
 (** Check that an expression has the [expected] type *)
-let rec elab_expr (nodes : (ident * TPMinils.p_node) list)
-    vars clocks e : TPMinils.k_expr =
+let rec elab_expr (nodes : (ident * TPMinils.p_node) list) clocks
+    vars e : TPMinils.k_expr =
   let loc = e.kexpr_loc in
   match e.kexpr_desc with
   | KE_const c ->
@@ -161,15 +161,15 @@ let rec elab_expr (nodes : (ident * TPMinils.p_node) list)
                              id, e.kexpr_loc))) in
     { kexpr_desc = KE_ident id; kexpr_annot = [bty]; kexpr_loc = e.kexpr_loc }
   | KE_unop (op, e1) ->
-    let e1' = elab_expr nodes vars clocks e1 in
+    let e1' = elab_expr nodes clocks vars e1 in
     let ty = get_unary_type e1'.kexpr_annot e1.kexpr_loc in
 
     { kexpr_desc = KE_unop (op, e1');
       kexpr_annot = [type_op op [ty] loc];
       kexpr_loc = loc }
   | KE_binop (op, e1, e2) ->
-    let e1' = elab_expr nodes vars clocks e1
-    and e2' = elab_expr nodes vars clocks e2 in
+    let e1' = elab_expr nodes clocks vars e1
+    and e2' = elab_expr nodes clocks vars e2 in
     let ty1 = get_unary_type e1'.kexpr_annot e1.kexpr_loc
     and ty2 = get_unary_type e2'.kexpr_annot e2.kexpr_loc in
 
@@ -177,9 +177,9 @@ let rec elab_expr (nodes : (ident * TPMinils.p_node) list)
       kexpr_annot = [type_op op [ty1;ty2] loc];
       kexpr_loc = loc }
   | KE_fby (e0s, es, er) ->
-    let e0s' = List.map (elab_expr nodes vars clocks) e0s
-    and es' = List.map (elab_expr nodes vars clocks) es
-    and er' = elab_expr nodes vars clocks er in
+    let e0s' = List.map (elab_expr nodes clocks vars) e0s
+    and es' = List.map (elab_expr nodes clocks vars) es
+    and er' = elab_expr nodes clocks vars er in
 
     let tys0 = types_of e0s' and tys = types_of es' in
     if (tys0 <> tys)
@@ -199,9 +199,9 @@ let rec elab_expr (nodes : (ident * TPMinils.p_node) list)
             e.kexpr_loc));
     { kexpr_desc = KE_fby(e0s', es', er'); kexpr_annot = tys0; kexpr_loc = loc }
   | KE_arrow (e0s, es, er) ->
-    let e0s' = List.map (elab_expr nodes vars clocks) e0s
-    and es' = List.map (elab_expr nodes vars clocks) es
-    and er' = elab_expr nodes vars clocks er in
+    let e0s' = List.map (elab_expr nodes clocks vars) e0s
+    and es' = List.map (elab_expr nodes clocks vars) es
+    and er' = elab_expr nodes clocks vars er in
 
     let tys0 = types_of e0s' and tys = types_of es' in
     if (tys0 <> tys)
@@ -221,7 +221,7 @@ let rec elab_expr (nodes : (ident * TPMinils.p_node) list)
             e.kexpr_loc));
     { kexpr_desc = KE_arrow(e0s', es', er'); kexpr_annot = tys0; kexpr_loc = loc }
   | KE_match (e, branches) ->
-    let e' = elab_expr nodes vars clocks e in
+    let e' = elab_expr nodes clocks vars e in
     let clt = get_unary_type e'.kexpr_annot e.kexpr_loc in
 
     (* Check the constructors *)
@@ -231,7 +231,7 @@ let rec elab_expr (nodes : (ident * TPMinils.p_node) list)
 
     (* Check the expression types *)
     let branches' = List.map
-        (fun (c, es) -> c, List.map (elab_expr nodes vars clocks) es) branches in
+        (fun (c, es) -> c, List.map (elab_expr nodes clocks vars) es) branches in
 
     let tys = types_of (snd (List.hd branches')) in
     List.iter (fun ((_, es) : (constr * TPMinils.k_expr list)) ->
@@ -256,7 +256,7 @@ let rec elab_expr (nodes : (ident * TPMinils.p_node) list)
                (Printf.sprintf
                   "Constructor %s does not belong to clock type %s"
                   constr (string_of_ty clt), loc));
-    let es' = List.map (elab_expr nodes vars clocks) es in
+    let es' = List.map (elab_expr nodes clocks vars) es in
     { kexpr_desc = KE_when (es', constr, cl);
       kexpr_annot = types_of es'; kexpr_loc = loc }
   | KE_merge (cl, branches) ->
@@ -272,7 +272,7 @@ let rec elab_expr (nodes : (ident * TPMinils.p_node) list)
 
     (* Check the expression types *)
     let branches' = List.map
-        (fun (c, es) -> c, List.map (elab_expr nodes vars clocks) es) branches in
+        (fun (c, es) -> c, List.map (elab_expr nodes clocks vars) es) branches in
 
     let tys = types_of (snd (List.hd branches')) in
     List.iter (fun ((_, es) : (constr * TPMinils.k_expr list)) ->
@@ -287,8 +287,8 @@ let rec elab_expr (nodes : (ident * TPMinils.p_node) list)
     { kexpr_desc = KE_merge (cl, branches');
       kexpr_annot = tys; kexpr_loc = loc }
   | KE_app (id, es, er) ->
-    let es' = List.map (elab_expr nodes vars clocks) es in
-    let er' = elab_expr nodes vars clocks er in
+    let es' = List.map (elab_expr nodes clocks vars) es in
+    let er' = elab_expr nodes clocks vars er in
     (* Check that reset stream is bool *)
     if(er'.kexpr_annot <> [Tbool])
     then raise (TypeError
@@ -331,9 +331,9 @@ let get_pattern_type (vars : (ident * ty) list) pat loc =
       with _ -> raise (UnexpectedEquationError (id, loc))) pat
 
 (** Check that the equation [eq] is correctly typed. *)
-let elab_equation nodes vars clocks (eq : k_equation) : TPMinils.k_equation =
+let elab_equation nodes clocks vars (eq : k_equation) : TPMinils.k_equation =
   let expected = get_pattern_type vars eq.keq_patt eq.keq_loc in
-  let es' = List.map (elab_expr nodes vars clocks) eq.keq_expr in
+  let es' = List.map (elab_expr nodes clocks vars) eq.keq_expr in
   let tys = types_of es' in
   if tys <> expected
   then raise (TypeError
@@ -348,7 +348,7 @@ let elab_equation nodes vars clocks (eq : k_equation) : TPMinils.k_equation =
 let rec get_def_instr (i : p_instr) : ident list =
   match i.pinstr_desc with
   | Eq eq -> defined_of_equation eq
-  | Let (_, _, _, ins) -> get_def_instrs ins
+  | Block bck -> get_def_block bck
   | Reset (ins, _) -> get_def_instrs ins
   | Switch (e, brs, _) ->
     let defs = List.map (fun (_, ins) -> get_def_instrs ins) brs in
@@ -373,25 +373,23 @@ let rec get_def_instr (i : p_instr) : ident list =
 and get_def_instrs (ins : p_instr list) =
   List.concat (List.map get_def_instr ins)
 
+and get_def_block (bck : p_block) =
+  let defs = get_def_instrs bck.pb_instrs in
+  List.fold_left (fun defs x ->
+      if List.mem x defs
+      then remove_one x defs
+      else raise (TypeError (Printf.sprintf "Missing a definition for %s" x, bck.pb_loc))
+    ) defs (List.map (fun (x, _, _) -> x) bck.pb_local)
+
 (** Check that the instruction [ins] is correctly typed. *)
-let rec elab_instr nodes vars clocks (ins : p_instr) : TPMinils.p_instr =
+let rec elab_instr nodes clocks vars (ins : p_instr) : TPMinils.p_instr =
   let (desc : TPMinils.p_instr_desc) =
     match ins.pinstr_desc with
-    | Eq eq -> Eq (elab_equation nodes vars clocks eq)
-    | Let (id, ann, e, instrs) ->
-      let vars' = (id, fst ann)::vars in
-      let e' = elab_expr nodes vars' clocks e in
-      if (e'.kexpr_annot <> [fst ann])
-      then raise (TypeError
-                    (Printf.sprintf
-                       "Wrong type in let binding; expected %s, found %s"
-                       (string_of_ty (fst ann))
-                       (string_of_tys e'.kexpr_annot), ins.pinstr_loc));
-      let instrs' = elab_instrs nodes vars' clocks instrs in
-      Let (id, ann, e', instrs')
+    | Eq eq -> Eq (elab_equation nodes clocks vars eq)
+    | Block bck -> Block (elab_block nodes clocks vars bck)
     | Reset (ins, er) ->
-      let ins' = elab_instrs nodes vars clocks ins
-      and er' = elab_expr nodes vars clocks er in
+      let ins' = elab_instrs nodes clocks vars ins
+      and er' = elab_expr nodes clocks vars er in
       if er'.kexpr_annot <> [Tbool] then
         raise (TypeError
                  (Printf.sprintf
@@ -399,18 +397,18 @@ let rec elab_instr nodes vars clocks (ins : p_instr) : TPMinils.p_instr =
                     (string_of_tys er'.kexpr_annot), er.kexpr_loc));
       Reset (ins', er')
     | Switch (e, brs, (ckid, _)) ->
-      let e' = elab_expr nodes vars clocks e in
+      let e' = elab_expr nodes clocks vars e in
       let clt = get_unary_type e'.kexpr_annot e.kexpr_loc in
       let constrs = constrs_of_clock clocks e.kexpr_loc clt in
       if (constrs <> List.map fst brs)
       then raise (constructors_error constrs (List.map fst brs) ins.pinstr_loc);
-      let brs' = List.map (fun (c, ins) -> (c, elab_instrs nodes vars clocks ins)) brs in
+      let brs' = List.map (fun (c, ins) -> (c, elab_instrs nodes clocks vars ins)) brs in
       Switch (e', brs', (ckid, get_def_instr ins))
     | Automaton (brs, (_, ck, _)) ->
       let tyid = Atom.fresh "_aut"
       and constrs = List.map (fun (c, _, _, _) -> c) brs in
       let elab_un (e, s, b) =
-        let e' = elab_expr nodes vars clocks e in
+        let e' = elab_expr nodes clocks vars e in
         if e'.kexpr_annot <> [Tbool] then
           raise (TypeError
                    (Printf.sprintf
@@ -424,14 +422,19 @@ let rec elab_instr nodes vars clocks (ins : p_instr) : TPMinils.p_instr =
       in
       let brs' = List.map (fun (c, unlesss, instrs, untils) ->
           let unlesss' = List.map elab_un unlesss
-          and instrs' = elab_instrs nodes vars clocks instrs
+          and instrs' = elab_instrs nodes clocks vars instrs
           and untils' = List.map elab_un untils in
           (c, unlesss', instrs', untils')
         ) brs in
       Automaton (brs', (Some tyid, ck, get_def_instr ins))
   in { pinstr_desc = desc; pinstr_loc = ins.pinstr_loc }
-and elab_instrs nodes vars clocks ins =
-  List.map (elab_instr nodes vars clocks) ins
+and elab_instrs nodes clocks vars ins =
+  List.map (elab_instr nodes clocks vars) ins
+and elab_block nodes clocks vars bck : TPMinils.p_block =
+  let vars' = (List.map (fun (x, (ty, _), _) -> (x, ty)) bck.pb_local)@vars in
+  { pb_local = bck.pb_local;
+    pb_instrs = elab_instrs nodes clocks vars' bck.pb_instrs;
+    pb_loc = bck.pb_loc }
 
 (** Check a clock in a typing env *)
 let check_clock clocks (n : p_node) (vars : (ident * ty) list) ck =
@@ -455,9 +458,7 @@ let check_clock clocks (n : p_node) (vars : (ident * ty) list) ck =
 (** Check that the node [n] is correctly typed *)
 let elab_node (nodes: (ident * TPMinils.p_node) list) clocks (n : p_node) :
   TPMinils.p_node =
-  let local = List.map (fun (x, a, _) -> (x, a)) n.pn_local in
-  let out_streams = (n.pn_output@local) in
-  let all_streams = (n.pn_input@out_streams) in
+  let all_streams = (n.pn_output@n.pn_input) in
 
   (* Check that there are no duplicate stream names *)
   let sorted_streams = List.sort
@@ -480,22 +481,22 @@ let elab_node (nodes: (ident * TPMinils.p_node) list) clocks (n : p_node) :
   let idty = List.map (fun (id, (ty, _)) -> (id, ty)) in
   List.iter (fun (id, (_, ck)) -> check_clock clocks n (idty n.pn_input) ck) n.pn_input;
   List.iter (fun (id, (_, ck)) -> check_clock clocks n (idty (n.pn_input@n.pn_output)) ck) n.pn_output;
-  List.iter (fun (id, (_, ck)) -> check_clock clocks n (idty (n.pn_input@n.pn_output@local)) ck) local;
+  (* List.iter (fun (id, (_, ck)) -> check_clock clocks n (idty (n.pn_input@n.pn_output@local)) ck) local; *)
 
   (* Check that the last init constants are well typed *)
-  List.iter (fun (id, (ty, _), const) ->
-      match const with
-      | Some const ->
-        let ty' = type_const n.pn_loc const in
-        if ty' <> ty then
-          raise (TypeError
-                   (Printf.sprintf "last %s was declared with type %s, but found %s for its init constant"
-                      id (string_of_ty ty) (string_of_ty ty'), n.pn_loc))
-      | _ -> ()) n.pn_local;
+  (* List.iter (fun (id, (ty, _), const) ->
+   *     match const with
+   *     | Some const ->
+   *       let ty' = type_const n.pn_loc const in
+   *       if ty' <> ty then
+   *         raise (TypeError
+   *                  (Printf.sprintf "last %s was declared with type %s, but found %s for its init constant"
+   *                     id (string_of_ty ty) (string_of_ty ty'), n.pn_loc))
+   *     | _ -> ()) n.pn_local; *)
 
   (* Check that all the streams are defined *)
-  let expected = List.sort String.compare (List.map fst out_streams)
-  and defined = List.sort String.compare (get_def_instrs n.pn_instrs) in
+  let expected = List.sort String.compare (List.map fst n.pn_output)
+  and defined = List.sort String.compare (get_def_block n.pn_body) in
   if (defined <> expected) then
     raise (TypeError
              (Printf.sprintf "Incorrect list of definitions; expected [%s], got [%s]"
@@ -503,14 +504,13 @@ let elab_node (nodes: (ident * TPMinils.p_node) list) clocks (n : p_node) :
               n.pn_loc));
 
   (* Elab the instructions *)
-  let ins = elab_instrs nodes (List.map (fun (id, (ty, _)) -> (id, ty)) all_streams) clocks n.pn_instrs in
+  let body = elab_block nodes clocks (List.map (fun (id, (ty, _)) -> (id, ty)) all_streams) n.pn_body in
 
   (* Construct the resultting node *)
   { pn_name = n.pn_name;
     pn_input = n.pn_input;
     pn_output = n.pn_output;
-    pn_local = n.pn_local;
-    pn_instrs = ins;
+    pn_body = body;
     pn_loc = n.pn_loc }
 
 (** Check that the file [f] is correctly typed *)
@@ -534,7 +534,7 @@ let elab_file (f : p_file) : TPMinils.p_file =
 let rec collect_ctypes_instr (ins : TPMinils.p_instr) =
   match ins.pinstr_desc with
   | Eq _ -> []
-  | Let (_, _, _, instrs) -> collect_ctypes_instrs instrs
+  | Block bck -> collect_ctypes_block bck
   | Reset (instrs, _) -> collect_ctypes_instrs instrs
   | Switch (_, brs, _) ->
     List.concat (List.map (fun (_, ins) -> collect_ctypes_instrs ins) brs)
@@ -545,9 +545,11 @@ let rec collect_ctypes_instr (ins : TPMinils.p_instr) =
     (tyid, constrs)::nclocks
 and collect_ctypes_instrs ins =
   List.concat (List.map collect_ctypes_instr ins)
+and collect_ctypes_block (bck : TPMinils.p_block) =
+  collect_ctypes_instrs bck.pb_instrs
 
 let collect_ctypes_node (n : TPMinils.p_node) =
-  collect_ctypes_instrs n.pn_instrs
+  collect_ctypes_block n.pn_body
 
 let add_ctypes_file (f : TPMinils.p_file) : TPMinils.p_file =
   let nclocks = List.concat (List.map collect_ctypes_node f.pf_nodes) in

@@ -1,6 +1,6 @@
 (** Causality checking *)
 
-open Asttypes
+open Common
 open NMinils
 
 exception CausalityError of (string * ident * location)

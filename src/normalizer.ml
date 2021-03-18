@@ -1,6 +1,6 @@
 (** Normalize the equations *)
 
-open Asttypes
+open Common
 open Kernelizer.CMinils
 open NMinils
 

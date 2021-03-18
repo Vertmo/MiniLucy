@@ -1,3 +1,4 @@
+open Common
 open Lexing
 open PMinils.PMinils
 
@@ -6,9 +7,8 @@ let usage = "usage: " ^ Sys.argv.(0) ^
              [-asserts] [-avr] [-o <output_file>]\
              [-interpret <name> <k>]\
              <input_file>"
-
-type step = Parse | Kernelize | Check | Norm | Sched | Translate | Generate
 let asserts = ref false
+
 let targetAvr = ref false
 
 let step = ref Generate
@@ -20,19 +20,27 @@ let speclist = [
   ("-o", Arg.String (fun s -> output := Some s),
   ": set output file for c code");
   ("-parse", Arg.Unit (fun () -> step := Parse),
-   ": parse and print the program");
-  ("-kernelize", Arg.Unit (fun () -> step := Kernelize),
-   ": parse, kernelize and print the program");
+   ": stop after parsing and print the program");
   ("-check", Arg.Unit (fun () -> step := Check),
-   ":check the program, and print it with annotated clocks");
+   ": stop after type and clock checks and print the program");
+  ("-last", Arg.Unit (fun () -> step := Last),
+   ": stop after last removal and print the program");
+  ("-automaton", Arg.Unit (fun () -> step := Automaton),
+   ": stop after automaton removal and print the program");
+  ("-reset", Arg.Unit (fun () -> step := Reset),
+   ": stop after reset removal and print the program");
+  ("-switch", Arg.Unit (fun () -> step := Switch),
+   ": stop after switch removal and print the program");
+  ("-block", Arg.Unit (fun () -> step := Block),
+   ": stop after block removal and print the program");
   ("-norm", Arg.Unit (fun () -> step := Norm),
    ": print the normalized program");
   ("-sched", Arg.Unit (fun () -> step := Sched),
-  ": print the scheduled program");
+  ": stop after scheduling and print the program");
   ("-translate", Arg.Unit (fun () -> step := Translate),
-   ": print the program translated to the Obc language");
+   ": stop after Obc translation and print the program");
   ("-generate", Arg.Unit (fun () -> step := Generate),
-   ": print the generated C code");
+   ": generate C code and print it");
   ("-avr", Arg.Unit (fun () -> targetAvr := true),
    ": generate avr-compatible C and compile it");
   ("-asserts", Arg.Unit (fun () -> asserts := true),
@@ -74,7 +82,7 @@ let _ =
 
   (* Parse *)
   if (step = Parse) then (
-    print_endline (string_of_file pfile);
+    print_file Format.std_formatter pfile;
     exit 0
   );
 
@@ -83,7 +91,7 @@ let _ =
   let cfile = Clockchecker.elab_file tfile in
 
   if (step = Check) then (
-    print_endline (Clockchecker.CPMinils.string_of_file cfile);
+    Clockchecker.CPMinils.print_file Format.std_formatter cfile;
     exit 0
   );
 
@@ -96,15 +104,10 @@ let _ =
   | None -> ();
 
   (* Kernelize *)
-  let file = Kernelizer.kernelize_file cfile in
+  let file = Kernelizer.kernelize_file step cfile in
 
   (* Run the nodes from both files, checking they give the same result *)
   if !asserts then Pinterpr.compare_files cfile file;
-
-  if (step = Kernelize) then (
-    print_endline (Kernelizer.CMinils.string_of_file file);
-    exit 0
-  );
 
   (* Normalize *)
   let nfile = Normalizer.norm_file file in

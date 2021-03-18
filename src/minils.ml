@@ -1,6 +1,6 @@
 (** Kernel AST *)
 
-open Asttypes
+open Common
 
 module type Annotations = sig
   type t

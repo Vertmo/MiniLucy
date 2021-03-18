@@ -1,18 +1,18 @@
 (** Code generator *)
 
-open Asttypes
+open Common
 open Obc
 open MicroC
 
 (** Translate a Lustre type to a C type.
     Doesn't work on tuples (they shouldn't be encountered anyway) *)
-let ty_of_ty : Asttypes.ty -> MicroC.ty = function
+let ty_of_ty : Common.ty -> MicroC.ty = function
   | Tint | Tbool -> Tint
   | Treal -> Tfloat
   | Tclock id -> Tenum ("_clock_"^id)
 
 (** Translate a Lustre const to a C const *)
-let generate_const : Asttypes.const -> MicroC.const = function
+let generate_const : Common.const -> MicroC.const = function
   | Cint i -> Int i
   | Cbool b -> if b then Int (lnot 0) else Int 0
   | Creal f -> Float f
@@ -85,7 +85,7 @@ let rec generate_instr instances tys outputs : Obc.instr -> MicroC.instr list =
     else
       let clid = (match ty with
           | Tclock id -> id
-          | _ -> failwith (Printf.sprintf "Should not happen %s" (Asttypes.string_of_ty ty))) in
+          | _ -> failwith (Printf.sprintf "Should not happen %s" (Common.string_of_ty ty))) in
       [SwitchCase (generate_expr outputs e,
                    List.map (fun (c, i) ->
                        Printf.sprintf "_clock_%s_%s" clid c,

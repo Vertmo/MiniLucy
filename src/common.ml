@@ -88,3 +88,18 @@ module Atom = struct
   let fresh (s:string) =
     counter := !counter+1; Printf.sprintf "%s%d" s !counter
 end
+
+(** Remove one element from a list *)
+let rec remove_one x = function
+  | [] -> []
+  | hd::tl when hd = x -> tl
+  | hd::tl -> hd::(remove_one x tl)
+
+type step =
+  | Parse
+  | Last | Automaton | Reset | Switch | Block
+  | Check
+  | Norm
+  | Sched
+  | Translate
+  | Generate

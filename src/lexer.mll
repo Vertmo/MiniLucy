@@ -1,7 +1,7 @@
 {
   open Lexing
   open Parser
-  open Asttypes
+  open Common
 
   exception Lexical_error of string
 

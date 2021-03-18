@@ -1,6 +1,6 @@
 (** Normalized abstract syntax tree *)
 
-open Asttypes
+open Common
 
 type n_expr =
   { nexpr_desc: n_expr_desc;

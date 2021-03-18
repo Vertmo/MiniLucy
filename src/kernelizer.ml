@@ -1,6 +1,6 @@
 (** Desugarizer from parsed AST to kernel AST *)
 
-open Asttypes
+open Common
 open PMinils
 open Minils
 open Clockchecker
@@ -10,81 +10,77 @@ module CMinils = MINILS(TypeClockAnnot)
 
 (** Eliminate last expressions                                                 *)
 
-let rec last_expr id id' (e : k_expr) : k_expr =
+let rec last_expr substs (e : k_expr) : k_expr =
   let desc =
     match e.kexpr_desc with
     | KE_const c -> KE_const c
     | KE_ident x -> KE_ident x
     | KE_unop (op, e1) ->
-      KE_unop (op, last_expr id id' e1)
+      KE_unop (op, last_expr substs e1)
     | KE_binop (op, e1, e2) ->
-      KE_binop (op, last_expr id id' e1, last_expr id id' e2)
+      KE_binop (op, last_expr substs e1, last_expr substs e2)
     | KE_fby (e0s, es, er) ->
-      KE_fby (last_exprs id id' e0s, last_exprs id id' es, last_expr id id' er)
+      KE_fby (last_exprs substs e0s, last_exprs substs es, last_expr substs er)
     | KE_arrow (e0s, es, er) ->
-      KE_arrow (last_exprs id id' e0s, last_exprs id id' es, last_expr id id' er)
+      KE_arrow (last_exprs substs e0s, last_exprs substs es, last_expr substs er)
     | KE_match (e, brs) ->
-      KE_match (last_expr id id' e, last_branches id id' brs)
-    | KE_when (es, c, ckid) -> KE_when (last_exprs id id' es, c, ckid)
-    | KE_merge (x, brs) -> KE_merge (x, last_branches id id' brs)
+      KE_match (last_expr substs e, last_branches substs brs)
+    | KE_when (es, c, ckid) -> KE_when (last_exprs substs es, c, ckid)
+    | KE_merge (x, brs) -> KE_merge (x, last_branches substs brs)
     | KE_app (id, es, er) ->
-      KE_app (id, last_exprs id id' es, last_expr id id' er)
-    | KE_last x when x = id -> KE_ident id'
-    | KE_last x -> KE_last x
+      KE_app (id, last_exprs substs es, last_expr substs er)
+    | KE_last x -> KE_ident (List.assoc x substs)
   in { e with kexpr_desc = desc }
-and last_exprs id id' = List.map (last_expr id id')
-and last_branches id id' = List.map (fun (c, es) -> (c, last_exprs id id' es))
+and last_exprs substs = List.map (last_expr substs)
+and last_branches substs = List.map (fun (c, es) -> (c, last_exprs substs es))
 
-let last_eq id id' (eq : k_equation) : k_equation =
-  { eq with keq_expr = last_exprs id id' eq.keq_expr }
+let last_eq substs (eq : k_equation) : k_equation =
+  { eq with keq_expr = last_exprs substs eq.keq_expr }
 
-let rec last_instr id id' (ins : p_instr) : p_instr =
+let rec last_instr substs (ins : p_instr) : p_instr =
   let desc =
     match ins.pinstr_desc with
-    | Eq eq -> Eq (last_eq id id' eq)
-    | Let (x, a, e, instrs) ->
-      Let (x, a, last_expr id id' e, last_instrs id id' instrs)
+    | Eq eq -> Eq (last_eq substs eq)
+    | Block bck -> Block (last_block substs bck)
     | Reset (instrs, e) ->
-      Reset (last_instrs id id' instrs, last_expr id id' e)
+      Reset (last_instrs substs instrs, last_expr substs e)
     | Switch (e, brs, ckid) ->
-      Switch (last_expr id id' e,
-              List.map (fun (c, ins) -> (c, last_instrs id id' ins)) brs,
+      Switch (last_expr substs e,
+              List.map (fun (c, ins) -> (c, last_instrs substs ins)) brs,
               ckid)
     | Automaton (brs, ckid) ->
-      let last_un (e, s, b) = (last_expr id id' e, s, b) in
+      let last_un (e, s, b) = (last_expr substs e, s, b) in
       Automaton (List.map
                    (fun (c, unt, ins, unl) ->
                       (c,
                        List.map last_un unt,
-                       last_instrs id id' ins,
+                       last_instrs substs ins,
                        List.map last_un unl)) brs,
                  ckid)
   in { ins with pinstr_desc = desc }
-and last_instrs id id' = List.map (last_instr id id')
+and last_instrs substs = List.map (last_instr substs)
 
-let last_node (n : p_node) : p_node =
+and last_block substs bck =
   let nlocals = List.map (fun (x, a, c) ->
-      (x, a,
-       match c with
-       | Some constr -> Some (Atom.fresh (x^"_"), constr)
-       | None -> None)) n.pn_local in
-  let instrs = List.fold_left
-      (fun instrs (x, (ty, ck), c) ->
-         match c with
-         | Some (x', c) ->
-           let mk_expr desc =
-             { kexpr_desc = desc; kexpr_annot = [(ty, (ck, None))]; kexpr_loc = dummy_loc } in
-           let eq_fby =
-             { pinstr_desc =
-                 Eq { keq_patt = [x'];
-                      keq_expr = [mk_expr (KE_fby ([mk_expr (KE_const c)],
-                                                   [mk_expr (KE_ident x)],
-                                                   mk_expr (KE_const (Cbool false))))];
-                      keq_loc = dummy_loc };
-               pinstr_loc = dummy_loc } in
-           eq_fby::(last_instrs x x' instrs)
-         | None -> instrs)
-      n.pn_instrs nlocals
+      (x, a, match c with
+        | Some constr -> Some (Atom.fresh (x^"_"), constr)
+        | None -> None)) bck.pb_local in
+  let substs' = List.filter_map (fun (x, a, c) ->
+      Option.map (fun (x', _) -> (x, x')) c) nlocals in
+  let preinstrs = List.filter_map (fun (x, (ty, ck), c) ->
+      Option.map (fun (x', c) ->
+          let mk_expr desc =
+            { kexpr_desc = desc; kexpr_annot = [(ty, (ck, None))]; kexpr_loc = dummy_loc } in
+          { pinstr_desc =
+              Eq { keq_patt = [x'];
+                   keq_expr = [mk_expr (KE_fby ([mk_expr (KE_const c)],
+                                                [mk_expr (KE_ident x)],
+                                                mk_expr (KE_const (Cbool false))))];
+                   keq_loc = dummy_loc };
+            pinstr_loc = dummy_loc }
+        ) c
+    ) nlocals
+  and instrs' = last_instrs (substs'@substs) bck.pb_instrs
   and nlocals = List.fold_left
       (fun acc (x, a, c) ->
          match c with
@@ -92,8 +88,11 @@ let last_node (n : p_node) : p_node =
            (x', a, None)::(x, a, None)::acc
          | None -> (x, a, None)::acc
       ) [] nlocals in
-  { n with pn_local = List.rev nlocals;
-           pn_instrs = instrs }
+  { bck with pb_local = nlocals; pb_instrs = preinstrs@instrs' }
+
+
+let last_node (n : p_node) : p_node =
+  { n with pn_body = last_block [] n.pn_body }
 
 let last_file (f : p_file) : p_file =
   { f with pf_nodes = List.map last_node f.pf_nodes }
@@ -156,141 +155,141 @@ let rec alpha_conv_instr id id' ins =
   let desc =
     match ins.pinstr_desc with
     | Eq eq -> Eq (alpha_conv_eq id id' eq)
-    | Let (x, ann, e, instrs) ->
-      Let (alpha_conv id id' x, alpha_conv_annot id id' ann,
-           alpha_conv_expr id id' e, alpha_conv_instrs id id' instrs)
+    | Block bck ->
+      Block (alpha_conv_block id id' bck)
     | _ -> invalid_arg "alpha_conv_instr"
   in { ins with pinstr_desc = desc }
+
 and alpha_conv_instrs id id' = List.map (alpha_conv_instr id id')
+
+and alpha_conv_block id id' bck =
+  { bck with pb_instrs = alpha_conv_instrs id id' bck.pb_instrs }
 
 (** Eliminate automata                                                        *)
 
-let rec auto_instr (ins : p_instr) =
-  match ins.pinstr_desc with
-  | Eq _ -> [ins], []
-  | Let (id, ann, e, instrs) ->
-    let (instrs', ys) = auto_instrs instrs in
-    [{ ins with pinstr_desc = Let (id, ann, e, instrs') }], ys
-  | Reset (instrs, e) ->
-    let (instrs', ys) = auto_instrs instrs in
-    [{ ins with pinstr_desc = Reset (instrs', e) }], ys
-  | Switch (e, brs, ckid) ->
-    let brsys' = List.map (fun (c, ins) ->
-        let (ins', ys) = auto_instrs ins in ((c, ins'), ys)) brs in
-    [{ ins with pinstr_desc = Switch (e, List.map fst brsys', ckid) }],
-    List.concat (List.map snd brsys')
-  | Automaton (brs, (ckid, ck, defs)) ->
-    let (ckid, ck) = match (ckid, ck) with
-      | (Some ckid, Some ck) -> (ckid, ck)
-      | _ -> failwith "Should not happen" in
+let rec auto_instr (ins : p_instr) : p_instr =
+  let desc =
+    match ins.pinstr_desc with
+    | Eq eq -> Eq eq
+    | Block bck -> Block (auto_block bck)
+    | Reset (instrs, e) -> Reset (auto_instrs instrs, e)
+    | Switch (e, brs, ckid) ->
+      let brs' = List.map (fun (c, ins) -> (c, auto_instrs ins)) brs in
+      Switch (e, brs', ckid)
+    | Automaton (brs, (ckid, ck, defs)) ->
+      let (ckid, ck) = match (ckid, ck) with
+        | (Some ckid, Some ck) -> (ckid, ck)
+        | _ -> failwith "Should not happen" in
 
-    let mk_expr annot desc =
-      { kexpr_desc = desc; kexpr_annot = annot; kexpr_loc = dummy_loc }
-    in
-    let mk_ckexpr ck = mk_expr [(Tclock ckid, (ck, None))]
-    and mk_bexpr ck = mk_expr [(Tbool, (ck, None))]
-    and mk_2expr ck = mk_expr [(Tclock ckid, (ck, None)); (Tbool, (ck, None))] in
+      let mk_expr annot desc =
+        { kexpr_desc = desc; kexpr_annot = annot; kexpr_loc = dummy_loc }
+      in
+      let mk_ckexpr ck = mk_expr [(Tclock ckid, (ck, None))]
+      and mk_bexpr ck = mk_expr [(Tbool, (ck, None))]
+      and mk_2expr ck = mk_expr [(Tclock ckid, (ck, None)); (Tbool, (ck, None))] in
 
-    let rec generate_un_if ck (l : (k_expr * constr * bool) list) (default : (constr * k_expr)) =
-      match l with
-      | [] -> let (s, r) = default in
-        [mk_ckexpr ck (KE_const (Cconstr (s, ckid))); r]
-      | (cond, s, r)::tl ->
-        let elses = generate_un_if ck tl default in
-        [mk_2expr ck (KE_match (cond, [("False", elses);
-                                       ("True", [mk_ckexpr ck (KE_const (Cconstr (s, ckid)));
-                                                 mk_bexpr ck (KE_const (Cbool r))])]))]
-    in
+      let rec generate_un_if ck (l : (k_expr * constr * bool) list) (default : (constr * k_expr)) =
+        match l with
+        | [] -> let (s, r) = default in
+          [mk_ckexpr ck (KE_const (Cconstr (s, ckid))); r]
+        | (cond, s, r)::tl ->
+          let elses = generate_un_if ck tl default in
+          [mk_2expr ck (KE_match (cond, [("False", elses);
+                                         ("True", [mk_ckexpr ck (KE_const (Cconstr (s, ckid)));
+                                                   mk_bexpr ck (KE_const (Cbool r))])]))]
+      in
 
-    (* Recursive call *)
-    let brsys' = List.map (fun (c, unl, ins, unt) ->
-        let (ins', ys) = auto_instrs ins in ((c, unl, ins', unt), ys)) brs in
-    let brs' = List.map fst brsys' and ys' = List.concat (List.map snd brsys') in
+      (* Recursive call *)
+      let brs' = List.map (fun (c, unl, ins, unt) -> (c, unl, auto_instrs ins, unt)) brs in
 
-    (* Initial state *)
-    let (fconstr, _, _, _) = List.hd brs in
+      (* Initial state *)
+      let (fconstr, _, _, _) = List.hd brs in
 
-    (* Necessary idents *)
-    let ckid2 = Atom.fresh "_saut" in
-    let s = Atom.fresh "_s" and r = Atom.fresh "_r"
-    and ns = Atom.fresh "_ns" and nr = Atom.fresh "_nr"
-    and pns = Atom.fresh "_pns" and pnr = Atom.fresh "_pnr" in
+      (* Necessary idents *)
+      let ckid2 = Atom.fresh "_saut" in
+      let s = Atom.fresh "_s" and r = Atom.fresh "_r"
+      and ns = Atom.fresh "_ns" and nr = Atom.fresh "_nr"
+      and pns = Atom.fresh "_pns" and pnr = Atom.fresh "_pnr" in
 
-    (* Delay equations *)
-    let pnseq = { pinstr_desc =
-                    Eq { keq_patt = [pns];
-                         keq_expr = [mk_ckexpr ck
-                                       (KE_fby
-                                          ([mk_ckexpr ck (KE_const (Cconstr (fconstr, ckid)))],
-                                           [mk_ckexpr ck (KE_ident ns)],
-                                           mk_bexpr ck (KE_const (Cbool false))))];
+      (* Delay equations *)
+      let pnseq = { pinstr_desc =
+                      Eq { keq_patt = [pns];
+                           keq_expr = [mk_ckexpr ck
+                                         (KE_fby
+                                            ([mk_ckexpr ck (KE_const (Cconstr (fconstr, ckid)))],
+                                             [mk_ckexpr ck (KE_ident ns)],
+                                             mk_bexpr ck (KE_const (Cbool false))))];
+                           keq_loc = dummy_loc };
+                    pinstr_loc = dummy_loc }
+      and pnreq = { pinstr_desc =
+                      Eq { keq_patt = [pnr];
+                           keq_expr = [mk_bexpr ck
+                                         (KE_fby
+                                            ([mk_bexpr ck (KE_const (Cbool false))],
+                                             [mk_bexpr ck (KE_ident nr)],
+                                             mk_bexpr ck (KE_const (Cbool false))))];
+                           keq_loc = dummy_loc };
+                    pinstr_loc = dummy_loc } in
+
+      (* strong transitions *)
+      let hasstrongtrans = [] <> List.concat (List.map (fun (_, unl, _, _) -> unl) brs) in
+      let strongswitch =
+        if not hasstrongtrans then
+          { pinstr_desc = Eq { keq_patt = [s; r];
+                               keq_expr = [ mk_ckexpr ck (KE_ident pns);
+                                            mk_bexpr ck (KE_ident pnr) ];
+                               keq_loc = dummy_loc };
+            pinstr_loc = dummy_loc }
+        else
+          let strongbranches = List.map (fun (c, unl, _, _) ->
+              let ck' = Con (c, ckid2, ck) in
+              let sr_eq =
+                { pinstr_desc =
+                    Eq { keq_patt = [s; r];
+                         keq_expr = generate_un_if ck'
+                             (List.map (fun (e, c, b) -> (alpha_conv_expr ckid ckid2 e, c, b)) unl)
+                             (c, mk_bexpr ck' (KE_ident pnr));
                          keq_loc = dummy_loc };
-                  pinstr_loc = dummy_loc }
-    and pnreq = { pinstr_desc =
-                    Eq { keq_patt = [pnr];
-                         keq_expr = [mk_bexpr ck
-                                       (KE_fby
-                                          ([mk_bexpr ck (KE_const (Cbool false))],
-                                           [mk_bexpr ck (KE_ident nr)],
-                                           mk_bexpr ck (KE_const (Cbool false))))];
-                       keq_loc = dummy_loc };
                   pinstr_loc = dummy_loc } in
-
-    (* strong transitions *)
-    let hasstrongtrans = [] <> List.concat (List.map (fun (_, unl, _, _) -> unl) brs) in
-    let strongswitch =
-      if not hasstrongtrans then
-        { pinstr_desc = Eq { keq_patt = [s; r];
-                             keq_expr = [ mk_ckexpr ck (KE_ident pns);
-                                          mk_bexpr ck (KE_ident pnr) ];
-                             keq_loc = dummy_loc };
-          pinstr_loc = dummy_loc }
-      else
-        let strongbranches = List.map (fun (c, unl, _, _) ->
-            let ck' = Con (c, ckid2, ck) in
-            let sr_eq =
-              { pinstr_desc =
-                  Eq { keq_patt = [s; r];
-                       keq_expr = generate_un_if ck'
-                           (List.map (fun (e, c, b) -> (alpha_conv_expr ckid ckid2 e, c, b)) unl)
-                           (c, mk_bexpr ck' (KE_ident pnr));
-                       keq_loc = dummy_loc };
-                pinstr_loc = dummy_loc } in
-            (c,
-             [{ pinstr_desc = Reset ([sr_eq], mk_bexpr ck' (KE_ident pnr));
-                pinstr_loc = dummy_loc }])) brs' in
-        { pinstr_desc = Switch (mk_ckexpr ck (KE_ident pns),
-                                strongbranches,
-                                (Some ckid2, [s;r]));
-          pinstr_loc = dummy_loc } in
-
-    (* weak transitions and content *)
-    let weakbranches = List.map (fun (c, _, ins, unt) ->
-        let ck' = Con (c, ckid, ck) in
-        let nsnr_eq =
-          { pinstr_desc =
-              Eq { keq_patt = [ns; nr];
-                   keq_expr = generate_un_if ck' unt (c, mk_bexpr ck' (KE_const (Cbool false)));
-                   keq_loc = dummy_loc };
+              (c,
+               [{ pinstr_desc = Reset ([sr_eq], mk_bexpr ck' (KE_ident pnr));
+                  pinstr_loc = dummy_loc }])) brs' in
+          { pinstr_desc = Switch (mk_ckexpr ck (KE_ident pns),
+                                  strongbranches,
+                                  (Some ckid2, [s;r]));
             pinstr_loc = dummy_loc } in
-        (c,
-         [{ pinstr_desc = Reset (nsnr_eq::ins, mk_bexpr ck' (KE_ident r));
-            pinstr_loc = dummy_loc }])) brs' in
-    let weakswitch = { pinstr_desc = Switch (mk_ckexpr ck (KE_ident s),
-                                             weakbranches,
-                                             (Some ckid, ns::nr::defs));
-                       pinstr_loc = dummy_loc } in
-    [ pnseq; pnreq; strongswitch; weakswitch ],
-    (List.map (fun id -> (id, (Tclock ckid, ck))) [s;ns;pns])@
-    (List.map (fun id -> (id, (Tbool, ck))) [r;nr;pnr])@ys'
-and auto_instrs (ins : p_instr list) =
-  List.fold_left (fun (inss1, ys1) ins ->
-      let (inss2, ys2) = auto_instr ins in (inss1@inss2, ys1@ys2))
-    ([], []) ins
+
+      (* weak transitions and content *)
+      let weakbranches = List.map (fun (c, _, ins, unt) ->
+          let ck' = Con (c, ckid, ck) in
+          let nsnr_eq =
+            { pinstr_desc =
+                Eq { keq_patt = [ns; nr];
+                     keq_expr = generate_un_if ck' unt (c, mk_bexpr ck' (KE_const (Cbool false)));
+                     keq_loc = dummy_loc };
+              pinstr_loc = dummy_loc } in
+          (c,
+           [{ pinstr_desc = Reset (nsnr_eq::ins, mk_bexpr ck' (KE_ident r));
+              pinstr_loc = dummy_loc }])) brs' in
+      let weakswitch = { pinstr_desc = Switch (mk_ckexpr ck (KE_ident s),
+                                               weakbranches,
+                                               (Some ckid, ns::nr::defs));
+                         pinstr_loc = dummy_loc } in
+      Block { pb_local = (List.map (fun id -> (id, (Tclock ckid, ck), None)) [s;ns;pns])@
+                         (List.map (fun id -> (id, (Tbool, ck), None)) [r;nr;pnr]);
+              pb_instrs = [ pnseq; pnreq; strongswitch; weakswitch ];
+              pb_loc = ins.pinstr_loc }
+
+  in { ins with pinstr_desc = desc}
+
+  and auto_instrs (ins : p_instr list) =
+    List.map auto_instr ins
+
+and auto_block (bck : p_block) =
+  { bck with pb_instrs = auto_instrs bck.pb_instrs }
 
 let auto_node (n : p_node) : p_node =
-  let (instrs, ys) = auto_instrs n.pn_instrs in
-  { n with pn_instrs = instrs; pn_local = n.pn_local@(List.map (fun (x, a) -> (x, a, None)) ys) }
+  { n with pn_body = auto_block n.pn_body }
 
 let rec auto_file (f : p_file) : p_file =
   { f with pf_nodes = List.map auto_node f.pf_nodes }
@@ -299,7 +298,7 @@ let rec auto_file (f : p_file) : p_file =
 
 module Env = Map.Make(String)
 
-type ctx = { cks : Asttypes.clockdec list;
+type ctx = { cks : clockdec list;
              ckenv : (ident list) Env.t }
 
 let add_constrs_of_ty ctx id ty =
@@ -394,10 +393,7 @@ let rec reset_instr ctx res (ins : p_instr) : p_instr =
   let desc =
     match ins.pinstr_desc with
     | Eq eq -> Eq (match res with Some res -> reset_eq ctx res eq | None -> eq)
-    | Let (id, ann, e, instrs) ->
-      let ctx' = add_constrs_of_ty ctx id (fst ann) in
-      let e' = match res with Some res -> reset_expr ctx res e | None -> e in
-      Let (id, ann, e', reset_instrs ctx' res instrs)
+    | Block bck -> Block (reset_block ctx res bck)
     | Switch (e, brs, ckid) ->
       let id = Option.get (fst ckid) in
       let ctx' = { ctx with ckenv = Env.add id (List.map fst brs) ctx.ckenv } in
@@ -405,55 +401,58 @@ let rec reset_instr ctx res (ins : p_instr) : p_instr =
     | Reset (instrs, er) ->
       let er' = match res with Some res -> reset_expr ctx res er | None -> er in
       let y = Atom.fresh "_" and (ty, (ckr, _)) = List.hd er'.kexpr_annot in
+      let eqy = { keq_patt = [y]; keq_expr = [er']; keq_loc = er'.kexpr_loc } in
       let res' = or_resets_opt ctx res (Some { kexpr_desc = KE_ident y;
                                                kexpr_annot = [(Tbool, (ckr, None))];
                                                kexpr_loc = dummy_loc }) in
       let instrs' = reset_instrs ctx res' instrs in
-      Let (y, (ty, ckr), er', instrs')
+      Block { pb_local = [(y, (ty, ckr), None)];
+              pb_instrs = { pinstr_desc = (Eq eqy); pinstr_loc = er'.kexpr_loc }::instrs';
+              pb_loc = ins.pinstr_loc; }
     | _ -> invalid_arg "reset_instr"
   in { ins with pinstr_desc = desc }
 and reset_instrs ctx res = List.map (reset_instr ctx res)
 and reset_branches ctx res ckid = List.map (fun (c, ins) -> (c, reset_instrs ctx (when_reset c ckid res) ins))
+and reset_block ctx res bck = { bck with pb_instrs = reset_instrs ctx res bck.pb_instrs }
 
 let idty = List.map (fun (id, (ty, _)) -> (id, ty))
-let idty' = List.map (fun (id, (ty, _), _) -> (id, ty))
+(* let idty' = List.map (fun (id, (ty, _), _) -> (id, ty)) *)
 
 let reset_node cks (n : p_node) : p_node =
   let ctx = { cks; ckenv = Env.empty } in
   let ctx = List.fold_left (fun ctx (id, ty) -> add_constrs_of_ty ctx id ty)
-      ctx ((idty n.pn_input)@(idty n.pn_output)@(idty' n.pn_local))
-  in { n with pn_instrs = reset_instrs ctx None n.pn_instrs }
+      ctx ((idty n.pn_input)@(idty n.pn_output))
+  in { n with pn_body = reset_block ctx None n.pn_body }
 
 let reset_file (f : p_file) : p_file =
   { f with pf_nodes = List.map (reset_node f.pf_clocks) f.pf_nodes }
 
 (** Eliminate switch                                                          *)
 
-let rec add_lets ins (lets : (ident * ann * k_expr) list) =
-  match lets with
-  | [] -> ins
-  | (id, ann, e)::tl ->
-    let ins' = [{ pinstr_desc = Let (id, ann, e, ins);
-                  pinstr_loc = dummy_loc }] in
-    add_lets ins' tl
+let add_block locals ins (decls : (ident * ann * k_expr) list) =
+  let eqs = List.map (fun (x, _, e) -> { keq_patt = [x]; keq_expr = [e]; keq_loc = dummy_loc }) decls in
+  let inseqs = List.map (fun eq -> { pinstr_desc = Eq eq; pinstr_loc = dummy_loc }) eqs in
+  Block { pb_local = locals@(List.map (fun (x, ann, _) -> (x, ann, None)) decls);
+          pb_instrs = inseqs@ins;
+          pb_loc = dummy_loc }
 
 (** Generates the let-bindings necessary to project vars used and defined in a switch block.
     Does not add let-bindings for names defined by the instrs.
     Returns both the new let-binding instr, and a substitution for the vars defined inside *)
 let switch_proj (vars : (ident * ann) list) (ck : clock) constr ckid defs (ins : p_instr list) =
-  let nvars = List.map (fun (id, ann) -> (id, (Atom.fresh (id^"_"), ann)))
+  let nvars = List.map (fun (id, (ty, ck)) -> (id, (Atom.fresh (id^"_"), (ty, (Con (constr, ckid, ck))))))
       (List.filter (fun (id, (_, ck')) -> ck' = ck && not (List.mem id defs)) vars)
   and ndefs = List.map (fun (id, (ty, ck)) -> (id, (Atom.fresh (id^"_"), (ty, (Con (constr, ckid, ck))))))
       (List.filter (fun (id, (_, ck')) -> List.mem id defs) vars) in
   let ins' = List.fold_left (fun ins (id, (id', _)) -> alpha_conv_instrs id id' ins) ins (nvars@ndefs) in
-  let ins' = add_lets ins'
+  let ins' = add_block [] ins'
       (List.map (fun (id, (id', ((ty, ck) as ann))) ->
            (id', ann, { kexpr_desc = KE_when ([{ kexpr_desc = KE_ident id;
                                                  kexpr_annot = [(ty, (ck, Some id))];
                                                  kexpr_loc = dummy_loc }], constr, ckid);
                         kexpr_annot = [(ty, (Con (constr, ckid, ck), None))];
                         kexpr_loc = dummy_loc })) nvars) in
-  ins', ndefs
+  { pinstr_desc = ins'; pinstr_loc = dummy_loc }, ndefs
 
 let mk_merge ty ck ckid (cvars : (constr * ident) list) =
   { kexpr_desc = KE_merge (ckid,
@@ -464,110 +463,67 @@ let mk_merge ty ck ckid (cvars : (constr * ident) list) =
     kexpr_annot = [(ty, (ck, None))];
     kexpr_loc = dummy_loc }
 
-let rec switch_instr vars (ins : p_instr) : (p_instr list * (ident * ann) list) =
-  match ins.pinstr_desc with
-  | Eq eq -> [ins], []
-  | Let (id, ann, e, instrs) ->
-    let (instrs', ys) = switch_instrs ((id, ann)::vars) instrs in
-    [{ ins with pinstr_desc = Let (id, ann, e, instrs')}], ys
-  | Switch (e, brs, (ckid, defs)) ->
-    let (ty, (ck, _)) = List.hd e.kexpr_annot in
-    let ckid = Option.get ckid in
-    let (brs', ys) = switch_branches vars ckid brs in
-    let brs' = List.map (fun (c, ins) -> (c, switch_proj (vars@ys) ck c ckid defs ins)) brs' in
-    let (_, (_, ndefs)) = List.hd brs' in
-    let mergeeqs =
-      List.map (fun (id, _) ->
-          let cvars = List.map (fun (c, (_, ndefs)) -> (c, fst (List.assoc id ndefs))) brs' in
-          { pinstr_desc = Eq { keq_patt = [id];
-                               keq_expr = [mk_merge ty ck ckid cvars];
-                               keq_loc = dummy_loc; };
-            pinstr_loc = dummy_loc }
-        ) ndefs in
-    { pinstr_desc = Eq { keq_patt = [ckid];
-                         keq_expr = [e];
-                         keq_loc = dummy_loc };
-      pinstr_loc = dummy_loc }::mergeeqs@(List.concat (List.map (fun (_, (ins, _)) -> ins) brs')),
-    (ckid, (ty, ck))::ys@(List.map snd (List.concat (List.map (fun (_, (_, ndefs)) -> ndefs) brs')))
-  | _ -> invalid_arg "switch_instr"
-and switch_instrs vars ins =
-  let (ins, ys) =
-    List.fold_left (fun (inss1, ys1) ins ->
-        let (ins', ys2) = switch_instr vars ins in (ins'::inss1, ys1@ys2))
-      ([], []) ins in List.concat (List.rev ins), ys
-and switch_branches vars ckid brs =
-  let (brs, ys) =
-    List.fold_left (fun (brss1, ys1) (c, ins) ->
-        let (ins', ys2) = switch_instrs vars ins
-        in ((c, ins')::brss1, ys1@ys2))
-      ([], []) brs in List.rev brs, ys
-
+let rec switch_instr vars (ins : p_instr) : p_instr =
+  let desc =
+    match ins.pinstr_desc with
+    | Eq eq -> Eq eq
+    | Block bck -> Block (switch_block vars bck)
+    | Switch (e, brs, (ckid, defs)) ->
+      let (ty, (ck, _)) = List.hd e.kexpr_annot in
+      let ckid = Option.get ckid in
+      let brs' = switch_branches vars brs in
+      let brs' = List.map (fun (c, ins) -> (c, switch_proj vars ck c ckid defs ins)) brs' in
+      let (_, (_, ndefs)) = List.hd brs' in
+      let mergeeqs =
+        List.map (fun (id, (_, (ty, _))) ->
+            let cvars = List.map (fun (c, (_, ndefs)) -> (c, fst (List.assoc id ndefs))) brs' in
+            { pinstr_desc = Eq { keq_patt = [id];
+                                 keq_expr = [mk_merge ty ck ckid cvars];
+                                 keq_loc = dummy_loc; };
+              pinstr_loc = dummy_loc }
+          ) ndefs
+      and locals = List.concat (List.map (fun (_, (_, ndefs)) ->
+          List.map (fun (_, (x, ann)) -> (x, ann, None)) ndefs) brs') in
+      add_block locals (mergeeqs@(List.map (fun (_, (ins, _)) -> ins) brs')) [(ckid, (ty, ck), e)]
+    | _ -> invalid_arg "switch_instr"
+  in { ins with pinstr_desc = desc }
+and switch_instrs vars = List.map (switch_instr vars)
+and switch_branches vars = List.map (fun (c, ins) -> (c, switch_instrs vars ins))
+and switch_block vars bck =
+  { bck with pb_instrs = switch_instrs ((List.map (fun (x, ann, _) -> (x, ann)) bck.pb_local)@vars) bck.pb_instrs }
 
 let switch_node (n : p_node) : p_node =
-  let (ins, names) =
-    switch_instrs (n.pn_input@n.pn_output@
-                   (List.map (fun (x, a, _) -> (x, a)) n.pn_local))
-      n.pn_instrs in
-  { n with pn_instrs = ins; pn_local = n.pn_local@(List.map (fun (x, a) -> (x, a, None)) names) }
+  { n with pn_body = switch_block (n.pn_input@n.pn_output) n.pn_body }
 
 let switch_file (f : p_file) : p_file =
   { f with pf_nodes = List.map switch_node f.pf_nodes }
 
 (** Eliminate let blocks                                                      *)
 
-(** check if ident appears in expr, eq, instr *)
-let rec free_in_expr id e =
-  match e.kexpr_desc with
-  | KE_const _ -> false
-  | KE_ident x -> id = x
-  | KE_unop (_, e1) -> free_in_expr id e1
-  | KE_binop (_, e1, e2) -> free_in_expr id e1 || free_in_expr id e2
-  | KE_fby (e0s, es, er) -> free_in_exprs id e0s || free_in_exprs id es || free_in_expr id er
-  | KE_arrow (e0s, es, er) -> free_in_exprs id e0s || free_in_exprs id es || free_in_expr id er
-  | KE_match (e, brs) -> free_in_expr id e || free_in_branches id brs
-  | KE_when (es, _, x) -> free_in_exprs id es || id = x
-  | KE_merge (x, brs) -> id = x || free_in_branches id brs
-  | KE_app (_, es, er) -> free_in_exprs id es || free_in_expr id er
-  | KE_last x -> id = x
-and free_in_exprs id = List.exists (free_in_expr id)
-and free_in_branches id = List.exists (fun (_, es) -> free_in_exprs id es)
-
-let free_in_eq id eq =
-  free_in_exprs id eq.keq_expr
-
-let rec free_in_instr id ins =
-  match ins.pinstr_desc with
-  | Eq eq -> free_in_eq id eq
-  | _ -> invalid_arg "free_in_instr"
-and free_in_instrs id =
-  List.exists (free_in_instr id)
-
-let rec let_instr (ins : p_instr) : (p_instr list * (ident * ann) list) =
+let rec block_instr (ins : p_instr) : (p_instr list * (ident * ann) list) =
   match ins.pinstr_desc with
   | Eq eq -> ([ins], [])
-  | Let (id, ann, e, instrs) ->
-    let (instrs', ys) = let_instrs instrs in
-    if free_in_instrs id instrs' then
-      let id' = Atom.fresh (id^"_") in
-      ({ pinstr_desc = Eq { keq_patt = [id'];
-                            keq_expr = [alpha_conv_expr id id' e];
-                            keq_loc = dummy_loc };
-         pinstr_loc = dummy_loc}::List.map (alpha_conv_instr id id') instrs',
-       (id', ann)::ys)
-    else (instrs', ys)
+  | Block bck -> block_block bck
   | _ -> invalid_arg "let_instr"
-and let_instrs (ins : p_instr list) =
+and block_instrs (ins : p_instr list) =
   List.fold_left (fun (inss1, ys1) ins ->
-      let (inss2, ys2) = let_instr ins in (inss1@inss2, ys1@ys2))
+      let (inss2, ys2) = block_instr ins in (inss1@inss2, ys1@ys2))
     ([], []) ins
 
-let let_node (n : p_node) : p_node =
-  let (instrs', names) = let_instrs n.pn_instrs in
-  { n with pn_instrs = instrs';
-           pn_local = n.pn_local@(List.map (fun (x, a) -> (x, a, None)) names) }
+and block_block (bck : p_block) =
+  let instrs', ys = block_instrs bck.pb_instrs in
+  let locals = List.map (fun (x, ann, _) -> (x, Atom.fresh (x^"_"), ann)) bck.pb_local in
+  let instrs' = List.fold_left (fun ins (x, x', _) -> alpha_conv_instrs x x' ins) instrs' locals in
+  instrs', (List.map (fun (_, x, ann) -> (x, ann)) locals)@ys
 
-let let_file (f : p_file) : p_file =
-  { f with pf_nodes = List.map let_node f.pf_nodes }
+let block_node (n : p_node) : p_node =
+  let (instrs, locals) = block_block n.pn_body in
+  { n with pn_body = { pb_local = List.map (fun (x, a) -> (x, a, None)) locals;
+                       pb_instrs = instrs;
+                       pb_loc = dummy_loc }}
+
+let block_file (f : p_file) : p_file =
+  { f with pf_nodes = List.map block_node f.pf_nodes }
 
 (** Transcription                                                             *)
 
@@ -580,8 +536,8 @@ let tr_node (n : p_node) : k_node =
   { kn_name = n.pn_name;
     kn_input = n.pn_input;
     kn_output = n.pn_output;
-    kn_local = List.map (fun (x, a, _) -> (x, a)) n.pn_local;
-    kn_equs = List.map tr_instr n.pn_instrs;
+    kn_local = List.map (fun (x, a, _) -> (x, a)) n.pn_body.pb_local;
+    kn_equs = List.map tr_instr n.pn_body.pb_instrs;
     kn_loc = n.pn_loc }
 
 let tr_file (f : p_file) : k_file =
@@ -590,5 +546,16 @@ let tr_file (f : p_file) : k_file =
 
 (** Conclusion                                                                *)
 
-let kernelize_file (f : p_file) : k_file =
-  f |> last_file |> auto_file |> reset_file |> switch_file |> let_file |> tr_file
+let kernelize_file (step : step) (f : p_file) : k_file =
+  let pass_and_print pass step' f =
+    let f' = pass f in
+    if step' = step
+    then (CPMinils.print_file Format.std_formatter f'; exit 0)
+    else f'
+  in f
+     |> pass_and_print last_file Last
+     |> pass_and_print auto_file Automaton
+     |> pass_and_print reset_file Reset
+     |> pass_and_print switch_file Switch
+     |> pass_and_print block_file Block
+     |> tr_file

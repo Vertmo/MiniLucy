@@ -1,6 +1,6 @@
 (* An interpreter for Obc *)
 
-open Asttypes
+open Common
 open Obc
 open Interpr
 

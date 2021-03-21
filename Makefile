@@ -1,6 +1,6 @@
 include Makefile.conf
 
-all: minilucy.native src/avrlib.o src/liquidCrystal.o
+all: minilucy.native src/avrlib.o src/liquidCrystal.o src/minilucy.cma
 
 src/config.ml:
 	make -C src config.ml
@@ -8,6 +8,9 @@ src/config.ml:
 minilucy.native: $(addprefix src/,$(SRC))
 	make -C src minilucy.native
 	cp src/minilucy.native .
+
+src/minilucy.cma: $(addprefix src/,$(SRC))
+	make -C src minilucy.cma
 
 src/avrlib.o: src/avrlib.c src/avrlib.h
 	avr-gcc -g -fno-exceptions -Wall \

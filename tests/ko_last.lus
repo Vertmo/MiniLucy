@@ -1,0 +1,6 @@
+node f(x : int) returns (y : int)
+var last z : int = true;
+let
+  y = x + z;
+  z = last z + 1;
+tel

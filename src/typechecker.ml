@@ -381,6 +381,24 @@ and get_def_block (bck : p_block) =
       else raise (TypeError (Printf.sprintf "Missing a definition for %s" x, bck.pb_loc))
     ) defs (List.map (fun (x, _, _) -> x) bck.pb_local)
 
+(** Check a clock in a typing env *)
+let check_clock loc clocks (vars : (ident * ty) list) ck =
+  let rec aux ck =
+    match ck with
+    | Cbase -> ()
+    | Con (constr, idck, ck) ->
+      aux ck;
+      let ckt = (try (List.assoc idck vars)
+                 with _ ->
+                   raise (TypeError
+                            (Printf.sprintf "Clock variable %s not found" idck, loc))) in
+      let constrs = constrs_of_clock clocks loc ckt in
+      if not (List.mem constr constrs)
+      then raise (TypeError
+                    (Printf.sprintf "%s is not a constructor of %s"
+                       constr (string_of_ty ckt), loc))
+  in aux ck
+
 (** Check that the instruction [ins] is correctly typed. *)
 let rec elab_instr nodes clocks vars (ins : p_instr) : TPMinils.p_instr =
   let (desc : TPMinils.p_instr_desc) =
@@ -432,28 +450,23 @@ and elab_instrs nodes clocks vars ins =
   List.map (elab_instr nodes clocks vars) ins
 and elab_block nodes clocks vars bck : TPMinils.p_block =
   let vars' = (List.map (fun (x, (ty, _), _) -> (x, ty)) bck.pb_local)@vars in
+
+  List.iter (fun (id, (_, ck), _) -> check_clock bck.pb_loc clocks vars' ck) bck.pb_local;
+
+  (* Check that the last init constants are well typed *)
+  List.iter (fun (id, (ty, _), const) ->
+      match const with
+      | Some const ->
+        let ty' = type_const bck.pb_loc const in
+        if ty' <> ty then
+          raise (TypeError
+                   (Printf.sprintf "last %s was declared with type %s, but found %s for its init constant"
+                      id (string_of_ty ty) (string_of_ty ty'), bck.pb_loc))
+      | _ -> ()) bck.pb_local;
+
   { pb_local = bck.pb_local;
     pb_instrs = elab_instrs nodes clocks vars' bck.pb_instrs;
     pb_loc = bck.pb_loc }
-
-(** Check a clock in a typing env *)
-let check_clock clocks (n : p_node) (vars : (ident * ty) list) ck =
-  let rec aux ck =
-    match ck with
-    | Cbase -> ()
-    | Con (constr, idck, ck) ->
-      aux ck;
-      let ckt = (try (List.assoc idck vars)
-                 with _ ->
-                   raise (TypeError
-                            (Printf.sprintf "Clock %s not found in node %s"
-                               idck n.pn_name, n.pn_loc))) in
-      let constrs = constrs_of_clock clocks n.pn_loc ckt in
-      if not (List.mem constr constrs)
-      then raise (TypeError
-                    (Printf.sprintf "%s is not a constructor of %s"
-                     constr (string_of_ty ckt), n.pn_loc))
-  in aux ck
 
 (** Check that the node [n] is correctly typed *)
 let elab_node (nodes: (ident * TPMinils.p_node) list) clocks (n : p_node) :
@@ -479,20 +492,8 @@ let elab_node (nodes: (ident * TPMinils.p_node) list) clocks (n : p_node) :
 
   (* Check that all declared types are using correct clocks *)
   let idty = List.map (fun (id, (ty, _)) -> (id, ty)) in
-  List.iter (fun (id, (_, ck)) -> check_clock clocks n (idty n.pn_input) ck) n.pn_input;
-  List.iter (fun (id, (_, ck)) -> check_clock clocks n (idty (n.pn_input@n.pn_output)) ck) n.pn_output;
-  (* List.iter (fun (id, (_, ck)) -> check_clock clocks n (idty (n.pn_input@n.pn_output@local)) ck) local; *)
-
-  (* Check that the last init constants are well typed *)
-  (* List.iter (fun (id, (ty, _), const) ->
-   *     match const with
-   *     | Some const ->
-   *       let ty' = type_const n.pn_loc const in
-   *       if ty' <> ty then
-   *         raise (TypeError
-   *                  (Printf.sprintf "last %s was declared with type %s, but found %s for its init constant"
-   *                     id (string_of_ty ty) (string_of_ty ty'), n.pn_loc))
-   *     | _ -> ()) n.pn_local; *)
+  List.iter (fun (id, (_, ck)) -> check_clock n.pn_loc clocks (idty n.pn_input) ck) n.pn_input;
+  List.iter (fun (id, (_, ck)) -> check_clock n.pn_loc clocks (idty (n.pn_input@n.pn_output)) ck) n.pn_output;
 
   (* Check that all the streams are defined *)
   let expected = List.sort String.compare (List.map fst n.pn_output)

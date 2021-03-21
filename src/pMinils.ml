@@ -43,7 +43,7 @@ module PMINILS(A : Annotations) = struct
     pp_print_list ~pp_sep:(fun p () -> fprintf p ";@ ") p
 
   let print_decl fmt (id, (ty, ck)) =
-    fprintf fmt "%a@ : %s :: %s"
+    fprintf fmt "@[<h>%a@ : %s :: %s@]"
       print_ident id
       (string_of_ty ty)
       (string_of_clock ck)
@@ -51,7 +51,7 @@ module PMINILS(A : Annotations) = struct
   let print_decl_list = print_semicol_list print_decl
 
   let print_local fmt (id, (ty, ck), c) =
-    fprintf fmt "%s%a@ : %s :: %s%s"
+    fprintf fmt "@[<h>%s%a@ : %s :: %s%s@]"
       (match c with Some _ -> "last " | None -> "")
       print_ident id
       (string_of_ty ty)
@@ -62,7 +62,7 @@ module PMINILS(A : Annotations) = struct
 
   let print_locals fmt locals =
     if locals <> [] then
-      fprintf fmt "@[<h>var @[<hov 4>%a@];@]@;" print_local_list locals
+      fprintf fmt "@[<hov 2>var %a;@]@;" print_local_list locals
 
   let print_unless ?(print_anns=false) fmt (e, c, r) =
     fprintf fmt "@[<h>unless %s %s %s@]"
@@ -127,7 +127,7 @@ module PMINILS(A : Annotations) = struct
       (print_untils ~print_anns) unt
 
   and print_block fmt ?(print_anns=false) bck =
-    fprintf fmt "@[<v 0>%a\
+    fprintf fmt "@[%a\
                  @[<v 2>let@;%a@;<0 -2>@]\
                  tel@]"
       print_locals bck.pb_local

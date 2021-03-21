@@ -113,7 +113,7 @@ let compile step filenames =
   let nfile = Normalizer.norm_file file in
 
   if (step = Norm) then (
-    print_endline (NMinils.string_of_file nfile);
+    NMinils.print_file Format.std_formatter nfile;
     exit 0
   );
 
@@ -122,7 +122,7 @@ let compile step filenames =
   if !asserts then assert (Scheduler.schedule_is_correct_file nfile);
 
   if (step = Sched) then (
-    print_endline (NMinils.string_of_file nfile);
+    NMinils.print_file Format.std_formatter nfile;
     exit 0
   );
 

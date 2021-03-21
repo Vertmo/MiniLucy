@@ -546,11 +546,14 @@ let tr_file (f : p_file) : k_file =
 
 (** Conclusion                                                                *)
 
-let kernelize_file (step : step) (f : p_file) : k_file =
+open Format
+
+let kernelize_file ?(formatter = std_formatter)
+    (step : step) (f : p_file) : k_file =
   let pass_and_print pass step' f =
     let f' = pass f in
     if step' = step
-    then (CPMinils.print_file Format.std_formatter f'; exit 0)
+    then (Clockchecker.CPMinils.print_file formatter f'; raise Done)
     else f'
   in f
      |> pass_and_print last_file Last

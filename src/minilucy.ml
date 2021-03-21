@@ -104,7 +104,10 @@ let _ =
   | None -> ();
 
   (* Kernelize *)
-  let file = Kernelizer.kernelize_file step cfile in
+    let file =
+      try
+        Kernelizer.kernelize_file step cfile
+      with Done -> exit 0 in
 
   (* Run the nodes from both files, checking they give the same result *)
   if !asserts then Pinterpr.compare_files cfile file;

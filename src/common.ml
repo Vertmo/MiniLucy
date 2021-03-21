@@ -103,3 +103,5 @@ type step =
   | Sched
   | Translate
   | Generate
+
+exception Done

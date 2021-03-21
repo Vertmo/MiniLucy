@@ -502,12 +502,8 @@ let elab_node (nodes : (ident * CPMinils.p_node) list) (n : p_node) : CPMinils.p
 (** Check the clocks for the file [f] *)
 let elab_file (f : p_file) : CPMinils.p_file =
   let nodes =
-    try List.rev
-          (List.map snd
-             (List.fold_left (fun (env : (ident * CPMinils.p_node) list) n ->
-                  (n.pn_name, (elab_node env n))::env) [] f.pf_nodes))
-    with
-    | ClockError (msg, loc) ->
-      Printf.eprintf "Clock checking error : %s at %s\n"
-        msg (string_of_loc loc); exit 1 in
+    List.rev
+      (List.map snd
+         (List.fold_left (fun (env : (ident * CPMinils.p_node) list) n ->
+              (n.pn_name, (elab_node env n))::env) [] f.pf_nodes)) in
   { pf_nodes = nodes; pf_clocks = f.pf_clocks }

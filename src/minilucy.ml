@@ -68,10 +68,8 @@ let lex_and_parse ic =
 
 let filenames = ref []
 
-let _ =
-  Arg.parse_expand speclist (fun x -> filenames := !filenames@[x]) usage;
-  let step = !step and filenames = !filenames in
-
+let compile step filenames =
+  (* Parse *)
   let pfile = List.fold_left (fun f filename ->
       let ic = open_in filename in
       let f' = lex_and_parse ic in
@@ -80,7 +78,6 @@ let _ =
         pf_nodes = f.pf_nodes@f'.pf_nodes })
       { pf_clocks = []; pf_nodes = [] } filenames in
 
-  (* Parse *)
   if (step = Parse) then (
     print_file Format.std_formatter pfile;
     exit 0
@@ -182,3 +179,24 @@ let _ =
                    avrfile hexfile))
   )
 
+(** Compile the program while catching exceptions *)
+let compile_and_catch step filenames =
+  try compile step filenames with
+  | Typechecker.UnexpectedEquationError (id, loc) ->
+    Printf.eprintf "Type checking error : UnexpectedEquation for %s at %s\n"
+      id (string_of_loc loc); exit 1
+  | Typechecker.TypeError (msg, loc) ->
+    Printf.eprintf "Type checking error : %s at %s\n"
+      msg (string_of_loc loc); exit 1
+  | Clockchecker.ClockError (msg, loc) ->
+    Printf.eprintf "Clock checking error : %s at %s\n"
+      msg (string_of_loc loc); exit 1
+  | Causalitychecker.CausalityError (msg, nodeid, loc) ->
+    Printf.printf "Causality error : %s in node %s at %s\n"
+      msg nodeid (string_of_loc loc); exit 1
+
+let _ =
+  Arg.parse_expand speclist (fun x -> filenames := !filenames@[x]) usage;
+  let step = !step and filenames = !filenames in
+
+  compile_and_catch step filenames

@@ -517,18 +517,10 @@ let elab_node (nodes: (ident * TPMinils.p_node) list) clocks (n : p_node) :
 (** Check that the file [f] is correctly typed *)
 let elab_file (f : p_file) : TPMinils.p_file =
   let clocks = f.pf_clocks in
-  try
-    let nodes = List.fold_left (fun env n ->
-        (n.pn_name, elab_node env clocks n)::env) [] f.pf_nodes in
-    { pf_clocks = clocks;
-      pf_nodes = List.map snd (List.rev nodes); }
-  with
-  | UnexpectedEquationError (id, loc) ->
-    Printf.eprintf "Type checking error : UnexpectedEquation for %s at %s\n"
-      id (string_of_loc loc); exit 1
-  | TypeError (msg, loc) ->
-    Printf.eprintf "Type checking error : %s at %s\n"
-      msg (string_of_loc loc); exit 1
+  let nodes = List.fold_left (fun env n ->
+      (n.pn_name, elab_node env clocks n)::env) [] f.pf_nodes in
+  { pf_clocks = clocks;
+    pf_nodes = List.map snd (List.rev nodes); }
 
 (** Add the new clock types corresponding to automata                         *)
 

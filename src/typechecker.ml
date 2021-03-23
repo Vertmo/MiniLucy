@@ -6,7 +6,7 @@ open PMinils
 
 module TypeAnnot : (Annotations with type t = ty) = struct
   type t = ty
-  let string_of_t = string_of_ty
+  let print_t = print_ty
 end
 
 module TPMinils = PMINILS(TypeAnnot)
@@ -338,8 +338,7 @@ let elab_equation nodes clocks vars (eq : k_equation) : TPMinils.k_equation =
   if tys <> expected
   then raise (TypeError
                 (Printf.sprintf
-                   "Wrong type for equation %s; expected %s, found %s"
-                   (KMinils.string_of_equation eq)
+                   "Wrong type for equation : expected %s, found %s"
                    (string_of_tys expected)
                    (string_of_tys tys), eq.keq_loc));
   { keq_patt = eq.keq_patt; keq_expr = es'; keq_loc = eq.keq_loc }

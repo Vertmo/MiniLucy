@@ -43,26 +43,12 @@ type n_file =
 
 let print_ident = pp_print_string
 
-let print_col_list p =
-  pp_print_list ~pp_sep:(fun p () -> fprintf p ",@ ") p
-
-let print_semicol_list p =
-  pp_print_list ~pp_sep:(fun p () -> fprintf p ";@ ") p
-
-let print_decl fmt (id, (ty, ck)) =
-  fprintf fmt "@[<h>%a@ : %s :: %s@]"
-    print_ident id
-    (string_of_ty ty)
-    (string_of_clock ck)
-
-let print_decl_list = print_semicol_list print_decl
-
 let rec print_expr fmt e =
   print_expr_desc fmt e.nexpr_desc
 
 and print_expr_desc fmt = function
-  | NE_const c -> fprintf fmt "%s" (string_of_const c)
-  | NE_ident i -> fprintf fmt "%s" i
+  | NE_const c -> print_const fmt c
+  | NE_ident i -> print_ident fmt i
   | NE_op (op, es) ->
     fprintf fmt "@[<hov 2>(%s [%a])@]" (string_of_op op)
       (print_col_list print_expr) es
@@ -91,8 +77,10 @@ let print_equation fmt = function
   | NQ_ident (id, e) ->
     fprintf fmt "@[<hov 0>%s = %a@]" id print_cexpr e
   | NQ_fby (id, c, e, r, _) ->
-    fprintf fmt "@[<hov 0>%s = %s fby %a every %s@]"
-      id (string_of_const c) print_expr e r
+    fprintf fmt "@[<hov 0>%s = %a fby %a every %s@]"
+      id
+      print_const c
+      print_expr e r
   | NQ_app (ids, f, es, ever, _, _) ->
     fprintf fmt "@[<hov 0>(%s) = %s(%a) every %s@]"
       (String.concat ", " ids) f
@@ -113,11 +101,8 @@ let print_node fmt n =
     print_decl_list n.nn_local
     (print_semicol_list print_equation) n.nn_equs
 
-let print_clock_decl fmt decl =
-  fprintf fmt "%s" (string_of_clockdec decl)
-
 let print_file ?(print_anns=false) fmt file =
   fprintf fmt "@[<v 0>%a%a%a@]@."
-    (pp_print_list ~pp_sep:(fun p () -> fprintf fmt "@;@;") print_clock_decl) file.nf_clocks
+    (pp_print_list ~pp_sep:(fun p () -> fprintf p "@;@;") print_clock_decl) file.nf_clocks
     (fun fmt _ -> if file.nf_clocks <> [] then fprintf fmt "@;@;" else fprintf fmt "") ()
-    (pp_print_list ~pp_sep:(fun p () -> fprintf fmt "@;@;") print_node) file.nf_nodes
+    (pp_print_list ~pp_sep:(fun p () -> fprintf p "@;@;") print_node) file.nf_nodes

@@ -39,24 +39,14 @@ module PMINILS(A : Annotations) = struct
 
   let print_ident = pp_print_string
 
-  let print_semicol_list p =
-    pp_print_list ~pp_sep:(fun p () -> fprintf p ";@ ") p
-
-  let print_decl fmt (id, (ty, ck)) =
-    fprintf fmt "@[<h>%a@ : %s :: %s@]"
-      print_ident id
-      (string_of_ty ty)
-      (string_of_clock ck)
-
-  let print_decl_list = print_semicol_list print_decl
-
-  let print_local fmt (id, (ty, ck), c) =
-    fprintf fmt "@[<h>%s%a@ : %s :: %s%s@]"
-      (match c with Some _ -> "last " | None -> "")
-      print_ident id
-      (string_of_ty ty)
-      (string_of_clock ck)
-      (match c with Some c -> " = "^(string_of_const c) | None -> "")
+  let print_local fmt (id, ann, c) =
+    match c with
+    | Some c ->
+      fprintf fmt "@[<h>last %a@ : %a = %a@]"
+        print_ident id
+        print_ann ann
+        print_const c
+    | None -> print_decl fmt (id, ann)
 
   let print_local_list = print_semicol_list print_local
 
@@ -65,8 +55,8 @@ module PMINILS(A : Annotations) = struct
       fprintf fmt "@[<hov 2>var %a;@]@;" print_local_list locals
 
   let print_unless ?(print_anns=false) fmt (e, c, r) =
-    fprintf fmt "@[<h>unless %s %s %s@]"
-      (string_of_expr ~print_anns e)
+    fprintf fmt "@[<h>unless %a %s %s@]"
+      (print_expr ~print_anns) e
       (if r then "then" else "continue") c
 
   let print_unlesss ?(print_anns=false) fmt unl =
@@ -74,8 +64,8 @@ module PMINILS(A : Annotations) = struct
       fprintf fmt "@[<v>%a;@]@;" (print_semicol_list (print_unless ~print_anns)) unl
 
   let print_until ?(print_anns=false) fmt (e, c, r) =
-    fprintf fmt "@[<h>until %s %s %s@]"
-      (string_of_expr ~print_anns e)
+    fprintf fmt "@[<h>until %a %s %s@]"
+      (print_expr ~print_anns) e
       (if r then "then" else "continue") c
 
   let print_untils ?(print_anns=false) fmt unt =
@@ -84,22 +74,22 @@ module PMINILS(A : Annotations) = struct
 
   let rec print_instr ?(print_anns=false) fmt i =
     match i.pinstr_desc with
-    | Eq eq -> fprintf fmt "%s" (string_of_equation ~print_anns eq)
+    | Eq eq -> fprintf fmt "%a" (print_equation ~print_anns) eq
     | Block bck -> print_block ~print_anns fmt bck
     | Reset (ins, er) ->
       fprintf fmt "@[<v 2>\
                    reset@;\
                    @[<v>%a@;<0 -2>@]\
-                   every %s@]\
+                   every %a@]\
                   "
         (print_instrs ~print_anns) ins
-        (string_of_expr ~print_anns er)
+        (print_expr ~print_anns) er
     | Switch (e, branches, (ckid, _)) ->
       fprintf fmt "@[<v 0>\
-                   switch %s@;\
+                   switch %a@;\
                    %a@;\
                    end@]"
-        (string_of_expr ~print_anns e)
+        (print_expr ~print_anns) e
         (pp_print_list (print_switch_branch ~print_anns)) branches
     | Automaton (branches, _) ->
       fprintf fmt "@[<v 0>\
@@ -146,14 +136,11 @@ module PMINILS(A : Annotations) = struct
       print_decl_list n.pn_output
       (print_block ~print_anns) n.pn_body
 
-  let print_clock_decl fmt decl =
-    fprintf fmt "%s" (string_of_clockdec decl)
-
   let print_file ?(print_anns=false) fmt file =
     fprintf fmt "@[<v 0>%a%a%a@]@."
-      (pp_print_list ~pp_sep:(fun p () -> fprintf fmt "@;@;") print_clock_decl) file.pf_clocks
+      (pp_print_list ~pp_sep:(fun p () -> fprintf p "@;@;") print_clock_decl) file.pf_clocks
       (fun fmt _ -> if file.pf_clocks <> [] then fprintf fmt "@;@;" else fprintf fmt "") ()
-      (pp_print_list ~pp_sep:(fun p () -> fprintf fmt "@;@;") (print_node ~print_anns)) file.pf_nodes
+      (pp_print_list ~pp_sep:(fun p () -> fprintf p "@;@;") (print_node ~print_anns)) file.pf_nodes
 end
 
 module PMinils = PMINILS(NoAnnot)

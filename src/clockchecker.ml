@@ -8,12 +8,15 @@ type nclock = (clock * ident option)
 
 module TypeClockAnnot : (Annotations with type t = (ty * nclock)) = struct
   type t = (ty * nclock)
-  let string_of_t (ty, (ck, id)) =
+  let print_t fmt (ty, (ck, id)) =
     match id with
-    | None -> Printf.sprintf "(%s when %s)"
-                (string_of_ty ty) (string_of_clock ck)
-    | Some id -> Printf.sprintf "(%s : %s when %s)"
-                   id (string_of_ty ty) (string_of_clock ck)
+    | None -> Format.fprintf fmt "(%a when %a)"
+                print_ty ty
+                print_clock ck
+    | Some id -> Format.fprintf fmt "(%s : %a when %a)"
+                   id
+                   print_ty ty
+                   print_clock ck
 end
 
 module CPMinils = PMINILS(TypeClockAnnot)
@@ -61,8 +64,10 @@ and ident_of_instident = function
 
 module ClockElabAnnot : (Annotations with type t = (ty * (sclock * (instident ref) option))) = struct
   type t = ty * (sclock * (instident ref) option)
-  let string_of_t (ty, (sck, _)) =
-    Printf.sprintf "(%s when %s)" (string_of_ty ty) (string_of_sclock sck)
+  let print_t fmt (ty, (sck, _)) =
+    Format.fprintf fmt "(%a when %s)"
+      print_ty ty
+      (string_of_sclock sck)
 end
 
 module CEPMinils = PMINILS(ClockElabAnnot)
@@ -396,7 +401,7 @@ let rec elab_instr nodes env (ins : p_instr) : CPMinils.p_instr =
     | Block bck -> Block (elab_block nodes env bck)
     | Reset (ins, er) ->
       Reset (elab_instrs nodes env ins,
-             freeze_expr env (elab_expr nodes env er)) (* TODO should there be a constraint ? *)
+             freeze_expr env (elab_expr nodes env er))
     | Switch (e, brs, (_, defs)) ->
       let e' = elab_expr nodes env e in
       let (_, (ck, _)) = List.hd e'.kexpr_annot in

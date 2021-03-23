@@ -294,7 +294,7 @@ let rec tr_lexp (e : k_expr) : n_expr =
     | KE_unop (op, e1) -> NE_op (op, [tr_lexp e1])
     | KE_binop (op, e1, e2) -> NE_op (op, [tr_lexp e1; tr_lexp e2])
     | KE_when ([e], constr, ckid) -> NE_when (tr_lexp e, constr, ckid)
-    | _ -> invalid_arg (Printf.sprintf "tr_lexp : %s" (Kernelizer.CMinils.string_of_expr e))
+    | _ -> invalid_arg "tr_lexp"
   in { nexpr_desc = desc; nexpr_ty = ty; nexpr_clock = ck }
 
 let tr_lexps = List.map tr_lexp

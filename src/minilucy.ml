@@ -133,7 +133,7 @@ let compile step filenames =
   if !asserts then Obcinterpr.compare_files cfile mfile;
 
   if (step = Translate) then (
-    print_endline (Obc.string_of_file mfile);
+    Obc.print_file Format.std_formatter mfile;
     exit 0
   );
 

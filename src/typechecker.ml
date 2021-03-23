@@ -144,6 +144,11 @@ let type_op op (inputs : ty list) loc =
 let types_of es =
   List.concat (List.map (fun (e : TPMinils.k_expr) -> e.kexpr_annot) es)
 
+let find_var loc vars id =
+  try List.assoc id vars
+  with _ -> raise (TypeError
+                     (Printf.sprintf "%s not found" id, loc))
+
 (** Check that an expression has the [expected] type *)
 let rec elab_expr (nodes : (ident * TPMinils.p_node) list) clocks
     vars e : TPMinils.k_expr =
@@ -154,11 +159,7 @@ let rec elab_expr (nodes : (ident * TPMinils.p_node) list) clocks
       kexpr_annot = [type_const loc c];
       kexpr_loc = e.kexpr_loc }
   | KE_ident id ->
-    let bty =
-      (try (List.assoc id vars)
-       with _ -> raise (TypeError
-                          (Printf.sprintf "Stream %s not found in node"
-                             id, e.kexpr_loc))) in
+    let bty = fst (find_var e.kexpr_loc vars id) in
     { kexpr_desc = KE_ident id; kexpr_annot = [bty]; kexpr_loc = e.kexpr_loc }
   | KE_unop (op, e1) ->
     let e1' = elab_expr nodes clocks vars e1 in
@@ -246,7 +247,7 @@ let rec elab_expr (nodes : (ident * TPMinils.p_node) list) clocks
     { kexpr_desc = KE_match (e', branches');
       kexpr_annot = tys; kexpr_loc = loc }
   | KE_when (es, constr, cl) ->
-    let clt = (try (List.assoc cl vars)
+    let clt = (try fst (List.assoc cl vars)
                with _ -> raise (TypeError
                                   (Printf.sprintf "Clock %s not found in node"
                                      cl, loc))) in
@@ -260,10 +261,7 @@ let rec elab_expr (nodes : (ident * TPMinils.p_node) list) clocks
     { kexpr_desc = KE_when (es', constr, cl);
       kexpr_annot = types_of es'; kexpr_loc = loc }
   | KE_merge (cl, branches) ->
-    let clt = (try (List.assoc cl vars)
-               with _ -> raise (TypeError
-                                  (Printf.sprintf "Clock %s not found in node"
-                                     cl, e.kexpr_loc))) in
+    let clt = fst (find_var e.kexpr_loc vars cl) in
 
     (* Check the constructors *)
     let constrs = constrs_of_clock clocks loc clt in
@@ -317,18 +315,15 @@ let rec elab_expr (nodes : (ident * TPMinils.p_node) list) clocks
     { kexpr_desc = KE_app (id, es', er');
       kexpr_annot = outy; kexpr_loc = loc }
   | KE_last id ->
-    let bty =
-      (try (List.assoc id vars)
-       with _ -> raise (TypeError
-                          (Printf.sprintf "Stream %s not found in node"
-                             id, e.kexpr_loc))) in
+    let (bty, islast) = find_var e.kexpr_loc vars id in
+    if (not islast) then
+      raise (TypeError
+               (Printf.sprintf "%s is not declared as last" id, e.kexpr_loc));
     { kexpr_desc = KE_last id; kexpr_annot = [bty]; kexpr_loc = e.kexpr_loc }
 
 (** Get the type expected for a pattern [pat] *)
-let get_pattern_type (vars : (ident * ty) list) pat loc =
-  List.map (fun id ->
-      try (List.assoc id vars)
-      with _ -> raise (UnexpectedEquationError (id, loc))) pat
+let get_pattern_type vars pat loc =
+  List.map fst (List.map (find_var loc vars) pat)
 
 (** Check that the equation [eq] is correctly typed. *)
 let elab_equation nodes clocks vars (eq : k_equation) : TPMinils.k_equation =
@@ -380,17 +375,21 @@ and get_def_block (bck : p_block) =
       else raise (TypeError (Printf.sprintf "Missing a definition for %s" x, bck.pb_loc))
     ) defs (List.map (fun (x, _, _) -> x) bck.pb_local)
 
+(** Check a type in a typing env *)
+let check_type loc clocks = function
+  | Tbool | Tint | Treal -> ()
+  | Tclock id ->
+    if not (List.mem_assoc id clocks)
+    then raise (TypeError (Printf.sprintf "Unknown type %s" id, loc))
+
 (** Check a clock in a typing env *)
-let check_clock loc clocks (vars : (ident * ty) list) ck =
+let check_clock loc clocks vars ck =
   let rec aux ck =
     match ck with
     | Cbase -> ()
     | Con (constr, idck, ck) ->
       aux ck;
-      let ckt = (try (List.assoc idck vars)
-                 with _ ->
-                   raise (TypeError
-                            (Printf.sprintf "Clock variable %s not found" idck, loc))) in
+      let ckt = fst (find_var loc vars idck) in
       let constrs = constrs_of_clock clocks loc ckt in
       if not (List.mem constr constrs)
       then raise (TypeError
@@ -448,9 +447,11 @@ let rec elab_instr nodes clocks vars (ins : p_instr) : TPMinils.p_instr =
 and elab_instrs nodes clocks vars ins =
   List.map (elab_instr nodes clocks vars) ins
 and elab_block nodes clocks vars bck : TPMinils.p_block =
-  let vars' = (List.map (fun (x, (ty, _), _) -> (x, ty)) bck.pb_local)@vars in
+  let vars' = (List.map (fun (x, (ty, _), islast) -> (x, (ty, Option.is_some islast))) bck.pb_local)@vars in
 
-  List.iter (fun (id, (_, ck), _) -> check_clock bck.pb_loc clocks vars' ck) bck.pb_local;
+  List.iter (fun (id, (ty, ck), _) ->
+      check_type bck.pb_loc clocks ty;
+      check_clock bck.pb_loc clocks vars' ck) bck.pb_local;
 
   (* Check that the last init constants are well typed *)
   List.iter (fun (id, (ty, _), const) ->
@@ -490,9 +491,12 @@ let elab_node (nodes: (ident * TPMinils.p_node) list) clocks (n : p_node) :
                                id n.pn_name, n.pn_loc)));
 
   (* Check that all declared types are using correct clocks *)
-  let idty = List.map (fun (id, (ty, _)) -> (id, ty)) in
-  List.iter (fun (id, (_, ck)) -> check_clock n.pn_loc clocks (idty n.pn_input) ck) n.pn_input;
-  List.iter (fun (id, (_, ck)) -> check_clock n.pn_loc clocks (idty (n.pn_input@n.pn_output)) ck) n.pn_output;
+  List.iter (fun (id, (ty, ck)) ->
+      check_type n.pn_loc clocks ty;
+      check_clock n.pn_loc clocks n.pn_input ck) n.pn_input;
+  List.iter (fun (id, (ty, ck)) ->
+      check_type n.pn_loc clocks ty;
+      check_clock n.pn_loc clocks (n.pn_input@n.pn_output) ck) n.pn_output;
 
   (* Check that all the streams are defined *)
   let expected = List.sort String.compare (List.map fst n.pn_output)
@@ -504,7 +508,7 @@ let elab_node (nodes: (ident * TPMinils.p_node) list) clocks (n : p_node) :
               n.pn_loc));
 
   (* Elab the instructions *)
-  let body = elab_block nodes clocks (List.map (fun (id, (ty, _)) -> (id, ty)) all_streams) n.pn_body in
+  let body = elab_block nodes clocks (List.map (fun (id, (ty, _)) -> (id, (ty, false))) all_streams) n.pn_body in
 
   (* Construct the resultting node *)
   { pn_name = n.pn_name;

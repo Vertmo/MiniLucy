@@ -500,6 +500,51 @@ let switch_file (f : p_file) : p_file =
 
 (** Eliminate let blocks                                                      *)
 
+(** Check if [id] appears in [e] *)
+let rec free_in_expr id e =
+  match e.kexpr_desc with
+  | KE_const _ -> false
+  | KE_ident x -> id = x
+  | KE_unop (_, e1) -> free_in_expr id e1
+  | KE_binop (_, e1, e2) -> free_in_expr id e1 || free_in_expr id e2
+  | KE_fby (e0s, es, er) -> free_in_exprs id e0s || free_in_exprs id es || free_in_expr id er
+  | KE_arrow (e0s, es, er) -> free_in_exprs id e0s || free_in_exprs id es || free_in_expr id er
+  | KE_match (e, brs) -> free_in_expr id e || free_in_branches id brs
+  | KE_when (es, _, x) -> free_in_exprs id es || id = x
+  | KE_merge (x, brs) -> id = x || free_in_branches id brs
+  | KE_app (_, es, er) -> free_in_exprs id es || free_in_expr id er
+  | KE_last x -> id = x
+and free_in_exprs id = List.exists (free_in_expr id)
+and free_in_branches id = List.exists (fun (_, es) -> free_in_exprs id es)
+
+let free_in_eq id eq = free_in_exprs id eq.keq_expr
+
+let rec free_in_instr id instr =
+  match instr.pinstr_desc with
+  | Eq eq -> free_in_eq id eq
+  | _ -> invalid_arg "free_in_instr"
+and free_in_instrs id = List.exists (free_in_instr id)
+
+(** Check if [id] only defined by unary equations *)
+let only_defined_by_unary_eq id eq =
+  eq.keq_patt = [id] || not (List.mem id eq.keq_patt)
+
+let rec only_defined_by_unary_instr id instr =
+  match instr.pinstr_desc with
+  | Eq eq -> only_defined_by_unary_eq id eq
+  | _ -> invalid_arg "only_defined_by_unary_instr"
+and only_defined_by_unary_instrs id = List.for_all (only_defined_by_unary_instr id)
+
+let defined_by_unary_eq ids eq =
+  match eq.keq_patt with
+  | [id] -> List.mem id ids
+  | _ -> false
+
+let defined_by_unary_instr ids instr =
+  match instr.pinstr_desc with
+  | Eq eq -> defined_by_unary_eq ids eq
+  | _ -> invalid_arg "defined_by_unary_instr"
+
 let rec block_instr (ins : p_instr) : (p_instr list * (ident * ann) list) =
   match ins.pinstr_desc with
   | Eq eq -> ([ins], [])
@@ -514,7 +559,14 @@ and block_block (bck : p_block) =
   let instrs', ys = block_instrs bck.pb_instrs in
   let locals = List.map (fun (x, ann, _) -> (x, Atom.fresh (x^"_"), ann)) bck.pb_local in
   let instrs' = List.fold_left (fun ins (x, x', _) -> alpha_conv_instrs x x' ins) instrs' locals in
-  instrs', (List.map (fun (_, x, ann) -> (x, ann)) locals)@ys
+  let locals = List.map (fun (_, x, ann) -> (x, ann)) locals in
+  (* Filter the useless names *)
+  let to_remove =
+    List.filter (fun x -> not (free_in_instrs x instrs') && only_defined_by_unary_instrs x instrs')
+      (List.map fst locals) in
+  let locals = List.filter (fun (x, _) -> not (List.mem x to_remove)) locals in
+  let instrs' = List.filter (fun ins -> not (defined_by_unary_instr to_remove ins)) instrs' in
+  instrs', locals@ys
 
 let block_node (n : p_node) : p_node =
   let (instrs, locals) = block_block n.pn_body in

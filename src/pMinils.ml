@@ -127,7 +127,7 @@ module PMINILS(A : Annotations) = struct
       (print_untils ~print_anns) unt
 
   and print_block fmt ?(print_anns=false) bck =
-    fprintf fmt "@[%a\
+    fprintf fmt "@[<v>%a\
                  @[<v 2>let@;%a@;<0 -2>@]\
                  tel@]"
       print_locals bck.pb_local

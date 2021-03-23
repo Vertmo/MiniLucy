@@ -87,7 +87,7 @@ let print_machine fmt m =
                @[<hov 2>instances %a@]@;\
                @[<v 2>reset () =@;%a@]@;\
                @[<v 2>step (@[<h>%a@]) returns (@[<h>%a@]) =@;\
-               var @[<hov 2>%a@] in@;\
+               var (@[<hov 2>%a@]) in@;\
                %a@]@]"
     m.m_name
     (print_semicol_list print_p) m.m_memory
